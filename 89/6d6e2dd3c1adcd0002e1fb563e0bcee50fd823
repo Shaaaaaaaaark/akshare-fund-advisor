@@ -1,0 +1,16 @@
+README.md
+  h_9faef13ea41677 1-168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "896d6e2dd3c1adcd0002e1fb563e0bcee50fd823",
+  "prompts": {},
+  "humans": {
+    "h_9faef13ea41677": {
+      "author": "wangxiaolong <wangxiaolong.byte@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
