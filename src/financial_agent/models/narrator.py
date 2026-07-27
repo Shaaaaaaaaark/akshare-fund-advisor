@@ -9,11 +9,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from financial_agent.config import AppConfig, get_config
 from financial_agent.evidence.models import ResearchReport
+from financial_agent.prompts import (
+    REPORT_NARRATOR_PROMPT_VERSION,
+    REPORT_NARRATOR_SYSTEM_PROMPT,
+)
 
 from .client import LLMClient, get_llm_client
 from .messages import system, user
 
-PROMPT_VERSION = "report-narrator-2026-07-01"
+PROMPT_VERSION = REPORT_NARRATOR_PROMPT_VERSION
 
 
 class NarrationOutput(BaseModel):
@@ -50,13 +54,7 @@ class ReportNarrator:
         raw = await asyncio.to_thread(
             self._client.complete_json,
             [
-                system(
-                    f"prompt_version={PROMPT_VERSION}\n"
-                    "你是金融研究报告叙述器，只能解释输入 facts。"
-                    "不得增加、改写、推算任何数字，不得预测涨跌，不得使用"
-                    "必买、必卖、稳赚、抄底、逃顶等措辞。"
-                    '只返回 JSON：{"analysis": ["..."]}。'
-                ),
+                system(REPORT_NARRATOR_SYSTEM_PROMPT),
                 user(json.dumps(payload, ensure_ascii=False)),
             ],
             model=self._config.models.report_alias(),

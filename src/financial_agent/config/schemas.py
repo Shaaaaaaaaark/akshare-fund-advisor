@@ -45,6 +45,7 @@ class ModelsConfig(BaseModel):
 
     default: str = Field(..., description="默认模型别名")
     report: str = Field("", description="报告场景模型别名；空则回退 default")
+    rag: str = Field("", description="RAG 规划和充分性判断模型别名；空则回退 default")
     providers: Dict[str, ProviderConfig]
     registry: Dict[str, ModelEntry]
     litellm: LiteLLMConfig = Field(default_factory=LiteLLMConfig)
@@ -66,6 +67,10 @@ class ModelsConfig(BaseModel):
     def report_alias(self) -> str:
         """报告场景的模型别名：配置了 report 就用它，否则用 default。"""
         return self.report or self.default
+
+    def rag_alias(self) -> str:
+        """RAG 场景的模型别名：配置了 rag 就用它，否则用 default。"""
+        return self.rag or self.default
 
 
 class ObservabilityConfig(BaseModel):
@@ -129,6 +134,7 @@ class RAGConfig(BaseModel):
 
     enabled: bool = False
     web_enabled: bool = False
+    use_llm_agent: bool = True
     max_rounds: int = Field(default=3, ge=1, le=5)
     max_queries_per_round: int = Field(default=2, ge=1, le=5)
     max_chunks: int = Field(default=8, ge=1, le=20)

@@ -22,15 +22,22 @@ API 启动后访问 `http://127.0.0.1:8000/`，即可使用内置的轻量研究
 
 ```text
 .
+├── AGENTS.md                           # 代码助手与仓库级金融约束
+├── CONTRIBUTING.md                     # 开发、测试和提交规范
+├── SECURITY.md                         # 漏洞、密钥和隐私策略
 ├── docs/
-│   ├── HLD.md                         # Agent 高层设计
-│   └── LLD.md                         # Agent 低层设计与面试讲解
+│   ├── README.md                       # 文档索引与阅读顺序
+│   ├── HLD.md                          # Agent 高层设计
+│   ├── LLD.md                          # Agent 低层设计与面试讲解
+│   ├── PROMPT_DESIGN.md                # Prompt 版本、边界与评测
+│   └── ERROR_HANDLING.md               # 错误码、状态与降级契约
 ├── skills/
 │   └── akshare-fund-advisor/          # 可独立打包的 AKShare Skill
 ├── src/
 │   └── financial_agent/
 │       ├── api/                       # HTTP/API 入口
 │       ├── orchestration/             # LangGraph 受控状态机
+│       ├── prompts/                   # 版本化生产 Prompt
 │       ├── mcp_client/                # inprocess/stdio/http MCP 客户端
 │       ├── mcp_server/                # 七个强类型 MCP 工具
 │       ├── evidence/                  # Evidence/Claim 与证据门禁
@@ -62,7 +69,8 @@ API 启动后访问 `http://127.0.0.1:8000/`，即可使用内置的轻量研究
 - LangGraph：固定状态图、工具白名单、实体歧义追问和 A-E 证据等级。
 - 反幻觉：金融数字按 `ToolEnvelope -> Evidence -> Claim -> Renderer` 流转，最终响应再次校验。
 - LiteLLM：可选意图分类和报告叙述；模型输出越界时回退确定性模板。
-- RAG：本地/pgvector 知识检索、指定文档读取、Brave Web 背景检索。
+- Prompt：集中版本管理、结构化输出约束和契约测试，业务节点不使用内联 system prompt。
+- Agentic RAG：LangGraph 显式执行检索规划、三通道检索、充分性判断和最多三轮缺口重查；简单市场问题通过 JIT 跳过文档检索。
 - 存储：PostgreSQL + pgvector、Redis 和 Elasticsearch 容器化部署。
 - 用户服务：风险画像、持仓存储、Decimal 组合计算和模型输入脱敏。
 - 会话记忆：仅从当前 `conversation_id` 的历史 Task/Report 构造上下文。
@@ -152,8 +160,14 @@ docker compose -f deploy/compose/compose.yaml exec agent-api \
 
 ## 文档
 
+- [文档索引](docs/README.md)
+- [仓库 Agent 规范](AGENTS.md)
 - [金融 Agent HLD](docs/HLD.md)
 - [金融 Agent LLD](docs/LLD.md)
+- [Prompt 设计与治理](docs/PROMPT_DESIGN.md)
+- [错误处理与降级](docs/ERROR_HANDLING.md)
+- [贡献指南](CONTRIBUTING.md)
+- [安全策略](SECURITY.md)
 - [Skill 调用规范](skills/akshare-fund-advisor/SKILL.md)
 - [Skill 使用说明](skills/akshare-fund-advisor/USAGE.md)
 - [Skill 内部设计](skills/akshare-fund-advisor/DESIGN.md)

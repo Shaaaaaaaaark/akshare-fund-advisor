@@ -355,6 +355,11 @@ JIT 通道（无需预建索引）：
 
 检索循环的**步数、换词/深挖次数有硬上限**，每一跳的通道、参数和命中都进审计，保证可追溯、不失控。这套设计对应 Mira 的 Agentic RAG（自主编排）+ JIT（按需检索）+ 多源融合 + 引用标注。
 
+当前实现已将 `PLAN_RETRIEVAL`、`RETRIEVE` 和 `ASSESS_SUFFICIENCY` 作为
+LangGraph 显式节点。LLM 可以提出候选查询和缺口判断，代码负责通道权限、可信 URL、
+实体过滤、查询数、上下文长度和最大轮次；异常时回退确定性策略。每轮
+`retrieval_trace` 进入 Task State 和 Elasticsearch 审计索引。
+
 ### 9.6 组件选型
 
 | 能力 | 选定 | 备选 |
@@ -456,6 +461,11 @@ LiteLLM 的作用是隔离供应商：业务代码只面向统一接口，换模
 - 后续可切换为完全私有部署（自建推理 + 本地权重）。
 
 所有模型调用必须使用结构化输出 Schema、固定温度区间和版本化提示词。模型切换不得改变证据门禁规则。
+
+生产 Prompt 统一在 `src/financial_agent/prompts/` 中版本化管理，业务节点不得维护内联
+system prompt。Prompt 只能约束模型语言行为，不能替代实体解析、数据审计、Evidence
+Gate 和 Response Validator。详细规则见
+[Prompt 设计与治理](PROMPT_DESIGN.md)。
 
 外部 API 会把用户问题和部分上下文发送给第三方；启用前必须确认数据出境、隐私和合规要求。若不允许外部传输，则改用自建推理的私有部署模式。模型“可下载权重”不等于 OSI 定义的开源软件，逐模型审查许可证和使用政策。
 
@@ -606,6 +616,9 @@ PUT  /v1/users/me/portfolio
 5. Skill 关键数据失败或过期：返回“当前无法确认”，不调用模型补数据。
 6. 审计字段缺失：阻止数值进入最终报告。
 
+不存在、歧义、不支持和上游不可用必须使用不同错误语义，详细映射见
+[错误处理与降级契约](ERROR_HANDLING.md)。
+
 ### 18.2 服务目标建议
 
 - Agent API 月可用性：MVP `99.5%`，生产 `99.9%`。
@@ -647,7 +660,7 @@ PUT  /v1/users/me/portfolio
 
 ## 20. 分阶段实施
 
-### 阶段 1：可信工具闭环
+### 阶段 1：可信工具闭环（已完成）
 
 - 实现 `fund-advisor-mcp` 七个工具。
 - 定义 `ToolEnvelope`、Evidence 和 Claim Schema。
@@ -656,7 +669,7 @@ PUT  /v1/users/me/portfolio
 - 接入 PostgreSQL、Redis、结构化日志。
 - 建立数值忠实度和工具路由评测。
 
-### 阶段 2：Agentic RAG（三通道，参考 Mira）
+### 阶段 2：Agentic RAG（三通道，主链路已完成）
 
 - **通道二先行**：实现指定文档精确读取工具（最简单，JIT 直接读全文）。
 - **通道一**：MinerU 解析 + BGE-M3 向量化建轻量索引，pgvector 语义检索，自建 Evidence 适配层（命中转带页码/版本的 Evidence，接证据门禁）。
@@ -664,13 +677,13 @@ PUT  /v1/users/me/portfolio
 - **通道三**：接 web_search + web_fetch，**严格限定非数值背景**，结果标记低置信度事件证据。
 - 加引用标注 `[[标题]](url)`、提示注入防护和文档质量审核；进阶可选 LightRAG/GraphRAG 增强通道一。
 
-### 阶段 3：用户与组合
+### 阶段 3：用户与组合（MVP 已完成）
 
 - 增加风险画像、持仓和组合计算服务。
 - 实现仓位、集中度、回撤承受和再平衡条件。
 - 对具体金额和高风险建议增加人工复核。
 
-### 阶段 4：生产治理
+### 阶段 4：生产治理（部分完成）
 
 - 模型网关、多模型灾备、配额和成本控制。
 - Keycloak/OpenBao、安全审计和数据保留策略。
@@ -688,13 +701,17 @@ LangGraph（编排状态机）
 Python MCP SDK
 PostgreSQL
 Redis（缓存/限流）
-MinerU + BGE-M3 + pgvector + Elasticsearch（三通道 Agentic RAG，阶段 2 引入）
+MinerU + BGE-M3 + pgvector + Elasticsearch（三通道 Agentic RAG）
 LiteLLM + 外部模型 API
 OpenTelemetry + 结构化日志
 Docker Compose
 ```
 
-第一版先用 `FastAPI + LangGraph + MCP + PostgreSQL + Redis + LiteLLM` 打通「搜索→分析→估值→带证据报告」主链路；三通道 Agentic RAG（参考 Mira）按第 9 节结论在阶段 2 引入。扩展方向都在第 14 节可选列：知识检索需要实体关系推理再上 LightRAG/GraphRAG，需要私有部署再用自建推理替换外部 API，需要多用户再加认证和监控栈。
+当前已用 `FastAPI + LangGraph + MCP + PostgreSQL + Redis + LiteLLM` 打通
+「搜索→分析→估值→带证据报告」主链路，并实现第 9 节的三通道 Agentic RAG。
+外部 Embedding、MinerU 和 Web Search 按配置启用。扩展方向仍保留在第 14 节：
+知识检索需要实体关系推理时再上 LightRAG/GraphRAG，需要私有部署时再用自建推理替换
+外部 API，需要多用户时再增加认证和监控栈。
 
 ## 22. 关键架构决策
 

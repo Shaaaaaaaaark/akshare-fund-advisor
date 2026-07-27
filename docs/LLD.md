@@ -105,13 +105,16 @@ src/financial_agent/
 │   └── schemas.py
 ├── models/
 │   ├── client.py
-│   └── messages.py
+│   ├── messages.py
+│   └── narrator.py
+├── prompts/
+│   ├── __init__.py
+│   └── catalog.py
 ├── orchestration/
 │   ├── graph.py
 │   ├── state.py
 │   ├── routing.py
-│   ├── nodes/
-│   └── prompts/
+│   └── nodes/
 ├── evidence/
 │   ├── models.py
 │   ├── adapters.py
@@ -343,9 +346,32 @@ client = get_llm_client()
 - 生成或修复市场数值。
 - 计算收益、回撤、分位和组合权重。
 - 判断工具数据是否过期。
+- 确认基金、股票或指数是否真实存在。
 - 绕过 Evidence Gate。
 
-### 6.3 LiteLLM 怎么用
+### 6.3 Prompt 目录与版本
+
+生产 Prompt 统一放在：
+
+```text
+src/financial_agent/prompts/catalog.py
+```
+
+当前包含：
+
+- `INTENT_CLASSIFIER_SYSTEM_PROMPT`
+- `REPORT_NARRATOR_SYSTEM_PROMPT`
+- `PROMPT_POLICY_VERSION`
+- 每个 Prompt 独立的版本常量
+
+业务节点只导入 Prompt，不允许新增内联 system prompt。Prompt 修改必须升级版本并通过
+`tests/test_prompts.py`。完整规则见
+[Prompt 设计与治理](PROMPT_DESIGN.md)。
+
+Prompt 只约束模型语言行为；实体解析、数据时效、Evidence 授权和最终数字校验仍由代码
+执行。
+
+### 6.4 LiteLLM 怎么用
 
 现有接口：
 
@@ -379,7 +405,7 @@ models:
   report: deepseek-flash
 ```
 
-### 6.4 结构化输出
+### 6.5 结构化输出
 
 每个模型节点都定义 Pydantic 输出，而不是只要求“返回 JSON”：
 
@@ -403,9 +429,10 @@ class IntentDecision(BaseModel):
 
 JSON 解析失败最多进行一次“仅修复格式”重试。第二次失败后进入规则兜底或 `CANNOT_CONFIRM`，不能让模型无限自修复。
 
-### 6.5 隐私处理
+### 6.6 隐私处理
 
-发送外部模型前执行 `PromptPrivacyFilter`：
+当前报告 Narrator 只接收公开且已授权的 Fact，不接收原始持仓。组合模块已提供
+`qualitative_portfolio_context()`，用于未来需要向模型提供组合背景时生成脱敏上下文：
 
 ```text
 持仓金额 -> 删除或区间化
@@ -417,8 +444,10 @@ Evidence ID -> 可保留
 ```
 
 本地组合服务先算出“仓位偏高”“超过目标上限”等确定性结果，模型只看到定性标签。
+任何新增模型节点只要需要用户持仓，就必须显式调用该 helper 并增加外发参数测试；
+不得直接把 Repository 返回的原始 Portfolio 放入 Prompt。
 
-### 6.6 失败处理和测试
+### 6.7 失败处理和测试
 
 - 超时：分类节点可规则兜底，报告节点返回结构化简版报告。
 - 限流：遵守 `Retry-After`，只对幂等调用重试并加入抖动。
@@ -1153,10 +1182,11 @@ Agentic RAG 让编排层选择通道、判断充分性和有限重试；JIT 让�
 
 ```text
 PLAN_RETRIEVAL
+  | no_query -> BUILD_EVIDENCE
   -> RETRIEVE
   -> ASSESS_SUFFICIENCY
        | sufficient -> BUILD_EVIDENCE
-       | retryable  -> REWRITE_QUERY -> RETRIEVE
+       | retryable  -> PLAN_RETRIEVAL
        | exhausted  -> PARTIAL_RESULT
 ```
 
@@ -1164,6 +1194,7 @@ PLAN_RETRIEVAL
 
 ```yaml
 rag:
+  use_llm_agent: true
   max_rounds: 3
   max_queries_per_round: 2
   max_chunks: 8
@@ -1174,12 +1205,20 @@ rag:
 ### 14.4 检索计划
 
 ```python
-class RetrievalPlan(BaseModel):
-    questions: list[str]
+class RetrievalQuery(BaseModel):
+    query: str
     channel: Literal["knowledge", "direct_document", "web"]
-    filters: dict[str, Any]
     reason: str
-    round: int
+    url: HttpUrl | None
+    subject_code: str | None
+    doc_types: list[str]
+    limit: int
+
+
+class RetrievalPlan(BaseModel):
+    round_number: int
+    queries: list[RetrievalQuery]
+    reason: str
 ```
 
 通道选择规则：
@@ -1189,27 +1228,50 @@ class RetrievalPlan(BaseModel):
 - 问近期政策或新闻背景：Web，且配置显式启用。
 - 只问当前净值/PE/PB：不走 RAG。
 
+LLM 只产生候选计划。代码会重新写入可信的 `subject_code`、删除用户问题中不存在的
+URL、过滤未启用的 Web 通道、限制文档类型、查询数和 Top-K。Planner 异常时回退
+确定性计划。
+
 ### 14.5 充分性判断
 
 模型可以判断“是否覆盖问题”，但代码先检查：
 
-- 是否有命中。
-- 是否为正确基金代码和文档类型。
-- 是否有 page、version、source_url。
-- 文档是否已失效。
+- 无命中时强制判定不充分。
+- 进入 Judge 的片段数和总字符数不能超过配置。
+- 指定文档命中、命中数量和问题词项覆盖可作为确定性 fallback。
 - 是否超过最大轮次。
 
 模型输出：
 
 ```python
-class SufficiencyDecision(BaseModel):
+class RetrievalAssessment(BaseModel):
     sufficient: bool
-    covered_questions: list[str]
-    missing_questions: list[str]
-    suggested_query: str | None
+    retryable: bool
+    reason: str
+    missing_aspects: list[str]
 ```
 
-模型不能把无结果改成有结果，也不能提升来源可信级别。
+模型不能把无结果改成有结果，也不能提升来源可信级别。代码强制执行最大轮次，即使
+模型持续返回 `retryable=true` 也不能形成无限循环。
+
+每轮状态写入：
+
+```text
+retrieval_round
+retrieval_plan
+retrieval_assessment
+retrieval_trace[
+  round_number,
+  plan,
+  execution.new_hits,
+  execution.total_hits,
+  execution.errors,
+  assessment
+]
+```
+
+`retrieval_trace` 随 Task State 保存，并投影到 Elasticsearch 审计索引。审计记录不保存
+完整检索片段，只保存计划、命中数量、错误和充分性结论。
 
 ### 14.6 面试怎么讲
 
@@ -1867,6 +1929,9 @@ Prompt 不能单独构成防护，权限白名单和输出校验是最终边界�
 
 状态：核心错误映射和降级 `已实现`；跨实例熔断待增强
 
+完整错误码、实体状态和 API 降级契约见
+[错误处理与降级契约](ERROR_HANDLING.md)。
+
 ### 23.1 统一错误
 
 ```python
@@ -2092,7 +2157,7 @@ postgres + redis
 
 ## 26. 实施顺序与验收
 
-### 26.1 阶段一：可信工具闭环
+### 26.1 阶段一：可信工具闭环（已完成）
 
 1. 把 Skill 核心改为可 import 包，CLI 保持兼容。
 2. 实现 MCP 七个工具和 `ToolEnvelope`。
@@ -2113,7 +2178,7 @@ postgres + redis
   -> Evidence API 可追溯
 ```
 
-### 26.2 阶段二：三通道 Agentic RAG
+### 26.2 阶段二：三通道 Agentic RAG（主链路已完成）
 
 1. 指定文档读取。
 2. MinerU 摄取、版本与页码。
@@ -2123,14 +2188,14 @@ postgres + redis
 6. Elasticsearch BM25 + RRF。
 7. Web 背景通道和安全限制。
 
-### 26.3 阶段三：用户与组合
+### 26.3 阶段三：用户与组合（MVP 已完成）
 
 1. 风险画像。
 2. 持仓和确定性组合计算。
 3. Prompt 隐私过滤。
 4. 适当性门禁。
 
-### 26.4 阶段四：治理
+### 26.4 阶段四：治理（部分完成）
 
 1. 多模型灾备。
 2. 更完整的指标和告警。

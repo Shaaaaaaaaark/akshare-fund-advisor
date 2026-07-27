@@ -14,6 +14,7 @@ from financial_agent.evidence import (
     tool_envelope_to_evidence,
 )
 from financial_agent.models.narrator import ReportNarrator
+from financial_agent.prompts import REPORT_NARRATOR_SYSTEM_PROMPT
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
@@ -49,3 +50,7 @@ async def test_narrator_only_extends_analysis(test_config) -> None:
     assert len(enriched.analysis) == len(report.analysis) + 1
     ResponseValidator().validate(enriched, evidence)
     assert "average_cost" not in str(fake.messages)
+    assert fake.messages[0] == {
+        "role": "system",
+        "content": REPORT_NARRATOR_SYSTEM_PROMPT,
+    }

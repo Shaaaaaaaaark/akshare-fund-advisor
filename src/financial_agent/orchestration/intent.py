@@ -9,6 +9,7 @@ from typing import Any
 from financial_agent.config import AppConfig, get_config
 from financial_agent.domain import EntityCandidate, Intent, IntentDecision
 from financial_agent.models import LLMClient, system, user
+from financial_agent.prompts import INTENT_CLASSIFIER_SYSTEM_PROMPT
 
 _INDEX_NAMES = (
     "创业板50",
@@ -288,10 +289,7 @@ class IntentClassifier:
         raw = await asyncio.to_thread(
             self._llm.complete_json,
             [
-                system(
-                    "你只做意图分类，不回答金融问题。必须返回 intent、entities、"
-                    "needs_clarification、clarification_question、confidence。"
-                ),
+                system(INTENT_CLASSIFIER_SYSTEM_PROMPT),
                 user(query),
             ],
             max_tokens=512,

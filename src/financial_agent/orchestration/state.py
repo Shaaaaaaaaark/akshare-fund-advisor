@@ -14,6 +14,7 @@ class AgentState(TypedDict, total=False):
     resolved_query: str
     conversation_history: list[dict[str, Any]]
     status: str
+    prompt_versions: dict[str, str]
 
     intent: str
     intent_confidence: float
@@ -24,6 +25,10 @@ class AgentState(TypedDict, total=False):
     user_context: dict[str, Any]
     tool_plan: list[dict[str, Any]]
     tool_results: list[dict[str, Any]]
+    retrieval_round: int
+    retrieval_plan: dict[str, Any]
+    retrieval_assessment: dict[str, Any]
+    retrieval_trace: list[dict[str, Any]]
     retrieval_results: list[dict[str, Any]]
 
     evidence: list[dict[str, Any]]

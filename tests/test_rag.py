@@ -8,11 +8,62 @@ from financial_agent.rag import (
     DirectDocumentReader,
     DocumentSecurityError,
     LocalKnowledgeRetriever,
+    RAGService,
     RetrievalChannel,
     RetrievalRequest,
 )
 from financial_agent.rag.models import DocumentHit
 from financial_agent.rag.retrieval import ElasticsearchChunkIndex, reciprocal_rank_fusion
+
+
+class FakeRAGLLM:
+    def __init__(self) -> None:
+        self.messages = None
+
+    def complete_json(self, messages, **_kwargs):
+        self.messages = messages
+        return {
+            "round_number": 3,
+            "queries": [
+                {
+                    "query": "近期背景",
+                    "channel": "web",
+                    "reason": "尝试未授权 Web",
+                    "url": None,
+                    "subject_code": None,
+                    "doc_types": [],
+                    "limit": 20,
+                },
+                {
+                    "query": "读取其他地址",
+                    "channel": "direct_document",
+                    "reason": "尝试编造 URL",
+                    "url": "https://example.com/invented",
+                    "subject_code": None,
+                    "doc_types": [],
+                    "limit": 20,
+                },
+                {
+                    "query": "基金投资范围",
+                    "channel": "knowledge",
+                    "reason": "查询官方产品条款",
+                    "url": None,
+                    "subject_code": "999999",
+                    "doc_types": ["fund_prospectus", "unknown"],
+                    "limit": 20,
+                },
+                {
+                    "query": "基金费用",
+                    "channel": "knowledge",
+                    "reason": "查询官方费用条款",
+                    "url": None,
+                    "subject_code": "999999",
+                    "doc_types": ["fund_contract"],
+                    "limit": 20,
+                },
+            ],
+            "reason": "模型候选计划",
+        }
 
 
 @pytest.mark.asyncio
@@ -105,3 +156,62 @@ def test_elasticsearch_retrieval_creates_empty_index_before_search() -> None:
 
     assert hits == []
     assert created[0]["index"] == "test-documents"
+
+
+@pytest.mark.asyncio
+async def test_agentic_rag_jit_skips_simple_market_question(test_config) -> None:
+    config = test_config.model_copy(
+        update={
+            "rag": test_config.rag.model_copy(
+                update={"enabled": True, "use_llm_agent": True}
+            )
+        }
+    )
+    fake = FakeRAGLLM()
+    service = RAGService(config, llm=fake)
+
+    plan = await service.plan(
+        question="沪深300现在估值高吗",
+        intent="index_valuation",
+        entity_queries=["沪深300"],
+        round_number=1,
+    )
+
+    assert plan.queries == []
+    assert "JIT" in plan.reason
+    assert fake.messages is None
+
+
+@pytest.mark.asyncio
+async def test_llm_retrieval_plan_is_constrained_by_code(test_config) -> None:
+    config = test_config.model_copy(
+        update={
+            "rag": test_config.rag.model_copy(
+                update={
+                    "enabled": True,
+                    "web_enabled": False,
+                    "use_llm_agent": True,
+                    "max_queries_per_round": 2,
+                    "max_chunks": 8,
+                }
+            )
+        }
+    )
+    fake = FakeRAGLLM()
+    service = RAGService(config, llm=fake)
+
+    plan = await service.plan(
+        question="分析基金510300的投资范围和费用",
+        intent="fund_analysis",
+        entity_queries=["510300"],
+        round_number=1,
+    )
+
+    assert [item.channel for item in plan.queries] == [
+        RetrievalChannel.KNOWLEDGE,
+        RetrievalChannel.KNOWLEDGE,
+    ]
+    assert [item.subject_code for item in plan.queries] == ["510300", "510300"]
+    assert plan.queries[0].doc_types == ["fund_prospectus"]
+    assert all(item.limit == 8 for item in plan.queries)
+    assert "RAG 的检索规划器" in fake.messages[0]["content"]

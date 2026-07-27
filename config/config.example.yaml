@@ -19,6 +19,8 @@ models:
   default: deepseek-flash
   # 生成报告等高质量场景使用的模型别名；留空则回退到 default
   report: ""
+  # Agentic RAG 规划和充分性判断模型；留空则回退到 default
+  rag: ""
 
   # 供应商凭证：真实 api_key 只写在 config.local.yaml 里
   providers:
@@ -93,6 +95,8 @@ redis:
 rag:
   enabled: false
   web_enabled: false
+  # 开启后由模型提出检索计划并判断充分性；异常时回退确定性策略
+  use_llm_agent: true
   max_rounds: 3
   max_queries_per_round: 2
   max_chunks: 8

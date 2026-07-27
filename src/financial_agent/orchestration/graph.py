@@ -37,7 +37,13 @@ from financial_agent.mcp_client import FundToolClient, build_fund_tool_client
 from financial_agent.mcp_server.schemas import ToolEnvelope
 from financial_agent.models import ReportNarrator, get_llm_client
 from financial_agent.policies import SuitabilityDecision, check_suitability
-from financial_agent.rag import DocumentHit, RAGService
+from financial_agent.prompts import PROMPT_VERSIONS
+from financial_agent.rag import (
+    DocumentHit,
+    RAGService,
+    RetrievalAssessment,
+    RetrievalPlan,
+)
 
 from .intent import IntentClassifier, contextualize_query, detect_policy_violation
 from .planner import build_tool_plan
@@ -85,7 +91,9 @@ class FinancialAgentGraph:
         builder.add_node("load_user_context", self._load_user_context)
         builder.add_node("plan_tools", self._plan_tools)
         builder.add_node("collect_tool_facts", self._collect_tool_facts)
+        builder.add_node("plan_retrieval", self._plan_retrieval)
         builder.add_node("retrieve_documents", self._retrieve_documents)
+        builder.add_node("assess_retrieval", self._assess_retrieval)
         builder.add_node("build_evidence", self._build_evidence)
         builder.add_node("validate_evidence", self._validate_evidence)
         builder.add_node("check_suitability", self._check_suitability)
@@ -111,10 +119,26 @@ class FinancialAgentGraph:
             self._route_after_tools,
             {
                 "clarify": "need_clarification",
-                "continue": "retrieve_documents",
+                "continue": "plan_retrieval",
             },
         )
-        builder.add_edge("retrieve_documents", "build_evidence")
+        builder.add_conditional_edges(
+            "plan_retrieval",
+            self._route_after_retrieval_plan,
+            {
+                "retrieve": "retrieve_documents",
+                "complete": "build_evidence",
+            },
+        )
+        builder.add_edge("retrieve_documents", "assess_retrieval")
+        builder.add_conditional_edges(
+            "assess_retrieval",
+            self._route_after_retrieval_assessment,
+            {
+                "retry": "plan_retrieval",
+                "complete": "build_evidence",
+            },
+        )
         builder.add_edge("build_evidence", "validate_evidence")
         builder.add_edge("validate_evidence", "check_suitability")
         builder.add_edge("check_suitability", "build_claims")
@@ -141,9 +165,14 @@ class FinancialAgentGraph:
             "resolved_query": query,
             "conversation_history": conversation_history or [],
             "status": TaskStatus.RECEIVED.value,
+            "prompt_versions": dict(PROMPT_VERSIONS),
             "warnings": [],
             "errors": [],
             "tool_results": [],
+            "retrieval_round": 0,
+            "retrieval_plan": {},
+            "retrieval_assessment": {},
+            "retrieval_trace": [],
             "retrieval_results": [],
             "evidence": [],
             "claims": [],
@@ -277,33 +306,160 @@ class FinancialAgentGraph:
     def _route_after_tools(state: AgentState) -> str:
         return "clarify" if state.get("clarification") else "continue"
 
-    async def _retrieve_documents(self, state: AgentState) -> dict[str, Any]:
+    async def _plan_retrieval(self, state: AgentState) -> dict[str, Any]:
+        round_number = state.get("retrieval_round", 0) + 1
+        previous_assessment = (
+            RetrievalAssessment.model_validate(state["retrieval_assessment"])
+            if state.get("retrieval_assessment")
+            else None
+        )
+        previous_queries = [
+            str(query.get("query"))
+            for entry in state.get("retrieval_trace", [])
+            for query in (entry.get("plan") or {}).get("queries", [])
+            if query.get("query")
+        ]
         try:
-            hits = await self.rag.retrieve(
-                state.get("resolved_query") or state["user_query"],
-                [item["query"] for item in state.get("entities", [])],
+            plan = await self.rag.plan(
+                question=state.get("resolved_query") or state["user_query"],
+                intent=state["intent"],
+                entity_queries=[
+                    item["query"] for item in state.get("entities", [])
+                ],
+                round_number=round_number,
+                previous_queries=previous_queries,
+                previous_hits=[
+                    DocumentHit.model_validate(item)
+                    for item in state.get("retrieval_results", [])
+                ],
+                previous_assessment=previous_assessment,
             )
-            return {"retrieval_results": [item.model_dump(mode="json") for item in hits]}
         except Exception as exc:
-            logger.warning("RAG retrieval failed: %s", exc)
+            logger.warning("RAG planning failed: %s", exc)
+            plan = RetrievalPlan(
+                round_number=round_number,
+                reason="检索规划失败，本次跳过文档检索",
+            )
+        trace = [
+            *state.get("retrieval_trace", []),
+            {
+                "round_number": round_number,
+                "plan": plan.model_dump(mode="json"),
+            },
+        ]
+        return {
+            "retrieval_round": round_number,
+            "retrieval_plan": plan.model_dump(mode="json"),
+            "retrieval_trace": trace,
+        }
+
+    @staticmethod
+    def _route_after_retrieval_plan(state: AgentState) -> str:
+        return "retrieve" if (state.get("retrieval_plan") or {}).get("queries") else "complete"
+
+    async def _retrieve_documents(self, state: AgentState) -> dict[str, Any]:
+        plan = RetrievalPlan.model_validate(state["retrieval_plan"])
+        round_hits, query_errors = await self.rag.execute(plan)
+        existing = [
+            DocumentHit.model_validate(item)
+            for item in state.get("retrieval_results", [])
+        ]
+        hits = _merge_document_hits(
+            existing,
+            round_hits,
+            self.config.rag.max_chunks,
+        )
+        trace = list(state.get("retrieval_trace", []))
+        if trace:
+            trace[-1] = {
+                **trace[-1],
+                "execution": {
+                    "new_hits": len(round_hits),
+                    "total_hits": len(hits),
+                    "errors": query_errors,
+                },
+            }
+        errors = list(state.get("errors", []))
+        warnings = list(state.get("warnings", []))
+        if query_errors:
             errors = [
-                *state.get("errors", []),
+                *errors,
                 AgentFailure(
                     category="retrieval",
-                    code="RETRIEVAL_FAILED",
-                    message="文档检索失败，已保留可用工具事实",
+                    code="RETRIEVAL_QUERY_FAILED",
+                    message="部分文档检索查询失败，已保留成功结果",
                     retryable=True,
                     source="rag",
+                    details={"errors": query_errors},
                 ).model_dump(mode="json"),
             ]
-            return {
-                "retrieval_results": [],
-                "errors": errors,
-                "warnings": [
-                    *state.get("warnings", []),
-                    "文档检索失败，本次未使用文档事实。",
-                ],
+            warnings.append("部分文档检索查询失败，本次仅使用成功返回的片段。")
+        return {
+            "retrieval_results": [
+                item.model_dump(mode="json") for item in hits
+            ],
+            "retrieval_trace": trace,
+            "errors": errors,
+            "warnings": list(dict.fromkeys(warnings)),
+        }
+
+    async def _assess_retrieval(self, state: AgentState) -> dict[str, Any]:
+        plan = RetrievalPlan.model_validate(state["retrieval_plan"])
+        assessment = await self.rag.assess(
+            question=state.get("resolved_query") or state["user_query"],
+            plan=plan,
+            hits=[
+                DocumentHit.model_validate(item)
+                for item in state.get("retrieval_results", [])
+            ],
+        )
+        if (
+            not assessment.sufficient
+            and plan.round_number >= self.config.rag.max_rounds
+        ):
+            assessment = assessment.model_copy(
+                update={
+                    "retryable": False,
+                    "reason": (
+                        f"{assessment.reason}；已达到最大检索轮次 "
+                        f"{self.config.rag.max_rounds}"
+                    ),
+                }
+            )
+        trace = list(state.get("retrieval_trace", []))
+        if trace:
+            trace[-1] = {
+                **trace[-1],
+                "assessment": assessment.model_dump(mode="json"),
             }
+        warnings = list(state.get("warnings", []))
+        if (
+            not assessment.sufficient
+            and not assessment.retryable
+            and plan.queries
+        ):
+            warnings.append(
+                "文档检索达到轮次上限或没有新的安全查询，结果可能不完整。"
+            )
+        return {
+            "retrieval_assessment": assessment.model_dump(mode="json"),
+            "retrieval_trace": trace,
+            "warnings": list(dict.fromkeys(warnings)),
+        }
+
+    def _route_after_retrieval_assessment(self, state: AgentState) -> str:
+        assessment = RetrievalAssessment.model_validate(
+            state["retrieval_assessment"]
+        )
+        return (
+            "retry"
+            if (
+                not assessment.sufficient
+                and assessment.retryable
+                and state.get("retrieval_round", 0) < self.config.rag.max_rounds
+            )
+            else "complete"
+        )
 
     async def _build_evidence(self, state: AgentState) -> dict[str, Any]:
         task_id = UUID(state["task_id"])
@@ -431,6 +587,27 @@ class FinancialAgentGraph:
                 ],
             }
         return {"status": report.status}
+
+
+def _merge_document_hits(
+    existing: list[DocumentHit],
+    incoming: list[DocumentHit],
+    limit: int,
+) -> list[DocumentHit]:
+    merged: list[DocumentHit] = []
+    seen: set[str] = set()
+    for hit in [*existing, *incoming]:
+        key = str(
+            hit.metadata.get("chunk_id")
+            or f"{hit.channel.value}:{hit.url}:{hit.page}:{hit.text[:200]}"
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(hit)
+        if len(merged) >= limit:
+            break
+    return merged
 
 
 def _warning_messages(envelope: ToolEnvelope) -> list[str]:
