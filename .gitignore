@@ -10,6 +10,8 @@ htmlcov/
 
 # Virtual environments
 .venv/
+.venv-agent/
+.venv311/
 venv/
 env/
 
@@ -17,6 +19,8 @@ env/
 .env
 .env.*
 *.local
+config/config.local.yaml
+config/*.local.yaml
 
 # OS and editor files
 .DS_Store
@@ -28,6 +32,7 @@ env/
 *.tmp
 /tmp/
 reports/
+/data/
 
 # Build artifacts
 dist/

@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="基于 AKShare、MCP 和证据门禁的基金研究 Agent"
+    >
+    <title>基金研究 Agent</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="conversation-sidebar">
+        <a class="brand" href="/" aria-label="基金研究 Agent 首页">
+          <span class="brand-mark" aria-hidden="true">F</span>
+          <span>
+            <strong>Fund Agent</strong>
+            <small>Evidence first</small>
+          </span>
+        </a>
+
+        <button class="new-chat-button" id="new-conversation" type="button">
+          <span aria-hidden="true">＋</span>
+          新建对话
+        </button>
+
+        <div class="sidebar-heading">
+          <span>最近对话</span>
+          <span id="conversation-count">0</span>
+        </div>
+        <nav
+          class="conversation-list"
+          id="conversation-list"
+          aria-label="对话列表"
+        ></nav>
+
+        <div class="memory-boundary">
+          <span class="memory-icon" aria-hidden="true"></span>
+          <div>
+            <strong>会话内记忆</strong>
+            <p>上下文仅在当前对话中生效，新对话不会继承。</p>
+          </div>
+        </div>
+      </aside>
+
+      <main class="chat-column">
+        <header class="chat-header">
+          <div>
+            <p class="eyebrow">Agent conversation</p>
+            <h1 id="conversation-title">新对话</h1>
+          </div>
+          <div class="system-state" id="system-state" role="status">
+            <span class="state-dot"></span>
+            <span id="system-state-text">正在检查服务</span>
+          </div>
+        </header>
+
+        <section
+          class="message-scroll"
+          id="message-scroll"
+          aria-live="polite"
+          aria-label="对话消息"
+        >
+          <div class="welcome-card" id="welcome-card">
+            <span class="welcome-mark" aria-hidden="true">F</span>
+            <h2>从一个可验证的问题开始</h2>
+            <p>
+              我会规划工具、调用 AKShare、验证证据，再生成回答。
+              金融数字不会由模型凭空补全。
+            </p>
+            <div class="quick-prompts">
+              <button type="button" data-query="沪深300现在估值高吗？">
+                沪深300估值
+              </button>
+              <button type="button" data-query="搜索沪深300基金">
+                搜索相关基金
+              </button>
+              <button type="button" data-query="510300目前可以交易吗？">
+                查询交易状态
+              </button>
+            </div>
+          </div>
+          <div id="message-list"></div>
+        </section>
+
+        <div class="composer-wrap">
+          <form class="composer" id="research-form">
+            <label class="sr-only" for="query">输入研究问题</label>
+            <textarea
+              id="query"
+              name="query"
+              rows="1"
+              maxlength="8000"
+              placeholder="继续追问，或输入新的基金和指数问题..."
+              required
+            ></textarea>
+            <button class="send-button" id="submit-button" type="submit">
+              <span class="sr-only">发送</span>
+              <span aria-hidden="true">↑</span>
+            </button>
+          </form>
+          <div class="composer-meta">
+            <span>Enter 发送 · Shift + Enter 换行</span>
+            <details>
+              <summary>API Token</summary>
+              <label class="sr-only" for="api-token">API Token</label>
+              <input
+                id="api-token"
+                type="password"
+                autocomplete="off"
+                placeholder="未启用鉴权时留空"
+              >
+            </details>
+          </div>
+        </div>
+      </main>
+
+      <aside class="research-panel" aria-label="研究数据面板">
+        <header class="research-header">
+          <div>
+            <p class="eyebrow">Research snapshot</p>
+            <h2 id="research-title">研究面板</h2>
+          </div>
+          <span class="grade hidden" id="evidence-grade"></span>
+        </header>
+
+        <section class="valuation-card fixed-chart-card" id="valuation-card">
+          <div class="panel-section-heading">
+            <div>
+              <span>行情与估值</span>
+              <small id="chart-period">等待唯一标的</small>
+            </div>
+            <div class="metric-tabs" id="metric-tabs"></div>
+          </div>
+          <div class="chart-empty" id="chart-empty">
+            <svg viewBox="0 0 320 120" aria-hidden="true">
+              <path d="M2 101 C44 96, 63 54, 105 67 S168 92, 202 49 S267 24, 318 13"></path>
+            </svg>
+            <strong>暂无关联行情</strong>
+            <span>搜索明确指数、分析 ETF 或选择个股后展示</span>
+          </div>
+          <div class="chart-content hidden" id="chart-content">
+            <div class="chart-stats" id="chart-stats"></div>
+            <div class="chart-wrap" id="chart-wrap">
+              <svg
+                id="valuation-chart"
+                viewBox="0 0 720 330"
+                role="img"
+                aria-label="历史估值与指数点位曲线"
+              ></svg>
+              <div class="chart-tooltip hidden" id="chart-tooltip"></div>
+            </div>
+            <div class="chart-legend">
+              <span><i class="legend-valuation"></i>估值曲线</span>
+              <span><i class="legend-points"></i><b id="market-price-label">指数点位</b></span>
+              <span><i class="legend-opportunity"></i>机会值</span>
+              <span><i class="legend-danger"></i>危险值</span>
+            </div>
+            <p class="chart-source" id="chart-source"></p>
+          </div>
+        </section>
+
+        <div class="research-empty" id="research-empty">
+          <div class="research-empty-chart" aria-hidden="true">
+            <svg viewBox="0 0 220 90">
+              <path d="M4 76 C35 70, 45 38, 78 46 S125 70, 145 35 S185 18, 216 9"></path>
+            </svg>
+          </div>
+          <h3>等待研究结果</h3>
+          <p>选择一条 Agent 回复后，这里会固定展示图表、事实和证据。</p>
+        </div>
+
+        <div class="research-loading hidden" id="research-loading">
+          <span class="spinner"></span>
+          <p>正在加载研究数据...</p>
+        </div>
+
+        <div class="research-content hidden" id="research-content">
+          <section class="snapshot-summary">
+            <p class="section-label">回答摘要</p>
+            <p id="report-summary"></p>
+            <p class="report-meta" id="report-meta"></p>
+          </section>
+
+          <section class="panel-section hidden" id="facts-section">
+            <div class="panel-section-heading">
+              <span>关键数据</span>
+            </div>
+            <div class="fact-grid" id="facts"></div>
+          </section>
+
+          <section class="panel-section hidden" id="analysis-section">
+            <div class="panel-section-heading"><span>分析</span></div>
+            <ul class="report-list" id="analysis"></ul>
+          </section>
+
+          <section class="panel-section hidden" id="risks-section">
+            <div class="panel-section-heading"><span>风险与限制</span></div>
+            <ul class="report-list muted-list" id="risks"></ul>
+          </section>
+
+          <section class="panel-section hidden" id="citations-section">
+            <div class="panel-section-heading"><span>来源引用</span></div>
+            <div class="citations" id="citations"></div>
+          </section>
+
+          <details class="evidence-drawer">
+            <summary>
+              <span>证据记录</span>
+              <span id="evidence-count"></span>
+            </summary>
+            <div id="evidence-list"></div>
+          </details>
+
+          <footer class="disclaimer" id="disclaimer"></footer>
+        </div>
+      </aside>
+    </div>
+    <script src="/assets/app.js" defer></script>
+  </body>
+</html>

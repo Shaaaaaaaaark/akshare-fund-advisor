@@ -1,0 +1,159 @@
+name: finagent
+
+x-app-build: &app-build
+  context: ../..
+  dockerfile: Dockerfile
+  target: runtime
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: finagent
+      POSTGRES_USER: finagent
+      POSTGRES_PASSWORD: finagent_dev
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finagent -d finagent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - redis_data:/data
+    expose:
+      - "6379"
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.6
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://localhost:9200/_cluster/health?wait_for_status=yellow",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    expose:
+      - "9200"
+
+  migrate:
+    image: finagent-app:local
+    build: *app-build
+    restart: "no"
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    environment:
+      FINAGENT__STORAGE__DATABASE_URL: postgresql+psycopg://finagent:finagent_dev@postgres:5432/finagent
+      FINAGENT__STORAGE__CREATE_SCHEMA: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  fund-advisor-mcp:
+    image: finagent-app:local
+    build: *app-build
+    init: true
+    restart: unless-stopped
+    command: ["fund-advisor-mcp"]
+    environment:
+      FINAGENT__MCP__TRANSPORT: http
+      FINAGENT__MCP__HOST: 0.0.0.0
+      FINAGENT__MCP__PORT: 8001
+      FINAGENT__REDIS__URL: redis://redis:6379/0
+      FINAGENT_SKILL_DIR: /app/skills/akshare-fund-advisor
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; s=socket.create_connection(('127.0.0.1', 8001), 2); s.close()",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    depends_on:
+      redis:
+        condition: service_healthy
+    expose:
+      - "8001"
+
+  agent-api:
+    image: finagent-app:local
+    build: *app-build
+    init: true
+    restart: unless-stopped
+    command: ["financial-agent"]
+    environment:
+      FINAGENT__SERVER__HOST: 0.0.0.0
+      FINAGENT__SERVER__PORT: 8000
+      FINAGENT__STORAGE__DATABASE_URL: postgresql+psycopg://finagent:finagent_dev@postgres:5432/finagent
+      FINAGENT__STORAGE__CREATE_SCHEMA: "false"
+      FINAGENT__REDIS__URL: redis://redis:6379/0
+      FINAGENT__MCP__TRANSPORT: http
+      FINAGENT__MCP__SERVER_URL: http://fund-advisor-mcp:8001/mcp
+      FINAGENT__RAG__ENABLED: "true"
+      FINAGENT__RAG__ELASTICSEARCH_URL: http://elasticsearch:9200
+      FINAGENT__OBSERVABILITY__ELASTICSEARCH_URL: http://elasticsearch:9200
+      FINAGENT__STORAGE__DOCUMENT_DIR: /app/data/documents
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      fund-advisor-mcp:
+        condition: service_healthy
+    volumes:
+      - document_data:/app/data/documents
+      - type: bind
+        source: ../../config/config.local.yaml
+        target: /app/config/config.local.yaml
+        read_only: true
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  test:
+    profiles: ["test"]
+    image: finagent-test:local
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: test
+
+volumes:
+  postgres_data:
+  redis_data:
+  elasticsearch_data:
+  document_data:

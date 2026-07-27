@@ -1,0 +1,129 @@
+# ---------------------------------------------------------------------------
+# 金融投资研究 Agent - 配置模板
+#
+# 用法：
+#   1. 复制本文件为 config/config.local.yaml
+#   2. 填入真实密钥和参数
+#   3. config.local.yaml 已被 .gitignore 忽略，不会提交到 Git
+#
+# 加载优先级（后者覆盖前者）：
+#   config.example.yaml  ->  config.local.yaml  ->  环境变量
+#
+# 环境变量覆盖规则：FINAGENT__<SECTION>__<KEY>（双下划线分隔层级）
+#   例如 FINAGENT__MODELS__PROVIDERS__DEEPSEEK__API_KEY=sk-xxx
+# ---------------------------------------------------------------------------
+
+# 模型层：通过 LiteLLM 统一接入外部 OpenAI 兼容 API
+models:
+  # 默认使用的模型别名（对应下方 registry 中的一项）
+  default: deepseek-flash
+  # 生成报告等高质量场景使用的模型别名；留空则回退到 default
+  report: ""
+
+  # 供应商凭证：真实 api_key 只写在 config.local.yaml 里
+  providers:
+    deepseek:
+      api_base: https://api.deepseek.com
+      api_key: "REPLACE_WITH_YOUR_DEEPSEEK_API_KEY"
+
+  # 模型注册表：别名 -> 具体模型与调用参数
+  # litellm_model 采用 "<provider_prefix>/<model_name>" 形式；
+  # OpenAI 兼容 API（含 DeepSeek）统一用 openai/ 前缀 + 自定义 api_base。
+  registry:
+    deepseek-flash:
+      litellm_model: openai/deepseek-v4-flash
+      provider: deepseek
+      temperature: 0.2
+      max_tokens: 4096
+      timeout_seconds: 60
+      # 每分钟最大请求数；null 表示不限制（个人使用一般不需要）
+      rpm_limit: null
+
+  # LiteLLM 全局行为
+  litellm:
+    # 失败重试次数
+    num_retries: 2
+    # 是否打印 LiteLLM 调试日志
+    verbose: false
+    # 是否丢弃目标模型不支持的参数，避免报错
+    drop_params: true
+
+# HTTP API
+server:
+  host: 127.0.0.1
+  port: 8000
+  reload: false
+  # 个人本机使用可留空；对外监听时必须通过环境变量设置
+  api_token: ""
+
+# LangGraph 受控编排
+agent:
+  # 默认使用确定性规则分类，显式开启后才调用外部模型辅助分类
+  use_llm_for_intent: false
+  # 模型只润色通过门禁的 Claims；失败或越界自动回退确定性模板
+  use_llm_for_report: true
+  maximum_report_facts: 20
+  checkpoint: memory
+
+# Fund Advisor MCP
+mcp:
+  # inprocess 复用 Adapter；stdio/http 通过 MCP 协议隔离进程
+  transport: inprocess
+  server_command: ""
+  server_url: http://127.0.0.1:8001/mcp
+  host: 127.0.0.1
+  port: 8001
+  timeout_seconds: 60
+  concurrency: 2
+
+# PostgreSQL 生产地址可用 FINAGENT__STORAGE__DATABASE_URL 覆盖。
+# 本地默认 SQLite 只为一键启动，Compose 会覆盖为 PostgreSQL。
+storage:
+  database_url: sqlite:///./data/financial_agent.db
+  create_schema: true
+  document_dir: ./data/documents
+
+# 留空表示禁用 Redis，自动回退进程内缓存和并发限制。
+redis:
+  url: ""
+  key_prefix: finagent
+  default_ttl_seconds: 900
+
+# 三通道 Agentic RAG 默认关闭，完成文档摄取后按需启用。
+rag:
+  enabled: false
+  web_enabled: false
+  max_rounds: 3
+  max_queries_per_round: 2
+  max_chunks: 8
+  max_context_chars: 24000
+  embedding_model: BAAI/bge-m3
+  embedding_dimension: 1024
+  # OpenAI 兼容 Embedding API；留空时只可摄取不含向量的本地文本
+  embedding_api_base: ""
+  embedding_api_key: ""
+  # 例如 "mineru"；留空时 PDF 使用 pypdf 轻量回退
+  mineru_command: ""
+  elasticsearch_url: ""
+  elasticsearch_index: finagent-doc-chunks-v1
+  # Brave Search API Key；留空表示 Web 通道不可用
+  web_search_api_key: ""
+
+security:
+  allowed_document_domains:
+    - csrc.gov.cn
+    - sse.com.cn
+    - szse.cn
+  max_document_bytes: 20971520
+  redact_portfolio_values: true
+
+# 可观测性（模型调用日志等）
+observability:
+  # 结构化日志级别：DEBUG / INFO / WARNING / ERROR
+  log_level: INFO
+  # 是否在日志中记录 prompt 与响应（含隐私，默认关闭）
+  log_prompts: false
+  # 可与 RAG 复用同一 Elasticsearch；留空表示只输出结构化日志
+  elasticsearch_url: ""
+  audit_index: finagent-audit-v1
+  report_index: finagent-reports-v1
