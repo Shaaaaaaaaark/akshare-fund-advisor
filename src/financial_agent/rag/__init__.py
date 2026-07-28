@@ -10,13 +10,14 @@ from .models import (
     RetrievalRequest,
 )
 from .service import LocalKnowledgeRetriever, RAGService, build_rag_service
-from .web import BraveWebRetriever
+from .web import BraveWebRetriever, MCPWebRetriever
 
 __all__ = [
     "DirectDocumentReader",
     "DocumentHit",
     "DocumentSecurityError",
     "BraveWebRetriever",
+    "MCPWebRetriever",
     "LocalKnowledgeRetriever",
     "RAGService",
     "RetrievalAssessment",

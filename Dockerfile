@@ -40,6 +40,6 @@ CMD ["sh", "-c", "python -m ruff check --no-cache . && python -m pytest -q -p no
 
 FROM base AS runtime
 
-EXPOSE 8000 8001
+EXPOSE 8000 8001 8002
 
 CMD ["financial-agent"]

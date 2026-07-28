@@ -9,7 +9,7 @@ from __future__ import annotations
 from financial_agent.domain import Intent
 
 PROMPT_POLICY_VERSION = "financial-agent-policy-2026-07-28"
-INTENT_CLASSIFIER_PROMPT_VERSION = "intent-classifier-2026-07-28"
+INTENT_CLASSIFIER_PROMPT_VERSION = "intent-classifier-2026-07-28.2"
 REPORT_NARRATOR_PROMPT_VERSION = "report-narrator-2026-07-28"
 RAG_PLANNER_PROMPT_VERSION = "rag-planner-2026-07-28"
 RAG_JUDGE_PROMPT_VERSION = "rag-judge-2026-07-28"
@@ -38,7 +38,7 @@ policy_version={PROMPT_POLICY_VERSION}
   "intent": "允许的 intent 之一",
   "entities": [
     {{
-      "entity_type": "fund|fund_query|index|stock|document",
+      "entity_type": "fund|fund_query|index|stock|document|web_query",
       "query": "从用户原文提取的候选",
       "code": null,
       "name": null,

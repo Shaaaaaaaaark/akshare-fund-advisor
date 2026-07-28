@@ -113,6 +113,112 @@ class MCPConfig(BaseModel):
     concurrency: int = Field(default=2, ge=1, le=16)
 
 
+# 内置支持的搜索供应商与默认调用顺序（前者优先，失败/超额自动降级到后者）。
+_SUPPORTED_SEARCH_PROVIDERS = (
+    "serper",
+    "tavily",
+    "google_cse",
+    "brave",
+    "serpapi",
+)
+_DEFAULT_SEARCH_CHAIN = list(_SUPPORTED_SEARCH_PROVIDERS)
+
+
+class WebSearchProviderConfig(BaseModel):
+    """单个搜索供应商的凭证与可选端点。
+
+    - api_key：几乎所有供应商都需要；留空表示该供应商未配置，会被跳过。
+    - cx：仅 Google Custom Search 需要（Programmable Search Engine ID）。
+    - api_url：留空则用内置默认端点；自建代理/兼容网关时可覆盖。
+    """
+
+    enabled: bool = True
+    api_key: str = ""
+    cx: str = ""
+    api_url: str = ""
+
+    def has_credentials(self, name: str) -> bool:
+        """判断该供应商凭证是否齐全（Google CSE 还需 cx）。"""
+        if not self.api_key:
+            return False
+        if name == "google_cse" and not self.cx:
+            return False
+        return True
+
+
+class WebResearchConfig(BaseModel):
+    """Web research MCP and multi-provider search-chain controls."""
+
+    enabled: bool = False
+    # search_chain 为空时使用内置默认顺序；每个名字对应 providers 中一项。
+    search_chain: list[str] = Field(default_factory=list)
+    providers: Dict[str, WebSearchProviderConfig] = Field(default_factory=dict)
+    # ↓ 旧版单供应商字段，保留向后兼容；新配置请用 providers + search_chain。
+    provider: str = "brave"
+    api_key: str = ""
+    search_api_url: str = "https://api.search.brave.com/res/v1/web/search"
+    search_language: str = "zh-hans"
+    transport: Literal["inprocess", "stdio", "http"] = "inprocess"
+    server_command: str = ""
+    server_url: str = "http://127.0.0.1:8002/mcp"
+    host: str = "127.0.0.1"
+    port: int = Field(default=8002, ge=1, le=65535)
+    timeout_seconds: int = Field(default=20, ge=1, le=120)
+    max_results: int = Field(default=10, ge=1, le=20)
+    max_content_chars: int = Field(default=12000, ge=1000, le=100000)
+    max_fetch_bytes: int = Field(default=2 * 1024 * 1024, ge=1024)
+    fetch_concurrency: int = Field(default=3, ge=1, le=10)
+    allowed_domains: list[str] = Field(default_factory=list)
+
+    def resolved_chain(self) -> list[tuple[str, WebSearchProviderConfig]]:
+        """返回按顺序、已启用且凭证齐全的搜索供应商链。
+
+        兼容旧配置：若只设置了顶层 provider + api_key，则把它作为对应供应商
+        的兜底凭证（默认 brave）。链条中不认识、被禁用或缺凭证的供应商会被
+        静默跳过，因此运行期只会真正调用配置好的供应商。
+        """
+        chain_names = self.search_chain or _DEFAULT_SEARCH_CHAIN
+        legacy: WebSearchProviderConfig | None = None
+        if self.api_key:
+            legacy = WebSearchProviderConfig(
+                api_key=self.api_key,
+                api_url=self.search_api_url if self.provider == "brave" else "",
+            )
+        resolved: list[tuple[str, WebSearchProviderConfig]] = []
+        seen: set[str] = set()
+        for name in chain_names:
+            if name in seen or name not in _SUPPORTED_SEARCH_PROVIDERS:
+                continue
+            seen.add(name)
+            provider_cfg = _as_provider_config(self.providers.get(name))
+            if (
+                provider_cfg is None
+                or not provider_cfg.has_credentials(name)
+            ) and name == self.provider and legacy is not None:
+                provider_cfg = legacy
+            if provider_cfg is None or not provider_cfg.enabled:
+                continue
+            if not provider_cfg.has_credentials(name):
+                continue
+            resolved.append((name, provider_cfg))
+        return resolved
+
+
+def _as_provider_config(value: object) -> WebSearchProviderConfig | None:
+    """把 providers 里的原始值收敛成 WebSearchProviderConfig。
+
+    正常加载路径下 Pydantic 已完成校验；但 model_copy(update=...) 不会重新
+    校验，可能留下裸 dict，这里兜底转换，保证 resolved_chain 始终拿到模型。
+    """
+    if value is None:
+        return None
+    if isinstance(value, WebSearchProviderConfig):
+        return value
+    if isinstance(value, dict):
+        return WebSearchProviderConfig.model_validate(value)
+    return None
+
+
 class StorageConfig(BaseModel):
     """Transaction store and local document location."""
 

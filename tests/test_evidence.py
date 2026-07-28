@@ -190,3 +190,34 @@ def test_document_prompt_injection_is_blocked() -> None:
     assert record.metadata["prompt_injection_detected"] is True
     assert decision.grade == "D"
     assert record.evidence_id in decision.blocked_evidence_ids
+
+
+def test_web_research_produces_citations_without_market_facts() -> None:
+    task_id = uuid4()
+    record = document_hit_to_evidence(
+        task_id=task_id,
+        subject=EvidenceSubject(type="web_query", id="监管政策"),
+        text="公开网页提供的定性政策背景。",
+        source_ref="web-result",
+        title="政策背景页面",
+        url="https://example.com/policy",
+        page=None,
+        version=None,
+        channel="web",
+    )
+    decision = EvidenceGate().evaluate(Intent.WEB_RESEARCH, [record])
+    report = render_report(
+        task_id=task_id,
+        intent=Intent.WEB_RESEARCH,
+        evidence=[record],
+        claims=build_claims(task_id, [record], decision),
+        decision=decision,
+        generated_at=datetime.now(SHANGHAI),
+    )
+
+    ResponseValidator().validate(report, [record])
+    assert decision.grade == "C"
+    assert report.status == "partial_result"
+    assert report.facts == []
+    assert report.citations[0].url == "https://example.com/policy"
+    assert "不作为市场数值" in report.summary

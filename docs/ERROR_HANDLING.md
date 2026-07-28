@@ -67,6 +67,25 @@ Skill AdvisorError
 
 具体 Skill 错误码以 `AdvisorError` 调用点为准；新增错误码必须同步本文档和测试。
 
+### 4.3 Web Research MCP
+
+| 错误码 | 场景 | 是否重试 |
+| --- | --- | --- |
+| `WEB_RESEARCH_DISABLED` | 网页研究未启用 | 否 |
+| `WEB_SEARCH_NOT_CONFIGURED` | 兜底链无凭证齐全的供应商 | 否 |
+| `WEB_SEARCH_AUTH_FAILED` | 某供应商 Key 无效或权限不足 | 否 |
+| `WEB_SEARCH_RATE_LIMITED` | 某供应商限流或额度用尽 | 是 |
+| `WEB_SEARCH_UPSTREAM_ERROR` | 某供应商 5xx | 是 |
+| `WEB_SEARCH_INVALID_RESPONSE` | 某供应商返回无效响应 | 是 |
+| `WEB_SEARCH_ALL_PROVIDERS_FAILED` | 兜底链所有供应商均失败 | 视情况 |
+| `WEB_FETCH_INVALID_URL` | URL 协议或凭证不合规 | 否 |
+| `WEB_FETCH_PRIVATE_ADDRESS` | URL 指向私网或保留地址 | 否 |
+| `WEB_FETCH_DOMAIN_BLOCKED` | 域名不在 allowlist | 否 |
+| `WEB_FETCH_INVALID_REDIRECT` | 重定向缺少目标地址 | 否 |
+| `WEB_FETCH_TOO_MANY_REDIRECTS` | 重定向超过三次 | 否 |
+| `WEB_FETCH_TOO_LARGE` | 页面超过下载限制 | 否 |
+| `WEB_FETCH_UNSUPPORTED_CONTENT` | 内容类型不受支持 | 否 |
+
 ## 5. 搜索与分析语义
 
 ### 基金搜索
@@ -196,4 +215,3 @@ Skill AdvisorError
 - D/E 级报告没有金融事实和图表。
 - 非关键 PE 或 PB 单侧失败只展示有效侧。
 - 模型不能把错误信息改写成市场结论。
-

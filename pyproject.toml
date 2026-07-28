@@ -40,6 +40,7 @@ dependencies = [
 [project.scripts]
 financial-agent = "financial_agent.api.cli:main"
 fund-advisor-mcp = "financial_agent.mcp_server.server:main"
+web-research-mcp = "financial_agent.web_research.server:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

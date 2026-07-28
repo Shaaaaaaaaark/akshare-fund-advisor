@@ -9,7 +9,11 @@ def build_tool_plan(
     intent: Intent,
     entities: list[EntityCandidate],
 ) -> list[ToolPlanItem]:
-    if intent in {Intent.DOCUMENT_QA, Intent.UNSUPPORTED}:
+    if intent in {
+        Intent.DOCUMENT_QA,
+        Intent.WEB_RESEARCH,
+        Intent.UNSUPPORTED,
+    }:
         return []
 
     if intent == Intent.FUND_SEARCH:

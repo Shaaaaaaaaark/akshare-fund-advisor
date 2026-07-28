@@ -18,6 +18,7 @@ class Intent(StrEnum):
     DCA_REFERENCE = "dca_reference"
     SELL_OR_REBALANCE = "sell_or_rebalance"
     DOCUMENT_QA = "document_qa"
+    WEB_RESEARCH = "web_research"
     UNSUPPORTED = "unsupported"
 
 

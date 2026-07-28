@@ -78,6 +78,48 @@ mcp:
   timeout_seconds: 60
   concurrency: 2
 
+# 网页研究 MCP：只允许生成非数值背景 Evidence，不是市场数据源。
+web_research:
+  enabled: false
+  # 搜索兜底链：按顺序依次尝试，前一个超额/失败自动降级到下一个。
+  # 留空则用内置默认顺序（serper -> tavily -> google_cse -> brave -> serpapi）。
+  # 只有在 providers 中填了凭证的供应商才会被真正调用，其余自动跳过。
+  search_chain: [serper, tavily, google_cse, brave, serpapi]
+  providers:
+    # Serper.dev（谷歌结果，注册送 2500 次）：只需 api_key
+    serper:
+      api_key: ""
+    # Tavily（Agent 原生，~1000 次/月）：只需 api_key
+    tavily:
+      api_key: ""
+    # Google 官方 Custom Search（100 次/天）：需要 api_key + cx
+    google_cse:
+      api_key: ""
+      cx: ""
+    # Brave Search（~2000 次/月）：只需 api_key
+    brave:
+      api_key: ""
+    # SerpAPI（谷歌结果，100 次/月）：只需 api_key
+    serpapi:
+      api_key: ""
+  search_language: zh-hans
+  transport: inprocess
+  server_command: ""
+  server_url: http://127.0.0.1:8002/mcp
+  host: 127.0.0.1
+  port: 8002
+  timeout_seconds: 20
+  max_results: 10
+  max_content_chars: 12000
+  max_fetch_bytes: 2097152
+  fetch_concurrency: 3
+  # 空列表表示允许抓取任意公网 http/https 域名；始终禁止私网和保留地址
+  allowed_domains: []
+  # ↓ 旧版单供应商字段，仅为向后兼容保留；新配置请用上面的 providers。
+  provider: brave
+  api_key: ""
+  search_api_url: https://api.search.brave.com/res/v1/web/search
+
 # PostgreSQL 生产地址可用 FINAGENT__STORAGE__DATABASE_URL 覆盖。
 # 本地默认 SQLite 只为一键启动，Compose 会覆盖为 PostgreSQL。
 storage:
@@ -110,7 +152,7 @@ rag:
   mineru_command: ""
   elasticsearch_url: ""
   elasticsearch_index: finagent-doc-chunks-v1
-  # Brave Search API Key；留空表示 Web 通道不可用
+  # 旧版兼容字段；新配置请使用 web_research.api_key
   web_search_api_key: ""
 
 security:

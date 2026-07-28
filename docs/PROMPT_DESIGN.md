@@ -177,7 +177,7 @@ Judge 只接收受 `max_context_chars` 限制的检索片段。片段被明确�
 版本格式：
 
 ```text
-<prompt-name>-YYYY-MM-DD
+<prompt-name>-YYYY-MM-DD[.revision]
 ```
 
 以下变更必须升级版本：

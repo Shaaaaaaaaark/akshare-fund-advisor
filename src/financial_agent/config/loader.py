@@ -29,6 +29,7 @@ from .schemas import (
     SecurityConfig,
     ServerConfig,
     StorageConfig,
+    WebResearchConfig,
 )
 
 # 环境变量前缀与层级分隔符：FINAGENT__MODELS__DEFAULT=xxx
@@ -60,6 +61,7 @@ class AppConfig(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
+    web_research: WebResearchConfig = Field(default_factory=WebResearchConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     redis: RedisConfig = Field(default_factory=RedisConfig)
     rag: RAGConfig = Field(default_factory=RAGConfig)

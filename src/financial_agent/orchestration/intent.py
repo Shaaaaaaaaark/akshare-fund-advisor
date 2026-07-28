@@ -66,6 +66,19 @@ _FOLLOW_UP_MARKERS = (
     "能买吗",
     "能卖吗",
 )
+_WEB_RESEARCH_MARKERS = (
+    "网页搜索",
+    "搜索网页",
+    "互联网搜索",
+    "网上搜索",
+    "搜索新闻",
+    "查新闻",
+    "近期新闻",
+    "最近新闻",
+    "最新消息",
+    "政策背景",
+    "舆情",
+)
 
 
 def detect_policy_violation(query: str) -> str | None:
@@ -181,6 +194,17 @@ def classify_by_rules(query: str) -> IntentDecision:
                 EntityCandidate(
                     entity_type="document",
                     query=re.search(r"https?://\S+", text).group(0) if has_url else text,
+                )
+            ],
+            confidence=0.98,
+        )
+    if any(marker in text for marker in _WEB_RESEARCH_MARKERS):
+        return IntentDecision(
+            intent=Intent.WEB_RESEARCH,
+            entities=[
+                EntityCandidate(
+                    entity_type="web_query",
+                    query=text,
                 )
             ],
             confidence=0.98,

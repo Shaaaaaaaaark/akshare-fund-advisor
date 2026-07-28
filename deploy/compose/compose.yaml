@@ -100,6 +100,37 @@ services:
     expose:
       - "8001"
 
+  web-research-mcp:
+    image: finagent-app:local
+    build: *app-build
+    init: true
+    restart: unless-stopped
+    command: ["web-research-mcp"]
+    environment:
+      FINAGENT__WEB_RESEARCH__ENABLED: "true"
+      FINAGENT__WEB_RESEARCH__TRANSPORT: http
+      FINAGENT__WEB_RESEARCH__HOST: 0.0.0.0
+      FINAGENT__WEB_RESEARCH__PORT: 8002
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; s=socket.create_connection(('127.0.0.1', 8002), 2); s.close()",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    volumes:
+      - type: bind
+        source: ../../config/config.local.yaml
+        target: /app/config/config.local.yaml
+        read_only: true
+    expose:
+      - "8002"
+
   agent-api:
     image: finagent-app:local
     build: *app-build
@@ -115,7 +146,11 @@ services:
       FINAGENT__MCP__TRANSPORT: http
       FINAGENT__MCP__SERVER_URL: http://fund-advisor-mcp:8001/mcp
       FINAGENT__RAG__ENABLED: "true"
+      FINAGENT__RAG__WEB_ENABLED: "true"
       FINAGENT__RAG__ELASTICSEARCH_URL: http://elasticsearch:9200
+      FINAGENT__WEB_RESEARCH__ENABLED: "true"
+      FINAGENT__WEB_RESEARCH__TRANSPORT: http
+      FINAGENT__WEB_RESEARCH__SERVER_URL: http://web-research-mcp:8002/mcp
       FINAGENT__OBSERVABILITY__ELASTICSEARCH_URL: http://elasticsearch:9200
       FINAGENT__STORAGE__DOCUMENT_DIR: /app/data/documents
     healthcheck:
@@ -134,6 +169,8 @@ services:
       elasticsearch:
         condition: service_healthy
       fund-advisor-mcp:
+        condition: service_healthy
+      web-research-mcp:
         condition: service_healthy
     volumes:
       - document_data:/app/data/documents

@@ -34,7 +34,8 @@
 | 配置加载与 Pydantic 校验 | `已实现` | `src/financial_agent/config/` |
 | LiteLLM + DeepSeek API | `已实现` | `src/financial_agent/models/` |
 | 模型连通性检查 | `已实现` | `scripts/check_llm.py` |
-| MCP Server | `已实现` | `src/financial_agent/mcp_server/` |
+| Fund Advisor MCP | `已实现` | `src/financial_agent/mcp_server/` |
+| Web Research MCP | `已实现，需配置 Key` | `src/financial_agent/web_research/` |
 | LangGraph 编排 | `已实现` | `src/financial_agent/orchestration/` |
 | Evidence / Claim 门禁 | `已实现` | `src/financial_agent/evidence/` |
 | FastAPI | `已实现` | `src/financial_agent/api/` |
@@ -614,6 +615,39 @@ SDK API 可能随锁定版本变化，实现时以对应版本文档为准，但
 ### 7.9 面试怎么讲
 
 MCP 不是为了把 Python 函数“包装得更潮”，而是建立标准工具契约和隔离边界。最关键的设计是适配层不修改数据，Skill 的审计字段必须原样进入 Evidence。
+
+### 7.10 Web Research MCP
+
+网页研究独立部署，不并入 Fund Advisor MCP：
+
+```text
+web_search(query, max_results, freshness_days)
+web_fetch(url, max_chars)
+```
+
+实现路径：
+
+```text
+src/financial_agent/web_research/
+├── schemas.py
+├── service.py
+├── client.py
+└── server.py
+```
+
+支持 `inprocess`、`stdio` 和 Streamable HTTP。Compose 使用 HTTP，
+`agent-api` 通过内部网络访问 `web-research-mcp:8002`。
+
+安全边界：
+
+- API Key 只从本地配置或环境变量读取。
+- 初始 URL 和最终 URL 都执行 DNS/SSRF 校验。
+- 限制重定向、响应大小、内容类型和正文长度。
+- 可选域名 allowlist。
+- MCP 响应固定 `numeric_allowed=false`。
+- RAG 将命中转为低置信度 Web Evidence，只用于定性背景。
+
+详细配置和错误码见 [Web Research MCP](WEB_RESEARCH_MCP.md)。
 
 ## 8. LangGraph 状态模型
 
@@ -1490,7 +1524,7 @@ score(d) = sum(1 / (k + rank_i(d)))
 
 ## 17. 通道二与通道三
 
-状态：指定文档读取与 Brave Web 背景通道均已实现，Web 默认关闭
+状态：指定文档读取与 Web Research MCP 均已实现，Web 按配置启用
 
 ### 17.1 指定文档读取
 
@@ -1521,20 +1555,21 @@ URL/token
 
 ### 17.2 Web Search + Fetch
 
-定义 Provider 接口，具体搜索服务待配置：
+Agentic RAG 通过独立 MCP 客户端复用网页工具：
 
-```python
-class WebSearchProvider(Protocol):
-    async def search(self, query: str, limit: int) -> list[SearchResult]:
-        ...
-
-
-class WebFetcher(Protocol):
-    async def fetch(self, url: str) -> FetchedPage:
-        ...
+```text
+MCPWebRetriever
+  -> web_search
+  -> 对搜索结果并发 web_fetch
+  -> DocumentHit(channel=web)
+  -> Evidence Adapter
 ```
 
-先 `search` 看标题、域名和摘要；只有摘要不足且来源允许时才 `fetch` 原文。
+搜索供应商采用**多供应商兜底链**：按配置顺序尝试 `serper → tavily → google_cse →
+brave → serpapi`，前一个认证失败、限流、超额或上游报错时自动降级到下一个，只调用
+填了凭证的供应商。抓取失败时保留搜索摘要，并在命中元数据记录 `fetch_error`；搜索
+和抓取的响应哈希分别进入命中审计元数据，搜索审计还记录最终命中的 `provider` 与
+降级 `attempts`。
 
 ### 17.3 金融限制
 
@@ -1553,6 +1588,9 @@ metadata.purpose = background_only
 ### 17.4 安全
 
 - 禁止访问 localhost、私网 IP、file:// 和云元数据地址。
+- 禁止 URL 中携带用户名或密码。
+- 初始 URL 和重定向后的最终 URL 都必须复验。
+- 限制页面大小、正文字符数和并发抓取数。
 - 限制重定向次数、响应大小、MIME 和超时。
 - HTML 清洗脚本、表单和隐藏文本。
 - 页面中的“忽略系统提示”等内容始终按不可信数据处理。

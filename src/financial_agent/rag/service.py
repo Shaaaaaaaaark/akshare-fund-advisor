@@ -33,12 +33,13 @@ from .models import (
     RetrievalRequest,
 )
 from .text import query_terms
-from .web import BraveWebRetriever
+from .web import MCPWebRetriever
 
 logger = logging.getLogger("financial_agent.rag")
 
 _DOCUMENT_INTENTS = {
     "document_qa",
+    "web_research",
     "fund_analysis",
     "fund_compare",
     "dca_reference",
@@ -135,8 +136,9 @@ class RAGService:
         self._knowledge = knowledge or LocalKnowledgeRetriever(self._config)
         self._llm = llm
         self._web = web or (
-            BraveWebRetriever(self._config)
-            if self._config.rag.web_search_api_key
+            MCPWebRetriever(self._config)
+            if self._config.web_research.enabled
+            or self._config.rag.web_search_api_key
             else DisabledWebRetriever()
         )
 
@@ -417,6 +419,27 @@ class RAGService:
                 round_number=round_number,
                 reason="当前问题只需要市场工具事实，JIT 跳过文档检索",
             )
+        if intent == "web_research":
+            if (
+                self._config.rag.web_enabled
+                and _web_search_configured(self._config)
+            ):
+                return RetrievalPlan(
+                    round_number=round_number,
+                    queries=[
+                        RetrievalQuery(
+                            query=question,
+                            channel=RetrievalChannel.WEB,
+                            reason="用户明确要求检索公开网页背景",
+                            limit=self._config.rag.max_chunks,
+                        )
+                    ],
+                    reason="显式网页研究请求只使用受控 Web 通道",
+                )
+            return RetrievalPlan(
+                round_number=round_number,
+                reason="网页研究通道未启用或未配置",
+            )
 
         subject_code = _subject_code(entity_queries)
         candidates: list[RetrievalQuery] = []
@@ -451,10 +474,13 @@ class RAGService:
                     )
         if (
             self._config.rag.web_enabled
+            and _web_search_configured(self._config)
             and _needs_web(question)
-            and len(candidates) < self._config.rag.max_queries_per_round
             and not any(item.channel == RetrievalChannel.WEB for item in candidates)
         ):
+            candidates = candidates[
+                : max(0, self._config.rag.max_queries_per_round - 1)
+            ]
             candidates.append(
                 RetrievalQuery(
                     query=question,
@@ -617,6 +643,13 @@ def _needs_retrieval(question: str, intent: str) -> bool:
 
 def _needs_web(question: str) -> bool:
     return any(marker in question for marker in _WEB_MARKERS)
+
+
+def _web_search_configured(config: AppConfig) -> bool:
+    # 只要搜索兜底链里有任一凭证齐全的供应商即视为已配置。
+    if config.web_research.enabled and config.web_research.resolved_chain():
+        return True
+    return bool(config.rag.web_search_api_key)
 
 
 def _subject_code(entity_queries: Sequence[str]) -> str | None:

@@ -1,98 +1,118 @@
-"""Brave Search + safe fetch channel for qualitative background only."""
+"""Web Research MCP adapter for the qualitative RAG channel."""
 
 from __future__ import annotations
 
 import asyncio
-
-import httpx
-from bs4 import BeautifulSoup
+from typing import Any
 
 from financial_agent.config import AppConfig, get_config
+from financial_agent.web_research import (
+    WebFetchData,
+    WebResearchClient,
+    WebSearchData,
+    build_web_research_client,
+)
 
-from .direct_reader import DirectDocumentReader
 from .models import DocumentHit, RetrievalChannel, RetrievalRequest
 
 
-class BraveWebRetriever:
-    SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
+class MCPWebRetriever:
+    """Use web_search and web_fetch through the shared MCP boundary."""
 
-    def __init__(self, config: AppConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: AppConfig | None = None,
+        *,
+        client: WebResearchClient | None = None,
+    ) -> None:
         self._config = config or get_config()
-        unrestricted_security = self._config.security.model_copy(
-            update={"allowed_document_domains": []}
-        )
-        unrestricted = self._config.model_copy(update={"security": unrestricted_security})
-        self._validator = DirectDocumentReader(unrestricted)
+        self._client = client or build_web_research_client(self._config)
 
     async def retrieve(self, request: RetrievalRequest) -> list[DocumentHit]:
-        key = self._config.rag.web_search_api_key
-        if not key or not self._config.rag.web_enabled:
-            return []
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(
-                self.SEARCH_URL,
-                params={
-                    "q": request.question,
-                    "count": min(request.limit, 10),
-                    "search_lang": "zh-hans",
-                },
-                headers={
-                    "Accept": "application/json",
-                    "X-Subscription-Token": key,
-                },
+        if (
+            not self._config.rag.web_enabled
+            or not (
+                self._config.web_research.enabled
+                or self._config.rag.web_search_api_key
             )
-            response.raise_for_status()
-            results = response.json().get("web", {}).get("results", [])
+        ):
+            return []
+        search = await self._client.call(
+            "web_search",
+            {
+                "query": request.question,
+                "max_results": request.limit,
+            },
+        )
+        if not search.ok or not isinstance(search.data, WebSearchData):
+            detail = search.error.message if search.error else "未返回搜索结果"
+            raise RuntimeError(f"网页搜索失败：{detail}")
 
-        semaphore = asyncio.Semaphore(3)
+        semaphore = asyncio.Semaphore(
+            self._config.web_research.fetch_concurrency
+        )
 
-        async def build(item: dict) -> DocumentHit | None:
-            url = str(item.get("url") or "")
-            if not url:
-                return None
-            text = str(item.get("description") or "")
+        async def build(result: Any) -> DocumentHit | None:
+            content = result.snippet
+            title = result.title
+            final_url = result.url
+            fetch_hashes: list[str] = []
+            fetch_error: str | None = None
             try:
                 async with semaphore:
-                    fetched = await self._fetch(url)
-                if fetched:
-                    text = fetched
-            except Exception:
-                pass
-            if not text:
+                    fetched = await self._client.call(
+                        "web_fetch",
+                        {
+                            "url": result.url,
+                            "max_chars": min(
+                                self._config.web_research.max_content_chars,
+                                self._config.rag.max_context_chars,
+                            ),
+                        },
+                    )
+                if fetched.ok and isinstance(fetched.data, WebFetchData):
+                    content = fetched.data.content or content
+                    title = fetched.data.title or title
+                    final_url = fetched.data.final_url
+                    fetch_hashes = _audit_hashes(fetched.data_audit)
+                elif fetched.error is not None:
+                    fetch_error = fetched.error.code
+            except Exception as exc:
+                fetch_error = type(exc).__name__
+            if not content:
                 return None
             return DocumentHit(
                 channel=RetrievalChannel.WEB,
-                title=str(item.get("title") or url),
-                url=url,
-                text=text[:5000],
-                score=0.2,
+                title=title,
+                url=final_url,
+                text=content,
+                score=max(0.01, 1.0 / (result.rank + 4)),
                 metadata={
                     "purpose": "background_only",
                     "numeric_allowed": False,
+                    "provider": search.data.provider,
+                    "search_rank": result.rank,
+                    "published_at": result.published_at,
+                    "search_audit_hashes": _audit_hashes(search.data_audit),
+                    "fetch_audit_hashes": fetch_hashes,
+                    "fetch_error": fetch_error,
                 },
             )
 
-        built = await asyncio.gather(*(build(item) for item in results))
-        return [item for item in built if item is not None][: request.limit]
+        built = await asyncio.gather(
+            *(build(item) for item in search.data.results)
+        )
+        return [
+            item for item in built if item is not None
+        ][: request.limit]
 
-    async def _fetch(self, url: str) -> str:
-        await self._validator._validate_url(url)
-        async with httpx.AsyncClient(
-            timeout=15.0,
-            follow_redirects=True,
-            max_redirects=3,
-            headers={"User-Agent": "FinancialResearchAgent/0.1"},
-        ) as client:
-            async with client.stream("GET", url) as response:
-                response.raise_for_status()
-                await self._validator._validate_url(str(response.url))
-                if "html" not in response.headers.get("content-type", "").lower():
-                    return ""
-                content = await self._validator._read_limited(response)
-            soup = BeautifulSoup(
-                content.decode("utf-8", errors="replace"),
-                "html.parser",
-            )
-            for element in soup(["script", "style", "noscript", "form"]):
-                element.decompose()
-            return soup.get_text("\n", strip=True)
+
+def _audit_hashes(items: list[Any]) -> list[str]:
+    return [
+        str(item.response_sha256)
+        for item in items
+        if item.validation == "passed" and item.response_sha256
+    ]
+
+
+BraveWebRetriever = MCPWebRetriever

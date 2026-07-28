@@ -183,6 +183,17 @@ RECEIVED
 | `fund_compare` | `compare` | `funds`, `years` |
 | `interface_audit` | `audit` | 代表基金、ETF、LOF、指数 |
 
+网页研究使用独立 `web-research-mcp`，不与市场事实工具混用：
+
+| MCP 工具 | 用途 | 关键参数 |
+| --- | --- | --- |
+| `web_search` | 搜索公开网页背景 | `query`, `max_results`, `freshness_days` |
+| `web_fetch` | 安全抓取并清洗网页正文 | `url`, `max_chars` |
+
+Web 工具固定返回 `numeric_allowed=false` 和 `purpose=background_only`，不能覆盖
+`fund-advisor-mcp` 的市场事实。详细契约见
+[Web Research MCP](WEB_RESEARCH_MCP.md)。
+
 ### 7.2 统一工具信封
 
 ```json

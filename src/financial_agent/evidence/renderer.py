@@ -76,6 +76,7 @@ def _title(intent: Intent, evidence: Sequence[EvidenceRecord]) -> str:
         Intent.DCA_REFERENCE: "定投条件研究",
         Intent.SELL_OR_REBALANCE: "再平衡条件研究",
         Intent.DOCUMENT_QA: "文档研究",
+        Intent.WEB_RESEARCH: "网页背景研究",
     }.get(intent, "研究结果")
     return f"{subject} {suffix}"
 
@@ -181,6 +182,11 @@ def render_report(
     warnings = list(dict.fromkeys([*decision.warnings, *extra_warnings]))
     if facts and intent == Intent.DOCUMENT_QA:
         summary = "已检索到可引用的官方文档内容，详见事实与引用。"
+    elif citations and intent == Intent.WEB_RESEARCH:
+        summary = (
+            "已检索到公开网页背景资料，详见来源引用；"
+            "网页内容不作为市场数值或官方产品条款依据。"
+        )
     elif facts:
         summary = "；".join(f"{item.label}：{item.display_value}" for item in facts[:6])
     elif decision.grade == "E":
@@ -208,6 +214,11 @@ def render_report(
         risks=[
             "历史数据和历史分位不预测未来涨跌。",
             "公开数据上游可能延迟或调整口径，应结合报告日期理解。",
+            *(
+                ["网页内容可能不完整或存在偏差，仅作为定性背景。"]
+                if intent == Intent.WEB_RESEARCH
+                else []
+            ),
         ],
         missing_information=decision.reasons,
         warnings=warnings,

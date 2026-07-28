@@ -26,6 +26,7 @@ from financial_agent.portfolio import Portfolio, RiskProfile
 from financial_agent.rag import build_rag_service
 from financial_agent.repositories import SQLRepository
 from financial_agent.web import WEB_ROOT
+from financial_agent.web_research import build_web_research_client
 
 from .schemas import (
     ConversationCreated,
@@ -54,6 +55,11 @@ def create_app(
     repo = repository or SQLRepository(settings)
     repo.initialize()
     audit_projection = ElasticsearchAuditProjection(settings)
+    web_research_client = (
+        build_web_research_client(settings)
+        if settings.web_research.enabled
+        else None
+    )
     agent = graph or FinancialAgentGraph(
         settings,
         rag=build_rag_service(settings, repo),
@@ -116,9 +122,25 @@ def create_app(
             )
         except (TimeoutError, AttributeError):
             mcp_ready = False
+        web_mcp_ready = True
+        if web_research_client is not None:
+            try:
+                web_mcp_ready = await asyncio.wait_for(
+                    web_research_client.healthcheck(),
+                    timeout=5,
+                )
+            except (TimeoutError, AttributeError):
+                web_mcp_ready = False
+        checks = {"database": database, "mcp": mcp_ready}
+        if web_research_client is not None:
+            checks["web_mcp"] = web_mcp_ready
         return HealthResponse(
-            status="ok" if database and mcp_ready else "not_ready",
-            checks={"database": database, "mcp": mcp_ready},
+            status=(
+                "ok"
+                if database and mcp_ready and web_mcp_ready
+                else "not_ready"
+            ),
+            checks=checks,
         )
 
     @application.post(

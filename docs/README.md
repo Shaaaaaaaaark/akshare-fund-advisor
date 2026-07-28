@@ -11,6 +11,7 @@
 3. [LLD](LLD.md)：模块实现、数据结构、状态机和面试讲解。
 4. [Prompt 设计](PROMPT_DESIGN.md)：模型职责、Prompt 版本和变更流程。
 5. [错误处理](ERROR_HANDLING.md)：实体、工具、证据和 API 错误语义。
+6. [Web Research MCP](WEB_RESEARCH_MCP.md)：网页搜索、抓取、安全和配置。
 
 参与开发：
 
@@ -38,6 +39,7 @@ Skill 独立使用：
 | `LLD.md` | 代码级设计与状态 | Schema、流程或模块实现变化 |
 | `PROMPT_DESIGN.md` | 生产 Prompt 契约 | Prompt、模型职责或版本变化 |
 | `ERROR_HANDLING.md` | 错误码和降级语义 | 工具错误、状态或重试变化 |
+| `WEB_RESEARCH_MCP.md` | 网页研究 MCP | 搜索供应商、工具或安全策略变化 |
 | `SECURITY.md` | 安全与漏洞处理 | 信任边界、密钥或隐私变化 |
 | Skill 文档 | 数据接口和指标口径 | AKShare 接口、字段或公式变化 |
 
@@ -67,4 +69,3 @@ Skill 独立使用：
 - `已实现`：代码和测试已存在。
 - `部分实现`：主链路存在，但仍有明确缺口。
 - `待实现`：仅有设计，不应在 README 中声明为可用能力。
-

@@ -76,7 +76,40 @@ class EvidenceGate:
         trusted_document_evidence = [
             item for item in document_evidence if item.metadata.get("channel") != "web"
         ]
+        safe_web_evidence = [
+            item
+            for item in document_evidence
+            if item.metadata.get("channel") == "web"
+            and item.metadata.get("prompt_injection_detected") is not True
+        ]
 
+        if intent == Intent.WEB_RESEARCH:
+            if not safe_web_evidence:
+                return GateDecision(
+                    grade="D",
+                    blocked_evidence_ids=blocked,
+                    warnings=list(warnings),
+                    reasons=["没有通过安全检查的网页背景 Evidence"],
+                    policy_version=GATE_POLICY_VERSION,
+                )
+            return GateDecision(
+                grade="C",
+                allowed_claim_types={
+                    ClaimType.INTERPRETATION,
+                    ClaimType.WARNING,
+                },
+                blocked_evidence_ids=blocked,
+                warnings=list(
+                    dict.fromkeys(
+                        [
+                            *warnings,
+                            "网页来源仅用于非数值背景，不作为市场数据或官方条款依据。",
+                        ]
+                    )
+                ),
+                reasons=["网页背景属于低置信度辅助 Evidence"],
+                policy_version=GATE_POLICY_VERSION,
+            )
         if not tool_evidence and intent != Intent.DOCUMENT_QA:
             return GateDecision(
                 grade="D",

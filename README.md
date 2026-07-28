@@ -30,7 +30,8 @@ API 启动后访问 `http://127.0.0.1:8000/`，即可使用内置的轻量研究
 │   ├── HLD.md                          # Agent 高层设计
 │   ├── LLD.md                          # Agent 低层设计与面试讲解
 │   ├── PROMPT_DESIGN.md                # Prompt 版本、边界与评测
-│   └── ERROR_HANDLING.md               # 错误码、状态与降级契约
+│   ├── ERROR_HANDLING.md               # 错误码、状态与降级契约
+│   └── WEB_RESEARCH_MCP.md              # 网页搜索与抓取工具
 ├── skills/
 │   └── akshare-fund-advisor/          # 可独立打包的 AKShare Skill
 ├── src/
@@ -44,12 +45,14 @@ API 启动后访问 `http://127.0.0.1:8000/`，即可使用内置的轻量研究
 │       ├── rag/
 │       │   ├── ingestion/             # 官方文档摄取
 │       │   └── retrieval/             # 混合检索与引用
+│       ├── web_research/               # 独立网页研究 MCP 与客户端
 │       ├── portfolio/                 # 用户画像与组合计算
 │       ├── policies/                  # 适当性与合规规则
 │       ├── observability/             # Trace、指标和审计
 │       └── web/                       # 内置单页研究界面
 ├── mcp_servers/
-│   └── fund_advisor/                  # Skill 的 MCP 适配层
+│   ├── fund_advisor/                  # Skill 的 MCP 适配层
+│   └── web_research/                  # 网页搜索 MCP 启动入口
 ├── evals/
 │   ├── datasets/                      # 金融 Agent 评测集
 │   └── runners/                       # 自动评测执行器
@@ -66,6 +69,7 @@ API 启动后访问 `http://127.0.0.1:8000/`，即可使用内置的轻量研究
 
 - AKShare Skill：基金搜索/状态/分析、指数与个股 PE/PB、价格曲线、比较和接口审计。
 - MCP：七个基金、指数与个股工具，支持 `inprocess`、`stdio`、Streamable HTTP 三种传输。
+- Web Research MCP：独立提供 `web_search` 和 `web_fetch`，RAG 与其他 Agent 可共用。
 - LangGraph：固定状态图、工具白名单、实体歧义追问和 A-E 证据等级。
 - 反幻觉：金融数字按 `ToolEnvelope -> Evidence -> Claim -> Renderer` 流转，最终响应再次校验。
 - LiteLLM：可选意图分类和报告叙述；模型输出越界时回退确定性模板。
@@ -84,6 +88,14 @@ cp config/config.example.yaml config/config.local.yaml
 ```
 
 在 `config/config.local.yaml` 中填写 DeepSeek API Key。该文件只读挂载到 API 容器，不会写入镜像或 Git。
+
+启用网页搜索时还需填写 Brave Search API Key：
+
+```yaml
+web_research:
+  enabled: true
+  api_key: "YOUR_BRAVE_SEARCH_API_KEY"
+```
 
 启动全部服务：
 
@@ -166,6 +178,7 @@ docker compose -f deploy/compose/compose.yaml exec agent-api \
 - [金融 Agent LLD](docs/LLD.md)
 - [Prompt 设计与治理](docs/PROMPT_DESIGN.md)
 - [错误处理与降级](docs/ERROR_HANDLING.md)
+- [Web Research MCP](docs/WEB_RESEARCH_MCP.md)
 - [贡献指南](CONTRIBUTING.md)
 - [安全策略](SECURITY.md)
 - [Skill 调用规范](skills/akshare-fund-advisor/SKILL.md)

@@ -7,3 +7,4 @@
 {"case_id":"compare_001","query":"比较000001和110022","expected_intent":"fund_compare","expected_tools":["fund_compare"]}
 {"case_id":"dca_001","query":"沪深300定投参考","expected_intent":"dca_reference","expected_tools":["index_valuation"]}
 {"case_id":"document_001","query":"读取https://sse.com.cn/example.pdf这份文档","expected_intent":"document_qa","expected_tools":[]}
+{"case_id":"web_001","query":"网页搜索一下最近的基金监管政策","expected_intent":"web_research","expected_tools":[]}

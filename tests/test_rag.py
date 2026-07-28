@@ -215,3 +215,59 @@ async def test_llm_retrieval_plan_is_constrained_by_code(test_config) -> None:
     assert plan.queries[0].doc_types == ["fund_prospectus"]
     assert all(item.limit == 8 for item in plan.queries)
     assert "RAG 的检索规划器" in fake.messages[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_explicit_web_intent_plans_only_web_channel(test_config) -> None:
+    config = test_config.model_copy(
+        update={
+            "rag": test_config.rag.model_copy(
+                update={
+                    "enabled": True,
+                    "web_enabled": True,
+                    "use_llm_agent": False,
+                }
+            ),
+            "web_research": test_config.web_research.model_copy(
+                update={"enabled": True, "api_key": "test-key"}
+            ),
+        }
+    )
+    service = RAGService(config)
+
+    plan = await service.plan(
+        question="网页搜索一下最近的基金监管政策",
+        intent="web_research",
+        entity_queries=["网页搜索一下最近的基金监管政策"],
+        round_number=1,
+    )
+
+    assert len(plan.queries) == 1
+    assert plan.queries[0].channel == RetrievalChannel.WEB
+
+
+@pytest.mark.asyncio
+async def test_explicit_web_intent_skips_when_provider_is_not_configured(
+    test_config,
+) -> None:
+    config = test_config.model_copy(
+        update={
+            "rag": test_config.rag.model_copy(
+                update={"enabled": True, "web_enabled": True}
+            ),
+            "web_research": test_config.web_research.model_copy(
+                update={"enabled": True, "api_key": ""}
+            ),
+        }
+    )
+    service = RAGService(config)
+
+    plan = await service.plan(
+        question="网页搜索一下最近的基金监管政策",
+        intent="web_research",
+        entity_queries=[],
+        round_number=1,
+    )
+
+    assert plan.queries == []
+    assert "未启用或未配置" in plan.reason
