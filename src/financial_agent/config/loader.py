@@ -24,7 +24,6 @@ from .schemas import (
     MCPConfig,
     ModelsConfig,
     ObservabilityConfig,
-    RAGConfig,
     RedisConfig,
     SecurityConfig,
     ServerConfig,
@@ -64,7 +63,6 @@ class AppConfig(BaseModel):
     web_research: WebResearchConfig = Field(default_factory=WebResearchConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     redis: RedisConfig = Field(default_factory=RedisConfig)
-    rag: RAGConfig = Field(default_factory=RAGConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
 

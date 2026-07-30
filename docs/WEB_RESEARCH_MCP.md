@@ -2,7 +2,7 @@
 
 ## 1. 目标
 
-`web-research-mcp` 为 Agent 和 Agentic RAG 提供统一的公网搜索与网页读取能力。
+`web-research-mcp` 为 Agent 提供统一的公网搜索、网页读取和官方文档读取能力。
 它与 `fund-advisor-mcp` 独立部署：
 
 ```text
@@ -68,6 +68,28 @@ brave → serpapi`，前一个供应商认证失败、限流、超额或上游�
 
 抓取前后都会执行 URL 和 DNS 校验，禁止本机、私网、保留地址、带用户凭证的 URL
 以及未授权域名。
+
+### `document_read`
+
+参数：
+
+```json
+{
+  "url": "https://www.sse.com.cn/example/prospectus.pdf",
+  "max_chars": 20000
+}
+```
+
+返回结构与 `web_fetch` 相同（请求/最终 URL、标题、正文、是否截断、正文 SHA-256），
+差异在于：
+
+- 在 `web_fetch` 支持的 HTML/纯文本/Markdown 之外，额外允许 `application/pdf`，
+  用 `pypdf` 抽取全部页面文本。
+- 面向用户明确给出的官方文档 URL（合同、招募说明书、指数编制方案等条款原文），
+  复用同一套 SSRF 校验和逐跳重定向。
+- 正文为空时返回 `DOCUMENT_EMPTY`，PDF 解析失败时返回 `DOCUMENT_PARSE_FAILED`。
+
+文档只提供条款文本，任何市场数值仍只能来自 `fund-advisor-mcp`。
 
 ## 3. 数据策略
 
@@ -155,10 +177,8 @@ web_research:
       api_key: "YOUR_BRAVE_API_KEY"
     serpapi:
       api_key: "YOUR_SERPAPI_API_KEY"
-
-rag:
-  enabled: true
-  web_enabled: true
+  # 非 Docker 直跑时还需显式启用
+  # enabled: true
 ```
 
 也可以只通过环境变量注入单个密钥（嵌套用 `__` 分隔）：
@@ -176,7 +196,7 @@ agent-api -> http://web-research-mcp:8002/mcp
 
 宿主机不会暴露 `8002`。
 
-## 6. Agent 与 RAG 的使用方式
+## 6. Agent 的使用方式
 
 Agent 显式问题：
 
@@ -184,6 +204,7 @@ Agent 显式问题：
 网页搜索一下最近的基金监管政策
 搜索股票 600519 的近期新闻
 查一下某项政策的背景和影响
+读一下这份招募说明书 https://www.sse.com.cn/example/prospectus.pdf
 ```
 
 会路由为：
@@ -191,15 +212,18 @@ Agent 显式问题：
 ```text
 intent=web_research
   -> 不调用金融工具
-  -> PLAN_RETRIEVAL
   -> web_search
-  -> web_fetch
-  -> ASSESS_SUFFICIENCY
-  -> WEB Evidence
+  -> 逐条 web_fetch
+  -> WEB Evidence（低置信度背景）
+
+intent=document_qa（问题含官方文档 URL）
+  -> 从原文提取 URL
+  -> document_read
+  -> 文档 Evidence（低置信度背景）
 ```
 
-基金研究问题如果同时包含新闻、政策或事件背景，Agentic RAG 可以在知识检索之外选择
-Web 通道，但市场数值仍只来自 `fund-advisor-mcp`。
+只有 `web_research` 和 `document_qa` 意图会触发本 MCP；其余意图只用市场工具事实。
+无论走哪个通道，市场数值仍只来自 `fund-advisor-mcp`，网页与文档内容只作定性背景。
 
 ## 7. 启动与验证
 
@@ -248,4 +272,6 @@ API readiness 应包含：
 | `WEB_FETCH_INVALID_REDIRECT` | 重定向响应缺少目标地址 |
 | `WEB_FETCH_TOO_MANY_REDIRECTS` | 重定向次数超过限制 |
 | `WEB_FETCH_TOO_LARGE` | 页面超过下载限制 |
-| `WEB_FETCH_UNSUPPORTED_CONTENT` | 不是 HTML/纯文本/Markdown |
+| `WEB_FETCH_UNSUPPORTED_CONTENT` | 不是 HTML/纯文本/Markdown（`document_read` 额外允许 PDF） |
+| `DOCUMENT_EMPTY` | 目标文档没有可抽取的正文 |
+| `DOCUMENT_PARSE_FAILED` | 无法解析 PDF 文档 |

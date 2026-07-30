@@ -85,7 +85,12 @@ Skill AdvisorError
 | `WEB_FETCH_INVALID_REDIRECT` | 重定向缺少目标地址 | 否 |
 | `WEB_FETCH_TOO_MANY_REDIRECTS` | 重定向超过三次 | 否 |
 | `WEB_FETCH_TOO_LARGE` | 页面超过下载限制 | 否 |
-| `WEB_FETCH_UNSUPPORTED_CONTENT` | 内容类型不受支持 | 否 |
+| `WEB_FETCH_UNSUPPORTED_CONTENT` | 内容类型不受支持（`document_read` 额外允许 PDF） | 否 |
+| `DOCUMENT_EMPTY` | 目标文档没有可抽取的正文 | 否 |
+| `DOCUMENT_PARSE_FAILED` | 无法解析 PDF 文档 | 否 |
+
+编排层调用 web-research MCP 获取外部背景失败时，记 `EXTERNAL_CONTEXT_FAILED`
+（category=`retrieval`，可重试）降级告警，保留已确认的工具事实，不阻断主流程。
 
 ## 5. 搜索与分析语义
 

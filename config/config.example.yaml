@@ -19,8 +19,6 @@ models:
   default: deepseek-flash
   # 生成报告等高质量场景使用的模型别名；留空则回退到 default
   report: ""
-  # Agentic RAG 规划和充分性判断模型；留空则回退到 default
-  rag: ""
 
   # 供应商凭证：真实 api_key 只写在 config.local.yaml 里
   providers:
@@ -132,31 +130,6 @@ redis:
   url: ""
   key_prefix: finagent
   default_ttl_seconds: 900
-
-# 三通道 Agentic RAG 默认关闭，完成文档摄取后按需启用。
-rag:
-  enabled: false
-  web_enabled: false
-  # 固定知识向量库（通道一）默认关闭：产品事实优先走实时 Skill 工具，
-  # 文档条款优先 JIT 读取用户给定 URL；确有官方语料索引时再开启。
-  knowledge_enabled: false
-  # 开启后由模型提出检索计划并判断充分性；异常时回退确定性策略
-  use_llm_agent: true
-  max_rounds: 3
-  max_queries_per_round: 2
-  max_chunks: 8
-  max_context_chars: 24000
-  embedding_model: BAAI/bge-m3
-  embedding_dimension: 1024
-  # OpenAI 兼容 Embedding API；留空时只可摄取不含向量的本地文本
-  embedding_api_base: ""
-  embedding_api_key: ""
-  # 例如 "mineru"；留空时 PDF 使用 pypdf 轻量回退
-  mineru_command: ""
-  elasticsearch_url: ""
-  elasticsearch_index: finagent-doc-chunks-v1
-  # 旧版兼容字段；新配置请使用 web_research.api_key
-  web_search_api_key: ""
 
 security:
   allowed_document_domains:

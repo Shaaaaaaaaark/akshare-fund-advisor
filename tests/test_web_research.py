@@ -1,29 +1,19 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import httpx
 import pytest
 
-from financial_agent.rag import MCPWebRetriever, RetrievalChannel, RetrievalRequest
 from financial_agent.web_research import (
     WebFetchData,
     WebResearchError,
     WebResearchService,
     WebSearchData,
-    WebSearchResult,
-    WebToolEnvelope,
-    WebToolName,
 )
-from financial_agent.web_research.schemas import WebAuditRecord
 
 
 def _web_config(test_config, **updates):
     return test_config.model_copy(
         update={
-            "rag": test_config.rag.model_copy(
-                update={"web_enabled": True}
-            ),
             "web_research": test_config.web_research.model_copy(
                 update={
                     "enabled": True,
@@ -169,97 +159,9 @@ async def test_web_fetch_validates_redirect_before_following(
     assert requested_urls == ["https://example.com/redirect"]
 
 
-@pytest.mark.asyncio
-async def test_rag_web_channel_uses_search_and_fetch_mcp(test_config) -> None:
-    now = datetime.now(timezone.utc)
-
-    class FakeWebClient:
-        def __init__(self) -> None:
-            self.calls = []
-
-        async def call(self, tool, arguments):
-            self.calls.append((tool, arguments))
-            if tool == "web_search":
-                return WebToolEnvelope(
-                    tool=WebToolName.WEB_SEARCH,
-                    ok=True,
-                    queried_at=now,
-                    data=WebSearchData(
-                        query=arguments["query"],
-                        provider="Brave Search",
-                        results=[
-                            WebSearchResult(
-                                rank=1,
-                                title="政策背景",
-                                url="https://example.com/policy",
-                                snippet="搜索摘要",
-                            )
-                        ],
-                    ),
-                    data_audit=[
-                        WebAuditRecord(
-                            operation=WebToolName.WEB_SEARCH,
-                            provider="Brave Search",
-                            request={"query": arguments["query"]},
-                            validation="passed",
-                            response_sha256="search-hash",
-                            result_count=1,
-                        )
-                    ],
-                )
-            return WebToolEnvelope(
-                tool=WebToolName.WEB_FETCH,
-                ok=True,
-                queried_at=now,
-                data=WebFetchData(
-                    requested_url=arguments["url"],
-                    final_url=arguments["url"],
-                    title="政策背景",
-                    content="抓取后的政策背景正文。",
-                    content_type="text/html",
-                    truncated=False,
-                    content_sha256="fetch-hash",
-                ),
-                data_audit=[
-                    WebAuditRecord(
-                        operation=WebToolName.WEB_FETCH,
-                        provider="Public Web",
-                        request={"url": arguments["url"]},
-                        validation="passed",
-                        response_sha256="fetch-hash",
-                        result_count=1,
-                    )
-                ],
-            )
-
-        async def healthcheck(self):
-            return True
-
-    fake = FakeWebClient()
-    retriever = MCPWebRetriever(
-        _web_config(test_config),
-        client=fake,
-    )
-
-    hits = await retriever.retrieve(
-        RetrievalRequest(
-            question="近期监管政策背景",
-            channel=RetrievalChannel.WEB,
-            limit=3,
-        )
-    )
-
-    assert [item[0] for item in fake.calls] == ["web_search", "web_fetch"]
-    assert hits[0].text == "抓取后的政策背景正文。"
-    assert hits[0].metadata["numeric_allowed"] is False
-    assert hits[0].metadata["search_audit_hashes"] == ["search-hash"]
-    assert hits[0].metadata["fetch_audit_hashes"] == ["fetch-hash"]
-
-
 def _chain_config(test_config, chain, providers):
     return test_config.model_copy(
         update={
-            "rag": test_config.rag.model_copy(update={"web_enabled": True}),
             "web_research": test_config.web_research.model_copy(
                 update={
                     "enabled": True,
@@ -565,5 +467,105 @@ async def test_search_returns_empty_without_falling_back(test_config) -> None:
     assert envelope.ok
     assert envelope.data.results == []
     assert called_hosts == ["google.serper.dev"]
+
+
+@pytest.mark.asyncio
+async def test_document_read_extracts_html_body(
+    test_config,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """document_read 读取 HTML 官方文档，正文清洗且标记 numeric_allowed=false。"""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html; charset=utf-8"},
+            text=(
+                "<html><head><title>基金合同</title></head>"
+                "<body><nav>导航</nav>"
+                "<article>本基金的申购赎回条款如下所述。</article>"
+                "<script>track()</script></body></html>"
+            ),
+        )
+
+    service = WebResearchService(
+        _web_config(test_config),
+        transport=httpx.MockTransport(handler),
+    )
+
+    async def allow_url(_url: str) -> None:
+        return None
+
+    monkeypatch.setattr(service, "_validate_public_url", allow_url)
+    envelope = await service.document_read(
+        url="https://sse.com.cn/contract.html",
+        max_chars=5000,
+    )
+
+    assert envelope.ok
+    assert isinstance(envelope.data, WebFetchData)
+    assert envelope.data.title == "基金合同"
+    assert "申购赎回条款" in envelope.data.content
+    assert "track" not in envelope.data.content
+    assert "导航" not in envelope.data.content
+    assert envelope.data_policy.numeric_allowed is False
+    assert envelope.data_audit[0].operation.value == "document_read"
+    assert envelope.data_audit[0].response_sha256
+
+
+@pytest.mark.asyncio
+async def test_document_read_accepts_pdf_content(
+    test_config,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PDF 是 document_read 相对 web_fetch 的关键差异：允许 application/pdf。"""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/pdf"},
+            content=b"%PDF-1.4 fake bytes",
+        )
+
+    service = WebResearchService(
+        _web_config(test_config),
+        transport=httpx.MockTransport(handler),
+    )
+
+    async def allow_url(_url: str) -> None:
+        return None
+
+    monkeypatch.setattr(service, "_validate_public_url", allow_url)
+    # 用桩替换真实 pypdf 解析，保持测试无外部依赖。
+    monkeypatch.setattr(
+        "financial_agent.web_research.service._extract_pdf_text",
+        lambda _content: "招募说明书 PDF 正文段落。",
+    )
+
+    envelope = await service.document_read(
+        url="https://sse.com.cn/prospectus.pdf",
+        max_chars=5000,
+    )
+
+    assert envelope.ok
+    assert isinstance(envelope.data, WebFetchData)
+    assert envelope.data.content_type == "application/pdf"
+    assert "招募说明书" in envelope.data.content
+
+
+@pytest.mark.asyncio
+async def test_document_read_rejects_private_address(test_config) -> None:
+    """document_read 复用 SSRF 校验，私网地址必须被拦截。"""
+    service = WebResearchService(_web_config(test_config))
+
+    envelope = await service.document_read(
+        url="http://127.0.0.1/internal.pdf",
+        max_chars=5000,
+    )
+
+    assert not envelope.ok
+    assert envelope.error is not None
+    assert envelope.error.code == "WEB_FETCH_PRIVATE_ADDRESS"
+    assert envelope.data is None
 
 

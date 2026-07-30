@@ -36,6 +36,8 @@ class InProcessWebResearchClient:
             return await self._service.web_search(**arguments)
         if tool == "web_fetch":
             return await self._service.web_fetch(**arguments)
+        if tool == "document_read":
+            return await self._service.document_read(**arguments)
         raise ValueError(f"未注册的网页研究工具：{tool}")
 
     async def healthcheck(self) -> bool:
@@ -83,6 +85,7 @@ class StdioWebResearchClient:
             return {item.name for item in tools.tools} == {
                 "web_search",
                 "web_fetch",
+                "document_read",
             }
         except Exception:
             return False
@@ -122,6 +125,7 @@ class HTTPWebResearchClient:
             return {item.name for item in tools.tools} == {
                 "web_search",
                 "web_fetch",
+                "document_read",
             }
         except Exception:
             return False

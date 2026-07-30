@@ -45,7 +45,6 @@ class ModelsConfig(BaseModel):
 
     default: str = Field(..., description="默认模型别名")
     report: str = Field("", description="报告场景模型别名；空则回退 default")
-    rag: str = Field("", description="RAG 规划和充分性判断模型别名；空则回退 default")
     providers: Dict[str, ProviderConfig]
     registry: Dict[str, ModelEntry]
     litellm: LiteLLMConfig = Field(default_factory=LiteLLMConfig)
@@ -67,10 +66,6 @@ class ModelsConfig(BaseModel):
     def report_alias(self) -> str:
         """报告场景的模型别名：配置了 report 就用它，否则用 default。"""
         return self.report or self.default
-
-    def rag_alias(self) -> str:
-        """RAG 场景的模型别名：配置了 rag 就用它，否则用 default。"""
-        return self.rag or self.default
 
 
 class ObservabilityConfig(BaseModel):
@@ -233,29 +228,6 @@ class RedisConfig(BaseModel):
     url: str = ""
     key_prefix: str = "finagent"
     default_ttl_seconds: int = Field(default=900, ge=1)
-
-
-class RAGConfig(BaseModel):
-    """Bounded Agentic RAG settings."""
-
-    enabled: bool = False
-    web_enabled: bool = False
-    # 固定知识向量库（通道一）默认关闭：金融产品事实优先走实时 Skill 工具，
-    # 文档条款优先 JIT 读取用户给定 URL。仅在确有官方语料需要时才开启。
-    knowledge_enabled: bool = False
-    use_llm_agent: bool = True
-    max_rounds: int = Field(default=3, ge=1, le=5)
-    max_queries_per_round: int = Field(default=2, ge=1, le=5)
-    max_chunks: int = Field(default=8, ge=1, le=20)
-    max_context_chars: int = Field(default=24000, ge=1000, le=100000)
-    embedding_model: str = "BAAI/bge-m3"
-    embedding_dimension: int = Field(default=1024, ge=1)
-    embedding_api_base: str = ""
-    embedding_api_key: str = ""
-    mineru_command: str = ""
-    elasticsearch_url: str = ""
-    elasticsearch_index: str = "finagent-doc-chunks-v1"
-    web_search_api_key: str = ""
 
 
 class SecurityConfig(BaseModel):

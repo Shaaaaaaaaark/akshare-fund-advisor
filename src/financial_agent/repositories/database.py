@@ -7,15 +7,11 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
-    Boolean,
-    Date,
     DateTime,
     ForeignKey,
     Index,
-    Integer,
     String,
     Text,
     create_engine,
@@ -29,7 +25,6 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from financial_agent.config import AppConfig, get_config
 
 JSON_TYPE = JSON().with_variant(JSONB(), "postgresql")
-VECTOR_TYPE = Vector(1024).with_variant(JSON(), "sqlite")
 
 
 def _conversation_title(query: str, maximum: int = 24) -> str:
@@ -110,71 +105,7 @@ class UserStateRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
-class DocumentSourceRow(Base):
-    __tablename__ = "document_sources"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    source_url: Mapped[str] = mapped_column(Text, unique=True)
-    source_domain: Mapped[str] = mapped_column(String(255), index=True)
-    trust_tier: Mapped[str] = mapped_column(String(32), index=True)
-    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-
-
-class DocumentVersionRow(Base):
-    __tablename__ = "document_versions"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    source_id: Mapped[str] = mapped_column(
-        ForeignKey("document_sources.id"),
-        index=True,
-    )
-    title: Mapped[str] = mapped_column(Text)
-    doc_type: Mapped[str] = mapped_column(String(64), index=True)
-    subject_code: Mapped[str | None] = mapped_column(String(64), index=True)
-    content_sha256: Mapped[str] = mapped_column(String(64), index=True)
-    version: Mapped[str] = mapped_column(String(128))
-    publish_date: Mapped[Any | None] = mapped_column(Date)
-    effective_date: Mapped[Any | None] = mapped_column(Date)
-    status: Mapped[str] = mapped_column(String(32), index=True)
-    is_current: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-
-
-class DocumentChunkRow(Base):
-    __tablename__ = "document_chunks"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    document_version_id: Mapped[str] = mapped_column(
-        ForeignKey("document_versions.id"),
-        index=True,
-    )
-    chunk_index: Mapped[int] = mapped_column(Integer)
-    page_start: Mapped[int | None] = mapped_column(Integer)
-    page_end: Mapped[int | None] = mapped_column(Integer)
-    section_path: Mapped[list[str]] = mapped_column(JSON_TYPE)
-    content: Mapped[str] = mapped_column(Text)
-    content_sha256: Mapped[str] = mapped_column(String(64), index=True)
-    embedding_model: Mapped[str] = mapped_column(String(255))
-    embedding: Mapped[list[float] | None] = mapped_column(VECTOR_TYPE)
-    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-
-
 Index("ix_evidence_subject_field", EvidenceRow.subject_id, EvidenceRow.field)
-Index(
-    "ix_document_versions_current_subject",
-    DocumentVersionRow.is_current,
-    DocumentVersionRow.subject_code,
-    DocumentVersionRow.doc_type,
-)
-Index(
-    "ux_document_chunk_version_index",
-    DocumentChunkRow.document_version_id,
-    DocumentChunkRow.chunk_index,
-    unique=True,
-)
 
 
 class SQLRepository:
@@ -193,9 +124,6 @@ class SQLRepository:
 
     def initialize(self) -> None:
         if self._config.storage.create_schema:
-            if self.engine.dialect.name == "postgresql":
-                with self.engine.begin() as connection:
-                    connection.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS vector")
             Base.metadata.create_all(self.engine)
 
     def healthcheck(self) -> bool:
@@ -499,169 +427,6 @@ class SQLRepository:
                 "risk_profile": row.risk_profile,
                 "portfolio": row.portfolio,
             }
-
-    def publish_document(
-        self,
-        *,
-        source: dict[str, Any],
-        version: dict[str, Any],
-        chunks: list[dict[str, Any]],
-        now: datetime,
-    ) -> None:
-        """Atomically publish a complete document version and its chunks."""
-        with Session(self.engine) as session, session.begin():
-            source_row = session.get(DocumentSourceRow, str(source["id"]))
-            if source_row is None:
-                source_row = DocumentSourceRow(
-                    id=str(source["id"]),
-                    source_url=str(source["source_url"]),
-                    source_domain=str(source["source_domain"]),
-                    trust_tier=str(source.get("trust_tier", "official")),
-                    enabled=True,
-                    created_at=now,
-                )
-                session.add(source_row)
-
-            current_versions = session.scalars(
-                select(DocumentVersionRow).where(
-                    DocumentVersionRow.source_id == source_row.id,
-                    DocumentVersionRow.is_current.is_(True),
-                )
-            ).all()
-            for current in current_versions:
-                current.is_current = False
-
-            version_row = DocumentVersionRow(
-                id=str(version["id"]),
-                source_id=source_row.id,
-                title=str(version["title"]),
-                doc_type=str(version["doc_type"]),
-                subject_code=version.get("subject_code"),
-                content_sha256=str(version["content_sha256"]),
-                version=str(version["version"]),
-                publish_date=version.get("publish_date"),
-                effective_date=version.get("effective_date"),
-                status="PUBLISHED",
-                is_current=True,
-                metadata_json=dict(version.get("metadata", {})),
-                created_at=now,
-            )
-            session.add(version_row)
-            for item in chunks:
-                session.add(
-                    DocumentChunkRow(
-                        id=str(item["id"]),
-                        document_version_id=version_row.id,
-                        chunk_index=int(item["chunk_index"]),
-                        page_start=item.get("page_start"),
-                        page_end=item.get("page_end"),
-                        section_path=list(item.get("section_path", [])),
-                        content=str(item["content"]),
-                        content_sha256=str(item["content_sha256"]),
-                        embedding_model=str(item["embedding_model"]),
-                        embedding=item.get("embedding"),
-                        metadata_json=dict(item.get("metadata", {})),
-                        created_at=now,
-                    )
-                )
-
-    def semantic_search(
-        self,
-        *,
-        query_embedding: list[float],
-        subject_code: str | None,
-        doc_types: list[str],
-        limit: int,
-    ) -> list[dict[str, Any]]:
-        if self.engine.dialect.name != "postgresql":
-            return []
-        distance = DocumentChunkRow.embedding.cosine_distance(query_embedding)
-        statement = (
-            select(
-                DocumentChunkRow,
-                DocumentVersionRow,
-                DocumentSourceRow,
-                distance.label("distance"),
-            )
-            .join(
-                DocumentVersionRow,
-                DocumentVersionRow.id == DocumentChunkRow.document_version_id,
-            )
-            .join(
-                DocumentSourceRow,
-                DocumentSourceRow.id == DocumentVersionRow.source_id,
-            )
-            .where(
-                DocumentVersionRow.is_current.is_(True),
-                DocumentVersionRow.status == "PUBLISHED",
-                DocumentSourceRow.enabled.is_(True),
-                DocumentChunkRow.embedding.is_not(None),
-            )
-        )
-        if subject_code:
-            statement = statement.where(DocumentVersionRow.subject_code == subject_code)
-        if doc_types:
-            statement = statement.where(DocumentVersionRow.doc_type.in_(doc_types))
-        statement = statement.order_by(distance).limit(limit)
-
-        with Session(self.engine) as session:
-            rows = session.execute(statement).all()
-            return [
-                {
-                    "chunk_id": chunk.id,
-                    "title": version.title,
-                    "url": source.source_url,
-                    "text": chunk.content,
-                    "score": max(0.0, 1.0 - float(distance_value)),
-                    "page": chunk.page_start,
-                    "version": version.version,
-                    "subject_code": version.subject_code,
-                    "doc_type": version.doc_type,
-                    "metadata": {
-                        **chunk.metadata_json,
-                        "section_path": chunk.section_path,
-                        "document_version_id": version.id,
-                    },
-                }
-                for chunk, version, source, distance_value in rows
-            ]
-
-    def list_current_chunks(self) -> list[dict[str, Any]]:
-        """Return authoritative chunks for rebuilding Elasticsearch."""
-        statement = (
-            select(DocumentChunkRow, DocumentVersionRow, DocumentSourceRow)
-            .join(
-                DocumentVersionRow,
-                DocumentVersionRow.id == DocumentChunkRow.document_version_id,
-            )
-            .join(
-                DocumentSourceRow,
-                DocumentSourceRow.id == DocumentVersionRow.source_id,
-            )
-            .where(
-                DocumentVersionRow.is_current.is_(True),
-                DocumentVersionRow.status == "PUBLISHED",
-                DocumentSourceRow.enabled.is_(True),
-            )
-        )
-        with Session(self.engine) as session:
-            rows = session.execute(statement).all()
-            return [
-                {
-                    "chunk_id": chunk.id,
-                    "title": version.title,
-                    "content": chunk.content,
-                    "source_url": source.source_url,
-                    "subject_code": version.subject_code,
-                    "doc_type": version.doc_type,
-                    "document_version_id": version.id,
-                    "version": version.version,
-                    "page_start": chunk.page_start,
-                    "page_end": chunk.page_end,
-                    "section_path": chunk.section_path,
-                }
-                for chunk, version, source in rows
-            ]
 
     def _upsert_user_state(
         self,

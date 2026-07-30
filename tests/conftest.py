@@ -153,7 +153,6 @@ def test_config(tmp_path: Path) -> AppConfig:
                     "document_dir": str(tmp_path / "documents"),
                 }
             ),
-            "rag": config.rag.model_copy(update={"enabled": False}),
             "mcp": config.mcp.model_copy(update={"transport": "inprocess"}),
             "agent": config.agent.model_copy(
                 update={

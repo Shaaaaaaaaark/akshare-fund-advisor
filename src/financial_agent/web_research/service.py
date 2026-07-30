@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import io
 import ipaddress
 import json
 import logging
@@ -18,6 +19,7 @@ from bs4 import BeautifulSoup
 from financial_agent.config import AppConfig, get_config
 
 from .schemas import (
+    DocumentReadInput,
     WebAuditRecord,
     WebFetchData,
     WebFetchInput,
@@ -65,18 +67,6 @@ class WebResearchService:
     ) -> None:
         self._config = config or get_config()
         self._settings = self._config.web_research
-        if (
-            not self._settings.api_key
-            and not self._settings.providers
-            and self._config.rag.web_search_api_key
-        ):
-            # 兼容最早的单字段配置：rag.web_search_api_key -> brave。
-            self._settings = self._settings.model_copy(
-                update={
-                    "api_key": self._config.rag.web_search_api_key,
-                    "enabled": True,
-                }
-            )
         self._transport = transport
 
     async def web_search(self, **kwargs: Any) -> WebToolEnvelope:
@@ -153,6 +143,44 @@ class WebResearchService:
             )
         except Exception as exc:
             return self._error_envelope(WebToolName.WEB_FETCH, exc, now)
+
+    async def document_read(self, **kwargs: Any) -> WebToolEnvelope:
+        """读取用户给定的官方文档 URL，支持 HTML/纯文本/PDF。
+
+        与 web_fetch 共享 SSRF 校验和逐跳重定向；额外支持 PDF 正文抽取。
+        返回的正文固定 numeric_allowed=false：文档只提供条款文本，任何市场
+        数值仍只能来自 AKShare 工具。
+        """
+        request = DocumentReadInput.model_validate(kwargs)
+        now = datetime.now(timezone.utc)
+        try:
+            self._ensure_enabled()
+            data = await self._read_document(
+                str(request.url),
+                min(request.max_chars, self._settings.max_content_chars),
+            )
+            return WebToolEnvelope(
+                tool=WebToolName.DOCUMENT_READ,
+                ok=True,
+                data=data,
+                sources=[{"provider": "Official Document", "url": data.final_url}],
+                data_audit=[
+                    WebAuditRecord(
+                        operation=WebToolName.DOCUMENT_READ,
+                        provider="Official Document",
+                        request={
+                            "url": str(request.url),
+                            "max_chars": request.max_chars,
+                        },
+                        validation="passed",
+                        response_sha256=data.content_sha256,
+                        result_count=1,
+                    )
+                ],
+                queried_at=now,
+            )
+        except Exception as exc:
+            return self._error_envelope(WebToolName.DOCUMENT_READ, exc, now)
 
     async def _search_chain(
         self,
@@ -541,10 +569,78 @@ class WebResearchService:
             content_sha256=hashlib.sha256(selected.encode("utf-8")).hexdigest(),
         )
 
+    async def _read_document(
+        self,
+        requested_url: str,
+        max_chars: int,
+    ) -> WebFetchData:
+        timeout = httpx.Timeout(
+            self._settings.timeout_seconds,
+            connect=min(self._settings.timeout_seconds, 10),
+        )
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            follow_redirects=False,
+            headers={"User-Agent": "FinancialResearchAgent/0.1"},
+            transport=self._transport,
+        ) as client:
+            final_url, content_type, content = await self._fetch_with_redirects(
+                client,
+                requested_url,
+                allowed_content=(
+                    "text/html",
+                    "text/plain",
+                    "text/markdown",
+                    "application/pdf",
+                ),
+            )
+
+        if "pdf" in content_type or final_url.lower().endswith(".pdf"):
+            text = await asyncio.to_thread(_extract_pdf_text, content)
+            title = final_url.rsplit("/", 1)[-1] or "PDF 文档"
+        elif "html" in content_type:
+            soup = BeautifulSoup(content.decode("utf-8", errors="replace"), "html.parser")
+            for element in soup(["script", "style", "noscript", "form", "nav", "footer"]):
+                element.decompose()
+            title = (
+                soup.title.get_text(" ", strip=True)
+                if soup.title
+                else urlparse(final_url).netloc
+            )
+            text = soup.get_text("\n", strip=True)
+        else:
+            title = urlparse(final_url).path.rsplit("/", 1)[-1] or "指定文档"
+            text = content.decode("utf-8", errors="replace").strip()
+
+        normalized = _normalize_text(text)
+        truncated = len(normalized) > max_chars
+        selected = normalized[:max_chars]
+        if not selected:
+            raise WebResearchError(
+                "DOCUMENT_EMPTY",
+                "目标文档没有可抽取的正文",
+                details={"final_url": final_url},
+            )
+        return WebFetchData(
+            requested_url=requested_url,
+            final_url=final_url,
+            title=title[:500],
+            content=selected,
+            content_type=content_type.split(";", 1)[0],
+            truncated=truncated,
+            content_sha256=hashlib.sha256(selected.encode("utf-8")).hexdigest(),
+        )
+
     async def _fetch_with_redirects(
         self,
         client: httpx.AsyncClient,
         requested_url: str,
+        *,
+        allowed_content: tuple[str, ...] = (
+            "text/html",
+            "text/plain",
+            "text/markdown",
+        ),
     ) -> tuple[str, str, bytes]:
         current_url = requested_url
         for redirect_count in range(4):
@@ -591,13 +687,10 @@ class WebResearchService:
                     "content-type",
                     "",
                 ).lower()
-                if not any(
-                    marker in content_type
-                    for marker in ("text/html", "text/plain", "text/markdown")
-                ):
+                if not any(marker in content_type for marker in allowed_content):
                     raise WebResearchError(
                         "WEB_FETCH_UNSUPPORTED_CONTENT",
-                        "网页抓取仅支持 HTML、纯文本和 Markdown",
+                        "目标内容类型不受支持",
                         details={"content_type": content_type or "unknown"},
                     )
                 content = await self._read_limited(response)
@@ -753,3 +846,18 @@ def _optional_text(value: Any) -> str | None:
 def _normalize_text(value: str) -> str:
     lines = [" ".join(line.split()) for line in value.splitlines()]
     return "\n".join(line for line in lines if line)
+
+
+def _extract_pdf_text(content: bytes) -> str:
+    """抽取 PDF 全部页面的文本；解析失败时抛出可控错误。"""
+    from pypdf import PdfReader
+
+    try:
+        reader = PdfReader(io.BytesIO(content))
+        return "\n".join(page.extract_text() or "" for page in reader.pages)
+    except Exception as exc:  # noqa: BLE001 - 统一转成可控错误
+        raise WebResearchError(
+            "DOCUMENT_PARSE_FAILED",
+            "无法解析 PDF 文档",
+            details={"reason": str(exc)},
+        ) from exc

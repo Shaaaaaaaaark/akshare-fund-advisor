@@ -25,11 +25,7 @@ class AgentState(TypedDict, total=False):
     user_context: dict[str, Any]
     tool_plan: list[dict[str, Any]]
     tool_results: list[dict[str, Any]]
-    retrieval_round: int
-    retrieval_plan: dict[str, Any]
-    retrieval_assessment: dict[str, Any]
-    retrieval_trace: list[dict[str, Any]]
-    retrieval_results: list[dict[str, Any]]
+    external_context: list[dict[str, Any]]
 
     evidence: list[dict[str, Any]]
     gate_decision: dict[str, Any]

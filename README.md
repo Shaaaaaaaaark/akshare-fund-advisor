@@ -2,7 +2,7 @@
 
 面向个人使用和 GitHub 开源的基金与指数投资研究 Agent。项目采用 Docker Compose 统一运行，核心原则是：市场数据只来自可审计工具，金融计算由确定性代码完成，大模型负责受控编排与解释。
 
-当前已打通 `API -> LangGraph -> MCP -> AKShare Skill -> Evidence -> Claim -> Report` 主链路，并实现三通道 RAG、用户画像、组合计算、持久化、缓存、可观测性和 Docker Compose。
+当前已打通 `API -> LangGraph -> MCP -> AKShare Skill -> Evidence -> Claim -> Report` 主链路，并实现独立网页研究 MCP、用户画像、组合计算、持久化、缓存、可观测性和 Docker Compose。产品形态收敛为 **Agent + 两个 MCP（fund-advisor 市场事实 / web-research 外部内容）+ Skill**，不使用固定知识库和向量检索。
 
 ## Web 界面
 
@@ -42,9 +42,6 @@ API 启动后访问 `http://127.0.0.1:8000/`，即可使用内置的轻量研究
 │       ├── mcp_client/                # inprocess/stdio/http MCP 客户端
 │       ├── mcp_server/                # 九个强类型 MCP 工具
 │       ├── evidence/                  # Evidence/Claim 与证据门禁
-│       ├── rag/
-│       │   ├── ingestion/             # 官方文档摄取
-│       │   └── retrieval/             # 混合检索与引用
 │       ├── web_research/               # 独立网页研究 MCP 与客户端
 │       ├── portfolio/                 # 用户画像与组合计算
 │       ├── policies/                  # 适当性与合规规则
@@ -69,13 +66,13 @@ API 启动后访问 `http://127.0.0.1:8000/`，即可使用内置的轻量研究
 
 - AKShare Skill：基金搜索/状态/分析、指数与个股 PE/PB、价格曲线、比较和接口审计。
 - MCP：九个基金、指数与个股工具（搜索、状态、分析、档案、评级、指数估值、个股估值、比较、接口审计），支持 `inprocess`、`stdio`、Streamable HTTP 三种传输。
-- Web Research MCP：独立提供 `web_search` 和 `web_fetch`，RAG 与其他 Agent 可共用。
+- Web Research MCP：独立提供 `web_search`、`web_fetch` 和 `document_read`（读取用户给定 URL 的 HTML/文本/PDF 原文），其他 Agent 可共用。
 - LangGraph：固定状态图、工具白名单、实体歧义追问和 A-E 证据等级。
 - 反幻觉：金融数字按 `ToolEnvelope -> Evidence -> Claim -> Renderer` 流转，最终响应再次校验。
 - LiteLLM：可选意图分类和报告叙述；模型输出越界时回退确定性模板。
 - Prompt：集中版本管理、结构化输出约束和契约测试，业务节点不使用内联 system prompt。
-- Agentic RAG：LangGraph 显式执行检索规划、三通道检索、充分性判断和最多三轮缺口重查；简单市场问题通过 JIT 跳过文档检索。产品事实（费率、资产配置、评级等）优先走实时 Skill 工具，固定知识向量库（通道一）默认关闭，条款类问题走 JIT 读原文或诚实拒答。
-- 存储：PostgreSQL + pgvector、Redis 和 Elasticsearch 容器化部署。
+- 外部背景：仅网页研究/读文档意图触发 web-research MCP，命中统一标记为低置信度、`numeric_allowed=false`，不能覆盖市场数值；产品事实（费率、资产配置、评级等）走实时 Skill 工具，条款类问题走 JIT 读原文或诚实拒答。
+- 存储：PostgreSQL、Redis 和 Elasticsearch 容器化部署（Elasticsearch 仅用于审计与报告检索）。
 - 用户服务：风险画像、持仓存储、Decimal 组合计算和模型输入脱敏。
 - 会话记忆：仅从当前 `conversation_id` 的历史 Task/Report 构造上下文。
 
@@ -146,29 +143,9 @@ docker compose -f deploy/compose/compose.yaml \
 
 数据库迁移由 `migrate` 容器在启动时自动执行。
 
-## 文档摄取
+## 读取官方文档
 
-先将文档复制到容器持久卷：
-
-```bash
-docker compose -f deploy/compose/compose.yaml \
-  cp ./document.pdf agent-api:/app/data/documents/document.pdf
-```
-
-再在 API 容器中摄取；未配置 Embedding API 时使用 `--without-embeddings`：
-
-```bash
-docker compose -f deploy/compose/compose.yaml exec agent-api \
-  python scripts/ingest_document.py /app/data/documents/document.pdf \
-  --source-url 'https://www.sse.com.cn/example/document.pdf' \
-  --title '基金招募说明书' \
-  --doc-type fund_prospectus \
-  --version 2026-01 \
-  --subject-code 000001 \
-  --without-embeddings
-```
-
-配置 `rag.embedding_api_base` 和 BGE-M3 后移除 `--without-embeddings`，分块向量会写入 pgvector。
+本项目不预建知识库，也不做文档摄取。需要解释基金合同、招募说明书、指数编制方案等条款时，直接在提问中给出官方文档 URL：web-research MCP 的 `document_read` 工具会实时读取该 URL 的 HTML/纯文本/PDF 原文（复用 SSRF 校验和逐跳重定向），转成低置信度背景证据供报告引用。任何市场数值仍只能来自 AKShare 工具，文档只提供条款文本。
 
 ## 文档
 

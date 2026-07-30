@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from datetime import datetime
 from typing import Any, Callable
 from uuid import UUID, uuid4
@@ -38,11 +39,12 @@ from financial_agent.mcp_server.schemas import ToolEnvelope
 from financial_agent.models import ReportNarrator, get_llm_client
 from financial_agent.policies import SuitabilityDecision, check_suitability
 from financial_agent.prompts import PROMPT_VERSIONS
-from financial_agent.rag import (
-    DocumentHit,
-    RAGService,
-    RetrievalAssessment,
-    RetrievalPlan,
+from financial_agent.web_research import (
+    WebFetchData,
+    WebResearchClient,
+    WebSearchData,
+    WebToolEnvelope,
+    build_web_research_client,
 )
 
 from .intent import IntentClassifier, contextualize_query, detect_policy_violation
@@ -52,6 +54,10 @@ from .state import AgentState
 logger = logging.getLogger("financial_agent.orchestration")
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
+# 需要外部网页/文档背景的意图；其余意图只用市场工具事实。
+_EXTERNAL_CONTEXT_INTENTS = {Intent.WEB_RESEARCH, Intent.DOCUMENT_QA}
+_URL_RE = re.compile(r"https?://\S+")
+
 
 class FinancialAgentGraph:
     def __init__(
@@ -60,7 +66,7 @@ class FinancialAgentGraph:
         *,
         tool_client: FundToolClient | None = None,
         classifier: IntentClassifier | None = None,
-        rag: RAGService | None = None,
+        web_client: WebResearchClient | None = None,
         gate: EvidenceGate | None = None,
         response_validator: ResponseValidator | None = None,
         user_context_loader: Callable[[], dict[str, Any]] | None = None,
@@ -78,7 +84,11 @@ class FinancialAgentGraph:
             if self.config.agent.use_llm_for_report and llm is not None
             else None
         )
-        self.rag = rag or RAGService(self.config)
+        self.web_client = web_client or (
+            build_web_research_client(self.config)
+            if self.config.web_research.enabled
+            else None
+        )
         self.gate = gate or EvidenceGate()
         self.response_validator = response_validator or ResponseValidator()
         self.user_context_loader = user_context_loader
@@ -91,9 +101,7 @@ class FinancialAgentGraph:
         builder.add_node("load_user_context", self._load_user_context)
         builder.add_node("plan_tools", self._plan_tools)
         builder.add_node("collect_tool_facts", self._collect_tool_facts)
-        builder.add_node("plan_retrieval", self._plan_retrieval)
-        builder.add_node("retrieve_documents", self._retrieve_documents)
-        builder.add_node("assess_retrieval", self._assess_retrieval)
+        builder.add_node("gather_external_context", self._gather_external_context)
         builder.add_node("build_evidence", self._build_evidence)
         builder.add_node("validate_evidence", self._validate_evidence)
         builder.add_node("check_suitability", self._check_suitability)
@@ -119,26 +127,10 @@ class FinancialAgentGraph:
             self._route_after_tools,
             {
                 "clarify": "need_clarification",
-                "continue": "plan_retrieval",
+                "continue": "gather_external_context",
             },
         )
-        builder.add_conditional_edges(
-            "plan_retrieval",
-            self._route_after_retrieval_plan,
-            {
-                "retrieve": "retrieve_documents",
-                "complete": "build_evidence",
-            },
-        )
-        builder.add_edge("retrieve_documents", "assess_retrieval")
-        builder.add_conditional_edges(
-            "assess_retrieval",
-            self._route_after_retrieval_assessment,
-            {
-                "retry": "plan_retrieval",
-                "complete": "build_evidence",
-            },
-        )
+        builder.add_edge("gather_external_context", "build_evidence")
         builder.add_edge("build_evidence", "validate_evidence")
         builder.add_edge("validate_evidence", "check_suitability")
         builder.add_edge("check_suitability", "build_claims")
@@ -169,11 +161,7 @@ class FinancialAgentGraph:
             "warnings": [],
             "errors": [],
             "tool_results": [],
-            "retrieval_round": 0,
-            "retrieval_plan": {},
-            "retrieval_assessment": {},
-            "retrieval_trace": [],
-            "retrieval_results": [],
+            "external_context": [],
             "evidence": [],
             "claims": [],
         }
@@ -306,160 +294,108 @@ class FinancialAgentGraph:
     def _route_after_tools(state: AgentState) -> str:
         return "clarify" if state.get("clarification") else "continue"
 
-    async def _plan_retrieval(self, state: AgentState) -> dict[str, Any]:
-        round_number = state.get("retrieval_round", 0) + 1
-        previous_assessment = (
-            RetrievalAssessment.model_validate(state["retrieval_assessment"])
-            if state.get("retrieval_assessment")
-            else None
-        )
-        previous_queries = [
-            str(query.get("query"))
-            for entry in state.get("retrieval_trace", [])
-            for query in (entry.get("plan") or {}).get("queries", [])
-            if query.get("query")
-        ]
-        try:
-            plan = await self.rag.plan(
-                question=state.get("resolved_query") or state["user_query"],
-                intent=state["intent"],
-                entity_queries=[
-                    item["query"] for item in state.get("entities", [])
-                ],
-                round_number=round_number,
-                previous_queries=previous_queries,
-                previous_hits=[
-                    DocumentHit.model_validate(item)
-                    for item in state.get("retrieval_results", [])
-                ],
-                previous_assessment=previous_assessment,
-            )
-        except Exception as exc:
-            logger.warning("RAG planning failed: %s", exc)
-            plan = RetrievalPlan(
-                round_number=round_number,
-                reason="检索规划失败，本次跳过文档检索",
-            )
-        trace = [
-            *state.get("retrieval_trace", []),
-            {
-                "round_number": round_number,
-                "plan": plan.model_dump(mode="json"),
-            },
-        ]
-        return {
-            "retrieval_round": round_number,
-            "retrieval_plan": plan.model_dump(mode="json"),
-            "retrieval_trace": trace,
-        }
+    async def _gather_external_context(self, state: AgentState) -> dict[str, Any]:
+        """仅对网页研究/读文档意图调用 web-research MCP 获取非数值背景。
 
-    @staticmethod
-    def _route_after_retrieval_plan(state: AgentState) -> str:
-        return "retrieve" if (state.get("retrieval_plan") or {}).get("queries") else "complete"
+        其余意图直接跳过——市场事实全部来自 fund-advisor 工具。网页/文档命中
+        统一标记为低置信度、numeric_allowed=false，不能覆盖市场数值。
+        """
+        intent = Intent(state["intent"])
+        if intent not in _EXTERNAL_CONTEXT_INTENTS or self.web_client is None:
+            return {"external_context": []}
 
-    async def _retrieve_documents(self, state: AgentState) -> dict[str, Any]:
-        plan = RetrievalPlan.model_validate(state["retrieval_plan"])
-        round_hits, query_errors = await self.rag.execute(plan)
-        existing = [
-            DocumentHit.model_validate(item)
-            for item in state.get("retrieval_results", [])
-        ]
-        hits = _merge_document_hits(
-            existing,
-            round_hits,
-            self.config.rag.max_chunks,
-        )
-        trace = list(state.get("retrieval_trace", []))
-        if trace:
-            trace[-1] = {
-                **trace[-1],
-                "execution": {
-                    "new_hits": len(round_hits),
-                    "total_hits": len(hits),
-                    "errors": query_errors,
-                },
-            }
-        errors = list(state.get("errors", []))
+        question = state.get("resolved_query") or state["user_query"]
         warnings = list(state.get("warnings", []))
-        if query_errors:
-            errors = [
-                *errors,
+        errors = list(state.get("errors", []))
+        hits: list[dict[str, Any]] = []
+        try:
+            if intent == Intent.DOCUMENT_QA:
+                hits = await self._read_document_context(question)
+            else:
+                hits = await self._search_web_context(question)
+        except Exception as exc:  # noqa: BLE001 - 外部通道失败不阻断主流程
+            logger.warning("external context gathering failed: %s", exc)
+            errors.append(
                 AgentFailure(
                     category="retrieval",
-                    code="RETRIEVAL_QUERY_FAILED",
-                    message="部分文档检索查询失败，已保留成功结果",
+                    code="EXTERNAL_CONTEXT_FAILED",
+                    message="外部网页或文档检索失败，仅保留已确认事实",
                     retryable=True,
-                    source="rag",
-                    details={"errors": query_errors},
-                ).model_dump(mode="json"),
-            ]
-            warnings.append("部分文档检索查询失败，本次仅使用成功返回的片段。")
+                    source="web_research",
+                    details={"reason": str(exc)},
+                ).model_dump(mode="json")
+            )
+            warnings.append("外部网页或文档检索失败，本次未附带外部背景。")
+        if not hits:
+            warnings.append("未获得可引用的外部网页或文档背景。")
         return {
-            "retrieval_results": [
-                item.model_dump(mode="json") for item in hits
-            ],
-            "retrieval_trace": trace,
-            "errors": errors,
+            "external_context": hits,
             "warnings": list(dict.fromkeys(warnings)),
+            "errors": errors,
         }
 
-    async def _assess_retrieval(self, state: AgentState) -> dict[str, Any]:
-        plan = RetrievalPlan.model_validate(state["retrieval_plan"])
-        assessment = await self.rag.assess(
-            question=state.get("resolved_query") or state["user_query"],
-            plan=plan,
-            hits=[
-                DocumentHit.model_validate(item)
-                for item in state.get("retrieval_results", [])
-            ],
+    async def _read_document_context(self, question: str) -> list[dict[str, Any]]:
+        match = _URL_RE.search(question)
+        if not match:
+            return []
+        envelope = await self.web_client.call(
+            "document_read",
+            {"url": match.group(0), "max_chars": self.config.web_research.max_content_chars},
         )
-        if (
-            not assessment.sufficient
-            and plan.round_number >= self.config.rag.max_rounds
-        ):
-            assessment = assessment.model_copy(
-                update={
-                    "retryable": False,
-                    "reason": (
-                        f"{assessment.reason}；已达到最大检索轮次 "
-                        f"{self.config.rag.max_rounds}"
-                    ),
+        if not envelope.ok or not isinstance(envelope.data, WebFetchData):
+            detail = envelope.error.message if envelope.error else "未返回文档正文"
+            raise RuntimeError(f"读取指定文档失败：{detail}")
+        data = envelope.data
+        return [
+            {
+                "channel": "direct_document",
+                "title": data.title,
+                "url": data.final_url,
+                "text": data.content,
+                "page": None,
+                "version": None,
+                "audit_hashes": _web_audit_hashes(envelope),
+            }
+        ]
+
+    async def _search_web_context(self, question: str) -> list[dict[str, Any]]:
+        search = await self.web_client.call(
+            "web_search",
+            {"query": question, "max_results": 5},
+        )
+        if not search.ok or not isinstance(search.data, WebSearchData):
+            detail = search.error.message if search.error else "未返回搜索结果"
+            raise RuntimeError(f"网页搜索失败：{detail}")
+        hits: list[dict[str, Any]] = []
+        for result in search.data.results[:5]:
+            text = result.snippet
+            title = result.title
+            final_url = result.url
+            try:
+                fetched = await self.web_client.call(
+                    "web_fetch",
+                    {"url": result.url, "max_chars": self.config.web_research.max_content_chars},
+                )
+                if fetched.ok and isinstance(fetched.data, WebFetchData):
+                    text = fetched.data.content or text
+                    title = fetched.data.title or title
+                    final_url = fetched.data.final_url
+            except Exception as exc:  # noqa: BLE001 - 单条抓取失败保留摘要
+                logger.debug("web_fetch failed for %s: %s", result.url, exc)
+            if not text:
+                continue
+            hits.append(
+                {
+                    "channel": "web",
+                    "title": title,
+                    "url": final_url,
+                    "text": text,
+                    "page": None,
+                    "version": None,
+                    "audit_hashes": _web_audit_hashes(search),
                 }
             )
-        trace = list(state.get("retrieval_trace", []))
-        if trace:
-            trace[-1] = {
-                **trace[-1],
-                "assessment": assessment.model_dump(mode="json"),
-            }
-        warnings = list(state.get("warnings", []))
-        if (
-            not assessment.sufficient
-            and not assessment.retryable
-            and plan.queries
-        ):
-            warnings.append(
-                "文档检索达到轮次上限或没有新的安全查询，结果可能不完整。"
-            )
-        return {
-            "retrieval_assessment": assessment.model_dump(mode="json"),
-            "retrieval_trace": trace,
-            "warnings": list(dict.fromkeys(warnings)),
-        }
-
-    def _route_after_retrieval_assessment(self, state: AgentState) -> str:
-        assessment = RetrievalAssessment.model_validate(
-            state["retrieval_assessment"]
-        )
-        return (
-            "retry"
-            if (
-                not assessment.sufficient
-                and assessment.retryable
-                and state.get("retrieval_round", 0) < self.config.rag.max_rounds
-            )
-            else "complete"
-        )
+        return hits
 
     async def _build_evidence(self, state: AgentState) -> dict[str, Any]:
         task_id = UUID(state["task_id"])
@@ -471,19 +407,21 @@ class FinancialAgentGraph:
             warnings.extend(_warning_messages(envelope))
 
         subject = _subject_for_documents(state)
-        for raw in state.get("retrieval_results", []):
-            hit = DocumentHit.model_validate(raw)
+        for index, raw in enumerate(state.get("external_context", [])):
+            text = str(raw.get("text") or "")
+            if not text:
+                continue
             records.append(
                 document_hit_to_evidence(
                     task_id=task_id,
                     subject=subject,
-                    text=hit.text,
-                    source_ref=str(hit.hit_id),
-                    title=hit.title,
-                    url=hit.url,
-                    page=hit.page,
-                    version=hit.version,
-                    channel=hit.channel.value,
+                    text=text,
+                    source_ref=f"{raw.get('channel', 'web')}:{index}",
+                    title=str(raw.get("title") or raw.get("url") or "外部背景"),
+                    url=str(raw.get("url") or ""),
+                    page=raw.get("page"),
+                    version=raw.get("version"),
+                    channel=str(raw.get("channel") or "web"),
                 )
             )
         return {
@@ -589,25 +527,12 @@ class FinancialAgentGraph:
         return {"status": report.status}
 
 
-def _merge_document_hits(
-    existing: list[DocumentHit],
-    incoming: list[DocumentHit],
-    limit: int,
-) -> list[DocumentHit]:
-    merged: list[DocumentHit] = []
-    seen: set[str] = set()
-    for hit in [*existing, *incoming]:
-        key = str(
-            hit.metadata.get("chunk_id")
-            or f"{hit.channel.value}:{hit.url}:{hit.page}:{hit.text[:200]}"
-        )
-        if key in seen:
-            continue
-        seen.add(key)
-        merged.append(hit)
-        if len(merged) >= limit:
-            break
-    return merged
+def _web_audit_hashes(envelope: WebToolEnvelope) -> list[str]:
+    return [
+        str(item.response_sha256)
+        for item in envelope.data_audit
+        if item.validation == "passed" and item.response_sha256
+    ]
 
 
 def _warning_messages(envelope: ToolEnvelope) -> list[str]:

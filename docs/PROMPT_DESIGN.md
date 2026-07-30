@@ -28,8 +28,6 @@ src/financial_agent/prompts/
 | --- | --- | --- | --- |
 | Intent Classifier | `INTENT_CLASSIFIER_PROMPT_VERSION` | `orchestration/intent.py` | 规则无法覆盖时分类和提取实体候选 |
 | Report Narrator | `REPORT_NARRATOR_PROMPT_VERSION` | `models/narrator.py` | 解释已授权 facts |
-| RAG Planner | `RAG_PLANNER_PROMPT_VERSION` | `rag/service.py` | 拆解检索问题并提出候选通道 |
-| RAG Judge | `RAG_JUDGE_PROMPT_VERSION` | `rag/service.py` | 判断检索片段是否覆盖问题 |
 
 公共安全策略版本：
 
@@ -49,11 +47,7 @@ Prompt，再由节点导入。
   -> Pydantic IntentDecision
   -> 代码工具规划
   -> ToolEnvelope
-  -> RAG Planner
-  -> 代码裁剪 RetrievalPlan
-  -> 三通道检索
-  -> RAG Judge
-  -> 代码执行轮次上限
+  -> 可选外部背景（仅网页研究/读文档意图调用 web-research MCP）
   -> Evidence Gate
   -> 确定性 Report
   -> 可选 Narrator LLM
@@ -64,7 +58,7 @@ Prompt，再由节点导入。
 模型失败、输出非法或越界时：
 
 - 意图分类回到规则结果或要求澄清。
-- RAG Planner/Judge 回到确定性规划和词项覆盖判断。
+- 外部背景通道失败时保留已确认工具事实，不阻断主流程。
 - 报告叙述回到确定性模板。
 - 不通过模型重试补造工具数据。
 
@@ -144,33 +138,16 @@ Narrator 不能修改 facts、Evidence、引用、等级和报告状态。
 
 校验失败时丢弃模型叙述，保留确定性报告并记录告警。
 
-## 6. Agentic RAG Prompt
+## 6. 外部背景通道（无模型 Prompt）
 
-### 6.1 Planner
+网页研究和读文档意图会调用独立的 web-research MCP（`web_search` / `web_fetch` /
+`document_read`），这是确定性工具调用，不使用模型 Prompt 规划检索：
 
-Planner 输入用户问题、意图、实体候选、轮次、历史查询、命中元数据和上一轮缺口。
-Planner 不接收工具市场数值，也不能确认实体存在。
-
-代码在执行前强制：
-
-- 直接文档 URL 必须来自用户原文。
-- `subject_code` 必须来自已解析候选。
-- 未启用的 Web 通道被删除。
-- 文档类型使用白名单。
-- 查询数量和 Top-K 不超过配置。
-- 简单净值、价格和估值问题由 JIT 规则直接跳过 RAG。
-
-### 6.2 Judge
-
-Judge 只接收受 `max_context_chars` 限制的检索片段。片段被明确标记为不可信数据，
-其中的 Prompt injection 不得作为指令执行。
-
-代码强制：
-
-- 无命中时 `sufficient=false`。
-- 轮次达到 `max_rounds` 时 `retryable=false`。
-- Web 背景不能提升为市场数值或官方产品条款。
-- Judge 异常时回退确定性词项覆盖判断。
+- 只有 `WEB_RESEARCH` 和 `DOCUMENT_QA` 意图触发外部通道，其余意图只用市场工具事实。
+- `DOCUMENT_QA` 从用户原文正则提取 URL 调 `document_read` 读取原文；找不到 URL 则不检索。
+- `WEB_RESEARCH` 先 `web_search` 再逐条 `web_fetch`，命中转为低置信度背景证据。
+- 所有外部命中固定 `numeric_allowed=false`，不能覆盖或提升为市场数值与官方产品条款。
+- 通道失败只记录降级告警，保留已确认的工具事实，不阻断主流程。
 
 ## 7. Prompt 版本
 
@@ -226,12 +203,11 @@ Narrator Prompt：
 - 不弱化 warning。
 - 不输出确定性交易指令。
 
-Agentic RAG Prompt：
+外部背景通道（确定性，非 Prompt）：
 
-- 模型编造的 URL 和 `subject_code` 被代码覆盖或删除。
-- Web 关闭时 Planner 不能启用 Web。
-- 简单市场问题不调用 Planner。
-- 无命中不能被 Judge 判定为充分。
-- 最大轮次不能被模型突破。
+- 只有网页研究/读文档意图触发外部通道，其余意图不调用。
+- `DOCUMENT_QA` 找不到 URL 时不检索。
+- 外部命中固定 `numeric_allowed=false`，不能覆盖市场数值。
+- 通道失败时保留工具事实并记录降级告警。
 
 Prompt 测试只能证明文本契约存在，不能替代 Evidence Gate 和 Response Validator。

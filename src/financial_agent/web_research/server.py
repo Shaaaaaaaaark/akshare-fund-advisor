@@ -65,6 +65,20 @@ async def web_fetch(
     )
 
 
+@mcp.tool()
+async def document_read(
+    url: str,
+    max_chars: int = 20000,
+) -> dict[str, Any]:
+    """Read one user-supplied official document URL (HTML/text/PDF) after SSRF checks."""
+    return _dump(
+        await get_service().document_read(
+            url=url,
+            max_chars=max_chars,
+        )
+    )
+
+
 def main() -> None:
     transport = (
         "streamable-http"

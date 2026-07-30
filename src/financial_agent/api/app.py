@@ -23,7 +23,6 @@ from financial_agent.observability import (
 )
 from financial_agent.orchestration import FinancialAgentGraph
 from financial_agent.portfolio import Portfolio, RiskProfile
-from financial_agent.rag import build_rag_service
 from financial_agent.repositories import SQLRepository
 from financial_agent.web import WEB_ROOT
 from financial_agent.web_research import build_web_research_client
@@ -62,7 +61,6 @@ def create_app(
     )
     agent = graph or FinancialAgentGraph(
         settings,
-        rag=build_rag_service(settings, repo),
         user_context_loader=repo.get_user_state,
     )
 

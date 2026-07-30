@@ -10,10 +10,18 @@
 
 1. 每个模块负责什么，不负责什么。
 2. 为什么选择当前设计，而不是更复杂或更自由的方案。
-3. 使用 FastAPI、LangGraph、MCP、LiteLLM、PostgreSQL、Redis、MinerU、pgvector 和 Elasticsearch 时具体怎么落地。
+3. 使用 FastAPI、LangGraph、MCP、LiteLLM、PostgreSQL、Redis 和 Elasticsearch 时具体怎么落地。
 4. 如何通过接口、Schema、失败处理和测试证明金融数据没有被模型编造。
 
 本文既是实现蓝图，也是面试讲解材料。所有章节都会区分“已经实现”和“目标设计”，避免把规划中的能力描述成已完成。
+
+产品形态收敛为 **Agent(LangGraph) + 两个 MCP + Skill**：
+
+- `fund-advisor-mcp`：九个强类型市场事实工具。
+- `web-research-mcp`：`web_search` / `web_fetch` / `document_read` 三个工具，提供非数值背景。
+- `akshare-fund-advisor` Skill：AKShare 调用、实体解析和确定性计算。
+
+系统不含知识库、向量检索和文档摄取管线；外部文档按需实时读取，不做离线索引。
 
 ## 2. 实现状态与阅读约定
 
@@ -23,7 +31,7 @@
 | --- | --- |
 | `已实现` | 仓库中已有可运行代码 |
 | `待实现` | 已完成接口和行为设计，但尚无业务实现 |
-| `阶段二` | 不阻塞首个可信工具闭环，RAG 阶段再实现 |
+| `阶段二` | 不阻塞首个可信工具闭环，属于后续增强阶段 |
 | `可选` | 只有规模或业务复杂度达到条件后才引入 |
 
 ### 2.2 当前实现基线
@@ -39,33 +47,32 @@
 | LangGraph 编排 | `已实现` | `src/financial_agent/orchestration/` |
 | Evidence / Claim 门禁 | `已实现` | `src/financial_agent/evidence/` |
 | FastAPI | `已实现` | `src/financial_agent/api/` |
-| 三通道 Agentic RAG | `已实现，按配置启用` | `src/financial_agent/rag/` |
 | 用户画像与组合 | `已实现` | `src/financial_agent/portfolio/` |
 | PostgreSQL / Redis / ES | `已实现，Compose 可启动` | `deploy/compose/` |
 | 评测和端到端测试 | `已实现` | `evals/`、`tests/` |
 
 ### 2.3 存储职责统一
 
-HLD 曾在第 9 节选择 `pgvector` 作为语义向量存储，却在第 11 节把向量写入 Elasticsearch。HLD 与本 LLD 现已统一采用以下职责：
+三类存储职责互不重叠，PostgreSQL 是事实主库：
 
 ```text
-PostgreSQL + pgvector
-  - 事务主数据
-  - Evidence / Claim
-  - 文档元数据和版本
-  - 文档分块正文
-  - BGE-M3 语义向量
+PostgreSQL
+  - 事务主数据（会话、任务、工具调用）
+  - Evidence / Claim / 报告
+  - 用户风险画像与持仓
 
 Elasticsearch
-  - 文档 BM25 关键词索引
-  - 日志、Trace 关联字段和审计检索副本
+  - 审计投影（task 状态与可搜索摘要）
   - 报告全文检索
+  - 日志与 Trace 关联字段
 
 Redis
   - 短期缓存、限流、任务锁
 ```
 
-原因是个人 MVP 已经需要 PostgreSQL，复用 `pgvector` 可以减少一个向量数据库；Elasticsearch 的优势保留在 BM25 和可观测性检索。PostgreSQL 是事实主库，Elasticsearch 中的数据必须可以重建。
+系统不再使用 `pgvector`，也不在任何存储中保存语义向量或文档分块。Elasticsearch 只承担
+审计投影和报告检索，不是文档检索集群；其中的数据都能从 PostgreSQL 主库和日志源重建。
+Redis 只做缓存与限流，不作为事实唯一存储。
 
 ## 3. HLD 到 LLD 的映射
 
@@ -75,17 +82,17 @@ Redis
 | Agent 编排 | 8、9、10 |
 | MCP 工具 | 7 |
 | 证据与反幻觉 | 11、12、13 |
-| RAG | 14、15、16、17 |
-| 用户画像与组合 | 19 |
-| 数据存储 | 18、20 |
-| 缓存与时效 | 20 |
+| 外部背景通道 | 14 |
+| 用户画像与组合 | 16 |
+| 数据存储 | 15、17 |
+| 缓存与时效 | 17 |
 | 模型层 | 6 |
 | API | 5 |
-| 安全与合规 | 22 |
-| 可观测性与审计 | 21 |
-| 可靠性与降级 | 23 |
-| 测试与评测 | 24 |
-| 分阶段实施 | 26 |
+| 安全与合规 | 19 |
+| 可观测性与审计 | 18 |
+| 可靠性与降级 | 20 |
+| 测试与评测 | 21 |
+| 分阶段实施 | 23 |
 
 ## 4. 代码结构与依赖方向
 
@@ -114,8 +121,8 @@ src/financial_agent/
 ├── orchestration/
 │   ├── graph.py
 │   ├── state.py
-│   ├── routing.py
-│   └── nodes/
+│   ├── intent.py
+│   └── planner.py
 ├── evidence/
 │   ├── models.py
 │   ├── adapters.py
@@ -125,11 +132,11 @@ src/financial_agent/
 ├── mcp_client/
 │   ├── client.py
 │   └── schemas.py
-├── rag/
-│   ├── models.py
-│   ├── ingestion/
-│   ├── retrieval/
-│   └── web/
+├── web_research/
+│   ├── schemas.py
+│   ├── service.py
+│   ├── client.py
+│   └── server.py
 ├── portfolio/
 │   ├── models.py
 │   ├── repository.py
@@ -140,7 +147,6 @@ src/financial_agent/
 ├── repositories/
 │   ├── task.py
 │   ├── evidence.py
-│   ├── document.py
 │   └── report.py
 └── observability/
     ├── logging.py
@@ -163,12 +169,12 @@ mcp_servers/fund_advisor/
 ```text
 API -> Orchestration -> Domain services -> Repositories
                          |       |
-                         |       +-> RAG
-                         +-> MCP client
+                         |       +-> Web Research MCP client
+                         +-> Fund Advisor MCP client
 
 Evidence / Policy 可以被编排和服务调用
 Repositories 不能反向依赖 API 或 LangGraph
-Skill 不能依赖 Agent、RAG 或用户画像
+Skill 不能依赖 Agent 或用户画像
 ```
 
 **为什么这样设计**
@@ -338,8 +344,6 @@ client = get_llm_client()
 
 - 意图分类。
 - 实体候选提取。
-- RAG 查询改写。
-- 检索充分性判断。
 - 基于 Claim 的自然语言组织。
 
 禁止模型执行：
@@ -402,7 +406,6 @@ response = litellm.completion(
 models:
   default: deepseek-flash
   intent: deepseek-flash
-  retrieval_judge: deepseek-flash
   report: deepseek-flash
 ```
 
@@ -458,7 +461,7 @@ Evidence ID -> 可保留
 - 契约测试验证模型切换后 Pydantic Schema 不变。
 - 隐私测试扫描发送参数中是否出现持仓金额。
 
-### 6.7 面试怎么讲
+### 6.8 面试怎么讲
 
 LiteLLM 解决供应商适配，不解决事实可信。反幻觉来自“模型职责限制 + 结构化输出 + Evidence Gate + 响应验证”，不能把“接了模型网关”当作安全机制。
 
@@ -623,11 +626,12 @@ MCP 不是为了把 Python 函数“包装得更潮”，而是建立标准工�
 
 ### 7.10 Web Research MCP
 
-网页研究独立部署，不并入 Fund Advisor MCP：
+网页研究独立部署，不并入 Fund Advisor MCP，暴露三个工具：
 
 ```text
 web_search(query, max_results, freshness_days)
 web_fetch(url, max_chars)
+document_read(url, max_chars)
 ```
 
 实现路径：
@@ -650,9 +654,11 @@ src/financial_agent/web_research/
 - 限制重定向、响应大小、内容类型和正文长度。
 - 可选域名 allowlist。
 - MCP 响应固定 `numeric_allowed=false`。
-- RAG 将命中转为低置信度 Web Evidence，只用于定性背景。
+- 编排层将命中转为低置信度 Web/文档 Evidence，只用于定性背景。
 
-详细配置和错误码见 [Web Research MCP](WEB_RESEARCH_MCP.md)。
+`document_read` 按用户给定 URL 实时读取 HTML/纯文本/PDF 原文（PDF 用 `pypdf` 抽取），
+复用与 `web_fetch` 相同的 SSRF、重定向和大小限制。详细配置和错误码见
+[Web Research MCP](WEB_RESEARCH_MCP.md)。
 
 ## 8. LangGraph 状态模型
 
@@ -679,6 +685,8 @@ class AgentState(TypedDict, total=False):
     conversation_id: str
     trace_id: str
     user_query: str
+    resolved_query: str
+    conversation_history: list[dict]
 
     intent: str
     intent_confidence: float
@@ -688,9 +696,7 @@ class AgentState(TypedDict, total=False):
     user_context: dict | None
     tool_plan: list[dict]
     tool_results: list[dict]
-    retrieval_plan: list[dict]
-    retrieval_results: list[dict]
-    retrieval_round: int
+    external_context: list[dict]
 
     evidence: list[dict]
     evidence_grade: str | None
@@ -707,7 +713,7 @@ class AgentState(TypedDict, total=False):
 大对象不长期塞进 State：
 
 - 原始工具 JSON 存审计表，State 保存 `tool_call_id` 和必要摘要。
-- 原始文档正文存对象文件或文档表，State 保存 chunk ID。
+- 外部网页/文档命中以摘要形式保存在 `external_context`，不长期驻留原始长文。
 - Evidence 和 Claim 可在当前任务中保留，完成后落 PostgreSQL。
 
 ### 8.3 节点返回状态增量
@@ -761,11 +767,9 @@ LangGraph 在这里解决的是流程可控和可恢复，不是提高模型“�
 RECEIVED
   -> CLASSIFY_INTENT
   -> LOAD_USER_CONTEXT
-  -> RESOLVE_ENTITIES
   -> PLAN_TOOLS
   -> COLLECT_TOOL_FACTS
-  -> PLAN_RETRIEVAL
-  -> RETRIEVE_DOCUMENTS
+  -> GATHER_EXTERNAL_CONTEXT
   -> BUILD_EVIDENCE
   -> VALIDATE_EVIDENCE
   -> CHECK_SUITABILITY
@@ -791,23 +795,24 @@ FAILED
 ```python
 builder = StateGraph(AgentState, context_schema=AgentContext)
 builder.add_node("classify_intent", classify_intent)
-builder.add_node("resolve_entities", resolve_entities)
+builder.add_node("plan_tools", plan_tools)
 builder.add_node("collect_tool_facts", collect_tool_facts)
-builder.add_node("retrieve_documents", retrieve_documents)
+builder.add_node("gather_external_context", gather_external_context)
+builder.add_node("build_evidence", build_evidence)
 builder.add_node("validate_evidence", validate_evidence)
 builder.add_node("compose_report", compose_report)
 builder.add_node("validate_response", validate_response)
 
 builder.add_edge(START, "classify_intent")
 builder.add_conditional_edges(
-    "resolve_entities",
-    route_after_entity_resolution,
+    "collect_tool_facts",
+    route_after_tools,
     {
-        "continue": "collect_tool_facts",
+        "continue": "gather_external_context",
         "clarify": "need_clarification",
-        "cannot_confirm": "cannot_confirm",
     },
 )
+builder.add_edge("gather_external_context", "build_evidence")
 graph = builder.compile(checkpointer=checkpointer)
 ```
 
@@ -827,7 +832,7 @@ def route_after_evidence(state: AgentState) -> str:
     return "policy_blocked"
 ```
 
-模型可以提供候选意图和检索充分性评分，但不能直接设置 `evidence_grade`、`allowed` 或最终状态。
+模型可以提供候选意图，但不能直接设置 `evidence_grade`、`allowed` 或最终状态。
 
 ### 9.4 幂等性
 
@@ -839,11 +844,11 @@ idempotency_key = task_id + node_name + normalized_input_sha256
 
 - 已存在成功记录时读取结果，不再次调用上游。
 - 模型报告可重新生成，但绑定同一 Claim 版本。
-- 文档摄取按 `source_url + content_sha256` 去重。
+- 外部通道命中按 `source_url + content_sha256` 去重，避免重复引用同一原文。
 
 ### 9.5 面试怎么讲
 
-可以现场画出主图并强调三类决策：模型决策、代码决策、用户决策。意图和查询改写允许模型参与；时效、证据等级和策略阻断只能由代码决定；实体歧义由用户确认。
+可以现场画出主图并强调三类决策：模型决策、代码决策、用户决策。意图和自然语言理解允许模型参与；时效、证据等级和策略阻断只能由代码决定；实体歧义由用户确认。
 
 ## 10. 意图识别、实体解析与工具规划
 
@@ -943,7 +948,7 @@ TOOL_POLICY = {
 
 ### 11.1 为什么需要 Evidence
 
-Tool、RAG、用户输入和规则的可信度、时效与使用权限不同。若直接把它们拼进 Prompt，模型很容易把历史文档数值当成当前行情，或把用户猜测当成事实。
+Tool、外部网页/文档、用户输入和规则的可信度、时效与使用权限不同。若直接把它们拼进 Prompt，模型很容易把历史文档数值当成当前行情，或把用户猜测当成事实。
 
 Evidence 是进入报告前的统一事实协议。
 
@@ -1011,7 +1016,9 @@ DerivedMetricAdapter
   -> 生成 Evidence
 ```
 
-Adapter 不允许从自然语言摘要提取市场数值，只能读取 Tool 的结构化字段。
+`DocumentHitAdapter`（`document_hit_to_evidence`）把外部网页/文档命中转为
+`DOCUMENT_FACT`，固定 `numeric_allowed=false`、`confidence=low`。Adapter 不允许从
+自然语言摘要提取市场数值，只能读取 Tool 的结构化字段或原文片段本身。
 
 ### 11.5 来源权限矩阵
 
@@ -1034,7 +1041,7 @@ Adapter 不允许从自然语言摘要提取市场数值，只能读取 Tool 的
 
 ### 11.7 面试怎么讲
 
-Evidence 层相当于金融事实的类型系统。来源不仅决定“可信不可信”，还决定“允许用于什么结论”，这比简单给 RAG 文本打分更严格。
+Evidence 层相当于金融事实的类型系统。来源不仅决定“可信不可信”，还决定“允许用于什么结论”，这比简单给外部文本打分更严格。
 
 ## 12. Claim 与确定性渲染
 
@@ -1201,442 +1208,110 @@ GATE_POLICY_VERSION = "2026-07-01"
 
 反幻觉不是一条 Prompt，而是数据入口、Claim 生成和最终输出三处的纵深防御。即使模型失控，代码门禁仍应阻止错误数字到达用户。
 
-## 14. 三通道 Agentic RAG 总体设计
+## 14. 外部网页与文档背景
 
-状态：`已实现，外部检索服务按配置启用`
+状态：`web-research MCP 已实现，按配置启用`
 
-### 14.1 三个通道
+金融产品事实（净值、费率、资产配置、评级、基本信息、估值分位、申赎状态）全部来自
+`fund-advisor-mcp` 的强类型工具，可审计、可追溯。系统不维护固定文档语料库，也不做
+向量检索：条款、政策和新闻这类非数值背景改由 `web-research-mcp` 在需要时实时读取，
+取不到就诚实返回“当前无法确认”。
 
-| 通道 | 输入 | 输出 | 市场数值权限 |
-| --- | --- | --- | --- |
-| 知识检索 | 查询 + 元数据过滤 | 官方文档 chunks | 禁止作为当前数值 |
-| 指定文档读取 | URL/token | 原文片段 | 禁止作为当前数值 |
-| Web 背景 | 查询 | 搜索结果和原文 | 完全禁止 |
+### 14.1 单节点外部背景
 
-### 14.2 为什么采用 Agentic RAG
-
-Naive RAG 对每个问题都做一次固定 Top-K 检索，存在三个问题：
-
-- 简单估值问题并不需要文档，浪费延迟和上下文。
-- 用户指定 URL 时，向量检索不如直接读原文。
-- 一次召回不足时，系统无法换关键词或深挖原文。
-
-Agentic RAG 让编排层选择通道、判断充分性和有限重试；JIT 让系统只在需要时取内容。
-
-### 14.3 受控检索循环
+编排层用单个节点 `_gather_external_context` 承接外部背景，只有 `WEB_RESEARCH` 与
+`DOCUMENT_QA` 两种意图触发；其余意图直接跳过，不产生任何网络调用。
 
 ```text
-PLAN_RETRIEVAL
-  | no_query -> BUILD_EVIDENCE
-  -> RETRIEVE
-  -> ASSESS_SUFFICIENCY
-       | sufficient -> BUILD_EVIDENCE
-       | retryable  -> PLAN_RETRIEVAL
-       | exhausted  -> PARTIAL_RESULT
+COLLECT_TOOL_FACTS
+  -> GATHER_EXTERNAL_CONTEXT
+       | 非 WEB_RESEARCH/DOCUMENT_QA -> external_context=[]
+       | DOCUMENT_QA -> 从用户原文提取 URL -> document_read
+       | WEB_RESEARCH -> web_search -> 逐条 web_fetch
+  -> BUILD_EVIDENCE
 ```
 
-硬限制：
+命中写入单一 state 字段 `external_context: list[dict]`，每条包含 `channel`、`title`、
+`url`、`text` 和审计哈希。没有多轮检索、轮次上限或充分性判断：节点只做一次外部读取，
+成功与否都进入证据构建。
 
-```yaml
-rag:
-  use_llm_agent: true
-  max_rounds: 3
-  max_queries_per_round: 2
-  max_chunks: 8
-  max_context_chars: 24000
-  web_enabled: false
-```
+### 14.2 web-research MCP 工具
 
-### 14.4 检索计划
-
-```python
-class RetrievalQuery(BaseModel):
-    query: str
-    channel: Literal["knowledge", "direct_document", "web"]
-    reason: str
-    url: HttpUrl | None
-    subject_code: str | None
-    doc_types: list[str]
-    limit: int
-
-
-class RetrievalPlan(BaseModel):
-    round_number: int
-    queries: list[RetrievalQuery]
-    reason: str
-```
-
-通道选择规则：
-
-- 用户给 URL：优先指定文档读取。
-- 问产品条款、投资范围、费用：知识检索。
-- 问近期政策或新闻背景：Web，且配置显式启用。
-- 只问当前净值/PE/PB：不走 RAG。
-
-LLM 只产生候选计划。代码会重新写入可信的 `subject_code`、删除用户问题中不存在的
-URL、过滤未启用的 Web 通道、限制文档类型、查询数和 Top-K。Planner 异常时回退
-确定性计划。
-
-### 14.5 充分性判断
-
-模型可以判断“是否覆盖问题”，但代码先检查：
-
-- 无命中时强制判定不充分。
-- 进入 Judge 的片段数和总字符数不能超过配置。
-- 指定文档命中、命中数量和问题词项覆盖可作为确定性 fallback。
-- 是否超过最大轮次。
-
-模型输出：
-
-```python
-class RetrievalAssessment(BaseModel):
-    sufficient: bool
-    retryable: bool
-    reason: str
-    missing_aspects: list[str]
-```
-
-模型不能把无结果改成有结果，也不能提升来源可信级别。代码强制执行最大轮次，即使
-模型持续返回 `retryable=true` 也不能形成无限循环。
-
-每轮状态写入：
+`web-research-mcp` 暴露三个工具：
 
 ```text
-retrieval_round
-retrieval_plan
-retrieval_assessment
-retrieval_trace[
-  round_number,
-  plan,
-  execution.new_hits,
-  execution.total_hits,
-  execution.errors,
-  assessment
-]
+web_search(query, max_results, freshness_days)
+web_fetch(url, max_chars)
+document_read(url, max_chars)
 ```
 
-`retrieval_trace` 随 Task State 保存，并投影到 Elasticsearch 审计索引。审计记录不保存
-完整检索片段，只保存计划、命中数量、错误和充分性结论。
+`document_read` 按用户给定的 URL 实时读取 HTML、纯文本或 PDF 原文（PDF 用 `pypdf`
+抽取文本），复用与 `web_fetch` 相同的 SSRF 校验、逐跳重定向复验、响应大小限制和内容
+类型白名单。它替代了早期的“指定文档读取器”和固定知识库：无需嵌入、向量库或离线
+摄取，用户明确给出文档时直接读原文即可，既准确又省去建库维护成本。
 
-### 14.6 面试怎么讲
+### 14.3 两条读取路径
 
-Agentic 不等于无限循环。这里的“自主”被限制在三种通道、固定 Schema 和最多三轮内，并且所有跳转都能审计。
+- `DOCUMENT_QA`：用正则从用户原文提取首个 `http(s)` URL，调用 `document_read` 读取
+  原文；用户没给 URL 时不猜测、不检索，返回空背景。
+- `WEB_RESEARCH`：先 `web_search` 拿到候选结果，再对前若干条并发 `web_fetch` 抓取
+  正文；单条抓取失败时保留搜索摘要。
 
-## 15. 通道一：知识检索与文档摄取
+搜索供应商采用**多供应商兜底链**：按配置顺序尝试
+`serper → tavily → google_cse → brave → serpapi`，前一个认证失败、限流、超额或上游
+报错时自动降级到下一个，只调用填了凭证的供应商。搜索与抓取的响应哈希分别进入命中
+审计元数据，搜索审计还记录最终命中的 `provider` 与降级 `attempts`。
 
-状态：`已实现，MinerU 通过配置的 CLI 接入；通道一默认关闭（rag.knowledge_enabled=false）`
+### 14.4 转为低置信度 Evidence
 
-> 金融投资场景不依赖固定文档语料库：费率、资产配置、评级、基本信息等产品事实
-> 优先走实时 Skill 工具（`fund_profile`、`fund_rating`），条款类问题优先通道二 JIT
-> 读原文，取不到就诚实返回“当前无法确认”。本节摄取管线仅在确有官方语料索引需求
-> 时按 `knowledge_enabled=true` 启用；`_deterministic_plan` 与 `_normalize_plan`
-> 在关闭时都会丢弃 KNOWLEDGE 通道查询。
-
-### 15.1 摄取流程
-
-```text
-Source Registry
-  -> Fetch
-  -> MIME / size / hash check
-  -> MinerU parse
-  -> structure-aware chunk
-  -> metadata enrichment
-  -> BGE-M3 embedding
-  -> PostgreSQL + pgvector
-  -> optional Elasticsearch BM25
-  -> publish document version
-```
-
-### 15.2 Source Registry
-
-```python
-class DocumentSource(BaseModel):
-    source_id: UUID
-    source_url: HttpUrl
-    source_domain: str
-    doc_type: str
-    subject_code: str | None
-    trust_tier: Literal["official", "approved_internal"]
-    enabled: bool
-```
-
-只允许官方域名或人工登记来源进入核心知识库。抓取重定向后的最终域名也要再次校验。
-
-### 15.3 MinerU 怎么用
-
-MinerU 作为离线解析进程或命令适配器，不在在线请求路径实时解析大 PDF：
-
-```text
-原始 PDF
-  -> MinerU 输出 Markdown/JSON + 页面信息
-  -> Normalizer 统一标题、表格、页码
-  -> Chunker
-```
-
-Adapter 必须保存：
-
-- 原始文件 `content_sha256`。
-- MinerU 版本和参数。
-- 每段原文页码。
-- 表格与标题层级。
-- 解析 warning。
-
-CPU 解析过慢时，文档摄取可以异步执行；在线问答继续使用旧的已发布版本。若 MinerU 对某类文件质量不合格，可替换 Docling，但后续 Schema 不变。
-
-### 15.4 结构化切块
-
-不使用固定字符数直接截断。切块边界优先级：
-
-```text
-文档 -> 章节 -> 子标题 -> 段落/表格 -> token 上限
-```
-
-建议：
-
-- 正文 `400-800` 中文 token。
-- 重叠 `50-100` token。
-- 表格尽量整体保留，过大时按行组拆分并重复表头。
-- 每个 chunk 保留 `section_path`、`page_start`、`page_end`。
-
-### 15.5 文档版本发布
-
-```text
-DISCOVERED -> FETCHED -> PARSED -> INDEXED -> PUBLISHED
-                                      |
-                                      -> REJECTED
-```
-
-只有 `PUBLISHED` 版本可被在线检索。新版本完整索引成功后原子切换 `is_current`，避免用户检索到半成品。
-
-### 15.6 测试
-
-- 固定 PDF 的解析 Golden File。
-- 页码和 section_path 保真测试。
-- 同一哈希重复摄取不产生新版本。
-- 新版本发布失败时旧版本仍可检索。
-- 扫描件、表格、空白 PDF 和超大文件测试。
-- Prompt injection 文本只作为引用内容，不能成为系统指令。
-
-### 15.7 面试怎么讲
-
-MinerU 只是 Parser，不是完整 RAG。文档可信还依赖来源登记、版本发布、元数据、切块和 Evidence 适配。
-
-## 16. BGE-M3、pgvector 与混合检索
-
-状态：`已实现，需要 PostgreSQL/pgvector 和 Embedding API`
-
-### 16.1 Embedding
-
-BGE-M3 适合中英文、多粒度语义检索。个人无 GPU 时两种方式：
-
-1. 小批量 CPU 离线编码。
-2. 调用可配置的 Embedding API。
-
-接口必须解耦：
-
-```python
-class Embedder(Protocol):
-    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        ...
-
-    async def embed_query(self, text: str) -> list[float]:
-        ...
-```
-
-保存 `embedding_model`、`dimension` 和 `embedding_version`。模型变化时建立新索引版本，不在原向量列中混写。
-
-### 16.2 pgvector 表
-
-示意：
-
-```sql
-CREATE TABLE document_chunks (
-    chunk_id uuid PRIMARY KEY,
-    document_version_id uuid NOT NULL,
-    subject_code text,
-    doc_type text NOT NULL,
-    section_path jsonb NOT NULL,
-    page_start integer,
-    page_end integer,
-    content text NOT NULL,
-    content_sha256 text NOT NULL,
-    embedding_model text NOT NULL,
-    embedding vector(<locked_dimension>) NOT NULL,
-    metadata jsonb NOT NULL,
-    created_at timestamptz NOT NULL
-);
-```
-
-具体维度由锁定的 BGE-M3 服务输出决定，Migration 中必须写确定值，不能保留占位符。
-
-向量查询：
-
-```sql
-SELECT chunk_id, content, metadata,
-       1 - (embedding <=> :query_embedding) AS score
-FROM document_chunks
-WHERE subject_code = :subject_code
-  AND doc_type = ANY(:doc_types)
-  AND document_version_id IN (:published_versions)
-ORDER BY embedding <=> :query_embedding
-LIMIT :top_k;
-```
-
-元数据过滤必须在向量排序前生效，避免召回其他基金的相似条款。
-
-### 16.3 Elasticsearch BM25
-
-ES 只保存可重建的 chunk 检索副本：
-
-```text
-index: finagent-doc-chunks-v1
-fields:
-  chunk_id: keyword
-  subject_code: keyword
-  doc_type: keyword
-  title: text + keyword
-  section_path: text
-  content: text
-  page_start/page_end: integer
-  document_version_id: keyword
-```
-
-它擅长基金代码、专有条款和精确关键词。向量擅长语义近似，两者互补。
-
-### 16.4 检索阶段
-
-MVP 阶段二先完成 pgvector 语义检索，再增加混合检索：
-
-```text
-vector top 20 + BM25 top 20
-  -> Reciprocal Rank Fusion
-  -> metadata validation
-  -> optional reranker top 8
-  -> Evidence adapter
-```
-
-RRF：
-
-```text
-score(d) = sum(1 / (k + rank_i(d)))
-```
-
-不直接相加向量分和 BM25 分，因为二者量纲不同。
-
-### 16.5 Reranker
-
-`bge-reranker-v2-m3` 是可选项。CPU 延迟不可接受时跳过，不阻塞 MVP。Reranker 只能调整候选顺序，不能改变来源、版本或权限。
-
-### 16.6 测试
-
-- 固定查询的 Top-K 回归集。
-- 元数据过滤不能跨基金、跨旧版本。
-- Embedding 维度不匹配时启动/摄取失败。
-- RRF 顺序确定性测试。
-- 评测 Recall@K、MRR、引用命中率，不只看语言答案。
-
-### 16.7 面试怎么讲
-
-说明为什么不是“ES 或 pgvector 二选一”：主数据和向量放 PG，BM25 与可观测检索复用 ES；RRF 在不比较异构分数绝对值的情况下融合排序。
-
-## 17. 通道二与通道三
-
-状态：指定文档读取与 Web Research MCP 均已实现，Web 按配置启用
-
-### 17.1 指定文档读取
-
-输入：
-
-```python
-class DirectDocumentRequest(BaseModel):
-    url: HttpUrl | None = None
-    document_id: UUID | None = None
-    question: str
-```
-
-流程：
-
-```text
-URL/token
-  -> allowlist + SSRF 检查
-  -> fetch
-  -> MIME / size 检查
-  -> PDF/HTML/Markdown reader
-  -> 根据问题定位章节
-  -> 返回带页码的片段
-```
-
-**为什么先做**
-
-它不依赖 Embedding 和向量库，最快展示 JIT 检索、引用和 Evidence 转换。用户明确给文档时也比全库语义检索更准确。
-
-### 17.2 Web Search + Fetch
-
-Agentic RAG 通过独立 MCP 客户端复用网页工具：
-
-```text
-MCPWebRetriever
-  -> web_search
-  -> 对搜索结果并发 web_fetch
-  -> DocumentHit(channel=web)
-  -> Evidence Adapter
-```
-
-搜索供应商采用**多供应商兜底链**：按配置顺序尝试 `serper → tavily → google_cse →
-brave → serpapi`，前一个认证失败、限流、超额或上游报错时自动降级到下一个，只调用
-填了凭证的供应商。抓取失败时保留搜索摘要，并在命中元数据记录 `fetch_error`；搜索
-和抓取的响应哈希分别进入命中审计元数据，搜索审计还记录最终命中的 `provider` 与
-降级 `attempts`。
-
-### 17.3 金融限制
-
-Web Evidence 固定：
+命中经 `document_hit_to_evidence` 转为 Evidence，固定：
 
 ```text
 type = DOCUMENT_FACT
 confidence = low
+freshness = unknown
 numeric_allowed = false
-metadata.channel = web
-metadata.purpose = background_only
+source_ref = {channel}:{index}
 ```
 
-即使网页来自财经媒体，也不能提供当前价格、净值、PE/PB、收益率和申赎状态。网页出现的数字只能保留在引用原文中，不能进入数值 Claim。
+即使网页来自财经媒体、文档来自官方站点，也不能提供当前价格、净值、PE/PB、收益率或
+申赎状态。外部文本中的数字只能保留在引用原文里，不能进入数值 Claim。检测到疑似提示
+注入的片段会在 metadata 标记，并按不可信数据处理。
 
-### 17.4 安全
+### 14.5 失败即降级，不阻断
 
-- 禁止访问 localhost、私网 IP、file:// 和云元数据地址。
-- 禁止 URL 中携带用户名或密码。
+外部通道失败不影响主流程：节点捕获异常后追加一条
+`category="retrieval"`、`code="EXTERNAL_CONTEXT_FAILED"` 的告警，并保留已确认的工具
+事实，报告中声明“本次未附带外部背景”。没有多轮改写或重试循环。
+
+### 14.6 安全
+
+- 禁止访问 localhost、私网 IP、`file://` 和云元数据地址。
+- 禁止 URL 携带用户名或密码。
 - 初始 URL 和重定向后的最终 URL 都必须复验。
-- 限制页面大小、正文字符数和并发抓取数。
-- 限制重定向次数、响应大小、MIME 和超时。
+- 限制重定向次数、响应大小、内容类型和正文字符数。
 - HTML 清洗脚本、表单和隐藏文本。
 - 页面中的“忽略系统提示”等内容始终按不可信数据处理。
-- 核心文档只接受 allowlist 官方域名。
+- 可选域名 allowlist；条款类问题优先官方域名原文。
 
-### 17.5 测试
+### 14.7 面试怎么讲
 
-- SSRF 地址集。
-- 搜索摘要不足后才触发 fetch。
-- Web 百分数不能进入 Claim。
-- 404、重定向循环、超大页面和非文本内容。
-- 指定 PDF 页码引用准确性。
+外部背景是“即时读取（JIT）”而不是“检索系统”：没有知识库、向量库和摄取管线，只有一个
+受控节点在特定意图下读用户指定文档或做网页背景补充。金融数值权威只属于 AKShare 工具，
+网页与文档只能提供低置信度定性背景，二者不争夺当前市场事实。
 
-### 17.6 面试怎么讲
-
-对标 Mira 的多通道思路，但金融系统进一步限制了 Web：它只能补充事件背景，不能与 AKShare 争夺当前市场事实的权威性。
-
-## 18. PostgreSQL 数据模型
+## 15. PostgreSQL 数据模型
 
 状态：`已实现；本地 SQLite、部署 PostgreSQL`
 
-### 18.1 为什么使用 PostgreSQL
+### 15.1 为什么使用 PostgreSQL
 
 - 用户、任务、Evidence、Claim 和报告需要事务一致性。
 - JSONB 适合保存版本化 Evidence 元数据。
-- pgvector 复用同一数据库。
 - 个人部署和备份简单。
+- 单库即可承载全部事务与审计数据，无需额外数据库。
 
-### 18.2 核心表
+### 15.2 核心表
 
 ```text
 conversations
@@ -1646,15 +1321,16 @@ evidence_records
 claim_records
 reports
 report_claims
-document_sources
-document_versions
-document_chunks
 risk_profiles
 portfolio_positions
 policy_versions
 ```
 
-### 18.3 关键关系
+初始 Alembic 迁移当前落地 `conversations`、`tasks`、`evidence_records`、
+`claim_records`、`reports` 和 `user_state`，不含任何文档或向量表，也不加载
+`vector` 扩展。
+
+### 15.3 关键关系
 
 ```text
 conversation 1 -> N task
@@ -1663,22 +1339,19 @@ task 1 -> N evidence
 task 1 -> N claim
 claim N -> M evidence
 report 1 -> N claim
-document_source 1 -> N document_version
-document_version 1 -> N document_chunk
 ```
 
 Claim 和 Evidence 的多对多关系建议使用显式关联表，不只埋在 JSONB 中，便于做引用覆盖率查询。
 
-### 18.4 事务边界
+### 15.4 事务边界
 
 - 工具调用完成：`tool_call + 原始结果引用` 一次事务。
 - Evidence 建立：Evidence 和来源关联一次事务。
 - 报告完成：Report、Claim 关联和最终状态一次事务。
-- 文档发布：新版本 `PUBLISHED` 与旧版本 `is_current=false` 一次事务。
 
 外部 API 调用不能放在数据库事务中，避免长事务锁。
 
-### 18.5 Repository
+### 15.5 Repository
 
 ```python
 class EvidenceRepository(Protocol):
@@ -1695,37 +1368,36 @@ class EvidenceRepository(Protocol):
 
 使用 SQLAlchemy 2.x async 或 psycopg 3 均可。MVP 推荐 SQLAlchemy 2.x + Alembic，减少手写映射并保留明确 Migration。
 
-### 18.6 数据保留
+### 15.6 数据保留
 
 - 原始工具 JSON 可加密保存或保存文件引用。
 - Evidence、Claim 和报告保留，用于面试演示回放。
 - 持仓与公开研究数据分表。
 - 删除用户数据时，审计记录只保留匿名化必要字段。
 
-### 18.7 测试
+### 15.7 测试
 
 - Testcontainers 或 Docker Compose 启动真实 PostgreSQL。
 - Migration 从空库升级测试。
 - 事务回滚和唯一约束测试。
-- 删除/更新文档版本后引用仍可追溯。
 - ES 全部删除后可从 PG 重建。
 
-### 18.8 面试怎么讲
+### 15.8 面试怎么讲
 
 JSONB 不是放弃关系建模。高变化的 Evidence 元数据放 JSONB，主体、来源、任务和 Claim 关联仍用关系字段和外键。
 
-## 19. 用户画像与组合服务
+## 16. 用户画像与组合服务
 
 状态：`已实现`
 
-### 19.1 职责
+### 16.1 职责
 
 - 保存用户确认的风险画像和持仓。
 - 本地计算仓位、集中度、盈亏和再平衡差额。
 - 向 Agent 输出脱敏后的定性结论和 Evidence。
 - 不执行交易。
 
-### 19.2 Schema
+### 16.2 Schema
 
 ```python
 class RiskProfile(BaseModel):
@@ -1750,7 +1422,7 @@ class Position(BaseModel):
     updated_at: datetime
 ```
 
-### 19.3 确定性计算
+### 16.3 确定性计算
 
 ```text
 market_value = units * current_nav
@@ -1766,7 +1438,7 @@ rebalance_amount = target_value - current_value
 - 币种不一致且没有合法汇率工具时，不合并金额。
 - 计算过程和舍入规则版本化。
 
-### 19.4 适当性检查
+### 16.4 适当性检查
 
 具体金额建议需要：
 
@@ -1777,29 +1449,29 @@ rebalance_amount = target_value - current_value
 
 任何一项缺失，只输出一般研究结论和待补充信息。
 
-### 19.5 隐私
+### 16.5 隐私
 
 - 原始 Position 不进入外部模型 Prompt。
 - 模型只收到“单一指数基金仓位高于目标上限”等标签。
 - 数据库日志不打印 ORM 对象。
 - 本机备份也应排除明文密钥。
 
-### 19.6 测试
+### 16.6 测试
 
 - Decimal 计算和舍入测试。
 - 零成本、零总资产、负数份额和币种不一致。
 - 画像过期后具体金额建议被阻断。
 - Prompt 快照不包含 units、average_cost 和具体金额。
 
-### 19.7 面试怎么讲
+### 16.7 面试怎么讲
 
 组合服务体现“确定性计算下沉”。模型解释为什么需要再平衡，但金额和权重由代码算，用户隐私也无需发给外部模型。
 
-## 20. Redis 缓存、限流与锁
+## 17. Redis 缓存、限流与锁
 
 状态：`已实现，Redis 不可用时降级进程内缓存`
 
-### 20.1 Key 设计
+### 17.1 Key 设计
 
 ```text
 finagent:tool:v1:{tool}:{normalized_args_sha256}
@@ -1812,7 +1484,7 @@ finagent:entity:v1:{query_sha256}
 
 所有 Key 包含业务前缀和 Schema 版本。缓存值保存完整 `ToolEnvelope`。
 
-### 20.2 TTL
+### 17.2 TTL
 
 | 数据 | TTL |
 | --- | --- |
@@ -1826,7 +1498,7 @@ finagent:entity:v1:{query_sha256}
 
 TTL 不代表数据有效。取缓存后仍要检查 Skill 的源日期和 `data_audit`。
 
-### 20.3 Single-flight
+### 17.3 Single-flight
 
 ```text
 GET cache
@@ -1839,28 +1511,28 @@ GET cache
 
 未获得锁的请求短暂等待并重查缓存，不直接同时打上游。释放锁用 Lua 比较 token，防止误删别人的锁。
 
-### 20.4 降级
+### 17.4 降级
 
 - Redis 不可用：允许直连工具，但进程内并发限制仍生效。
 - 限流状态不可用：使用本地保守限流。
 - Redis 不能作为 Evidence、任务或报告唯一存储。
 
-### 20.5 测试
+### 17.5 测试
 
 - 规范化参数顺序产生同一 Key。
 - 缓存返回仍执行 freshness 校验。
 - 锁超时、持有者崩溃和 token 安全释放。
 - Redis 故障时主流程不丢 Evidence。
 
-### 20.6 面试怎么讲
+### 17.6 面试怎么讲
 
 缓存提升可用性，但不能提升事实可信度。命中缓存仍走证据门禁，这一点是金融缓存与普通页面缓存的主要差别。
 
-## 21. 可观测性与审计
+## 18. 可观测性与审计
 
 状态：结构化日志、OpenTelemetry、ES 审计与报告检索副本 `已实现`
 
-### 21.1 Trace 结构
+### 18.1 Trace 结构
 
 每个请求生成 `trace_id`，Span 层级：
 
@@ -1871,7 +1543,7 @@ http.request
       -> node.collect_tool_facts
           -> mcp.tool.index_valuation
               -> akshare.interface
-      -> node.retrieve_documents
+      -> node.gather_external_context
       -> node.validate_evidence
       -> llm.compose_report
       -> node.validate_response
@@ -1887,7 +1559,7 @@ Span 属性只保存：
 
 不保存完整 Prompt、API Key、持仓金额和私有文档正文。
 
-### 21.2 OpenTelemetry 怎么用
+### 18.2 OpenTelemetry 怎么用
 
 - FastAPI instrumentation 生成入口 Span。
 - HTTPX instrumentation 记录外部调用，但过滤 Authorization Header。
@@ -1895,7 +1567,7 @@ Span 属性只保存：
 - 日志注入 `trace_id` 和 `span_id`。
 - MVP 可只导出控制台/OTLP，后续接 Tempo。
 
-### 21.3 Elasticsearch 索引
+### 18.3 Elasticsearch 索引
 
 ```text
 finagent-logs-v1
@@ -1903,35 +1575,35 @@ finagent-audit-v1
 finagent-reports-v1
 ```
 
-通过 alias 指向版本化索引。审计文档只保存 PG 主键和可搜索摘要；详细 Evidence 回 PostgreSQL 查询。
+通过 alias 指向版本化索引。审计文档只保存 PG 主键和可搜索摘要；详细 Evidence 回 PostgreSQL 查询。Elasticsearch 只做审计投影与报告检索，不存文档分块，也不做混合检索。
 
-### 21.4 指标
+### 18.4 指标
 
 - 工具成功率、超时率、Schema 变化率。
 - 数据过期率。
 - Evidence A-E 等级分布。
 - 无 Evidence Claim 拒绝数。
-- RAG 无结果率、Recall@K、引用覆盖率。
+- 外部背景通道失败率、引用覆盖率。
 - P50/P95 延迟。
 - 模型 Token 和估算成本。
 - 缓存命中率。
 
-### 21.5 测试
+### 18.5 测试
 
 - 同一请求的 API、Graph、MCP 和模型日志共享 trace_id。
 - 日志脱敏测试。
 - ES 不可用不阻塞报告主事务。
 - 从 trace_id 可以定位 ToolCall、Evidence 和 Report。
 
-### 21.6 面试怎么讲
+### 18.6 面试怎么讲
 
 可观测性不仅看延迟，还要观测“事实质量”：过期率、证据等级、引用覆盖率和无证据 Claim 拒绝数才是金融 Agent 的核心业务指标。
 
-## 22. 安全、隐私与提示注入
+## 19. 安全、隐私与提示注入
 
 状态：工具白名单、URL/SSRF、日志脱敏和适当性规则 `已实现`
 
-### 22.1 信任边界
+### 19.1 信任边界
 
 ```text
 可信控制指令：
@@ -1943,24 +1615,24 @@ finagent-reports-v1
 
 文档中的任何命令都不能升级为系统指令。
 
-### 22.2 最小权限
+### 19.2 最小权限
 
 - Agent 只能调用注册 MCP 工具。
 - 无 Shell、任意 SQL、文件系统写入工具。
-- RAG Fetcher 只能访问 allowlist 或经过 SSRF 检查的公网地址。
+- 网页/文档抓取只能访问 allowlist 或经过 SSRF 检查的公网地址。
 - 数据库账号按服务限制表权限。
 - 模型 API Key 只在模型客户端进程内可见。
 
-### 22.3 密钥
+### 19.3 密钥
 
 - 本地使用被忽略的 `config.local.yaml`。
 - Git 和日志扫描阻止 `sk-` 等密钥模式。
 - CI/部署使用环境变量或 Secret。
 - 已在聊天或其他渠道暴露的 Key 应轮换。
 
-### 22.4 Prompt injection 防护
+### 19.4 Prompt injection 防护
 
-1. 检索内容使用明确的 `<untrusted_document>` 边界。
+1. 外部网页/文档内容使用明确的 `<untrusted_document>` 边界。
 2. System Prompt 声明文档只能作为事实材料。
 3. Tool Planner 只接受枚举工具。
 4. 模型输出经过 Pydantic 和业务规则。
@@ -1968,7 +1640,7 @@ finagent-reports-v1
 
 Prompt 不能单独构成防护，权限白名单和输出校验是最终边界。
 
-### 22.5 测试
+### 19.5 测试
 
 - Git Secret 扫描。
 - 文档和网页提示注入样本。
@@ -1976,18 +1648,18 @@ Prompt 不能单独构成防护，权限白名单和输出校验是最终边界�
 - 越权 Tool 名、任意 SQL 和本地文件请求。
 - 日志与 Trace 隐私扫描。
 
-### 22.6 面试怎么讲
+### 19.6 面试怎么讲
 
-强调“数据与指令分离”。RAG 把外部文本带进上下文，扩大了提示注入面，因此 Tool 白名单和代码路由比 Prompt 约束更关键。
+强调“数据与指令分离”。外部网页/文档把外部文本带进上下文，扩大了提示注入面，因此 Tool 白名单和代码路由比 Prompt 约束更关键。
 
-## 23. 错误模型、重试和降级
+## 20. 错误模型、重试和降级
 
 状态：核心错误映射和降级 `已实现`；跨实例熔断待增强
 
 完整错误码、实体状态和 API 降级契约见
 [错误处理与降级契约](ERROR_HANDLING.md)。
 
-### 23.1 统一错误
+### 20.1 统一错误
 
 ```python
 class ErrorCategory(StrEnum):
@@ -2010,9 +1682,11 @@ class AgentError(BaseModel):
     details_ref: str | None = None
 ```
 
-对外 message 不包含堆栈、路径、Key 和上游敏感响应。
+`RETRIEVAL` 类目现仅表示外部网页/文档通道失败（`_gather_external_context` 抛出
+`EXTERNAL_CONTEXT_FAILED`），与多轮检索无关。对外 message 不包含堆栈、路径、Key 和
+上游敏感响应。
 
-### 23.2 重试原则
+### 20.2 重试原则
 
 | 操作 | 重试 |
 | --- | --- |
@@ -2022,17 +1696,17 @@ class AgentError(BaseModel):
 | Schema 变化 | 不重试 |
 | 模型限流/5xx | 最多 2 次，可切备用模型 |
 | 模型 JSON 非法 | 1 次格式修复 |
-| RAG 无结果 | 最多 2 次改写，总轮次不超过 3 |
+| 外部网页/文档通道失败 | 记 `EXTERNAL_CONTEXT_FAILED` 并降级，不做多轮重试 |
 | 数据过期 | 不通过重试伪装为有效 |
 
-### 23.3 降级矩阵
+### 20.3 降级矩阵
 
 ```text
 PE 失败、PB 有效
   -> Grade C，只展示 PB
 
-RAG 失败、Tool 有效
-  -> Grade B，输出数值分析并声明产品文档缺失
+外部背景通道失败、Tool 有效
+  -> 保留工具事实，声明本次未附带外部背景
 
 模型失败、Claims 有效
   -> 使用确定性模板生成简版报告
@@ -2041,13 +1715,13 @@ Redis 失败
   -> 直连，但保守限流
 
 Elasticsearch 失败
-  -> 向量检索仍可用；日志本地缓冲
+  -> 审计投影/报告检索降级；主流程与日志本地缓冲不受影响
 
 关键 Tool 失败或数据过期
-  -> CANNOT_CONFIRM，不用 RAG/模型补数
+  -> CANNOT_CONFIRM，不用外部通道/模型补数
 ```
 
-### 23.4 熔断
+### 20.4 熔断
 
 个人 MVP 可先用进程内连续失败计数：
 
@@ -2057,22 +1731,22 @@ Elasticsearch 失败
 
 后续多实例时把状态迁移到 Redis 或使用成熟库。
 
-### 23.5 测试
+### 20.5 测试
 
 - 故障注入覆盖每个降级分支。
 - 验证重试不会重复持久化 ToolCall。
 - 模型失败时模板报告仍无新数字。
 - ES/Redis 故障不破坏 PostgreSQL 主记录。
 
-### 23.6 面试怎么讲
+### 20.6 面试怎么讲
 
 降级目标不是“无论如何都回答”，而是尽可能保留已验证事实。关键市场数据缺失时，正确降级就是拒绝确认。
 
-## 24. 测试与金融评测
+## 21. 测试与金融评测
 
 状态：Skill、Agent、集成、E2E 测试和工具路由评测 `已实现`
 
-### 24.1 测试金字塔
+### 21.1 测试金字塔
 
 ```text
 大量单元测试
@@ -2083,8 +1757,8 @@ Elasticsearch 失败
 
 适量集成测试
   - MCP + Skill
-  - PostgreSQL/Redis/pgvector
-  - RAG ingestion/retrieval
+  - PostgreSQL/Redis
+  - web-research MCP + 外部背景节点
   - LiteLLM mock server
 
 少量 E2E
@@ -2093,7 +1767,7 @@ Elasticsearch 失败
 
 真实 AKShare 测试与确定性单测分开。CI 默认用录制/固定样本，定时任务再执行真实接口审计，避免公开上游波动导致普通提交随机失败。
 
-### 24.2 评测数据集
+### 21.2 评测数据集
 
 建议 JSONL：
 
@@ -2116,11 +1790,10 @@ Elasticsearch 失败
 - `numeric_faithfulness.jsonl`
 - `freshness_gate.jsonl`
 - `concept_boundaries.jsonl`
-- `rag_citations.jsonl`
 - `suitability.jsonl`
 - `prompt_injection.jsonl`
 
-### 24.3 核心评测器
+### 21.3 核心评测器
 
 **数值忠实度**
 
@@ -2144,7 +1817,7 @@ Renderer 授权的 Evidence 展示值集合
 
 规则检测“净值位置=估值”“PE/PB 平均”等禁止表达。
 
-### 24.4 上线门槛
+### 21.4 上线门槛
 
 - 数值忠实度 `100%`。
 - 过期数据拦截率 `100%`。
@@ -2152,27 +1825,29 @@ Renderer 授权的 Evidence 展示值集合
 - 实体歧义拒绝准确率 `>99%`。
 - 关键产品条款引用率 `100%`。
 
-### 24.5 面试怎么讲
+### 21.5 面试怎么讲
 
 不要只展示几个漂亮回答。展示固定评测集、失败样例和回归门槛，才能证明这是工程系统而不是 Prompt Demo。
 
-## 25. Docker Compose 与本地运行
+## 22. Docker Compose 与本地运行
 
 状态：`已实现`
 
-### 25.1 MVP 进程
+### 22.1 MVP 进程
 
 ```text
 agent-api
 fund-advisor-mcp
+web-research-mcp
 postgres
 redis
-elasticsearch（阶段二启用）
+elasticsearch
 ```
 
-LiteLLM 作为 Python 库内嵌，不单独部署 Gateway。MinerU 作为离线命令或摄取 worker，不进入 API 在线路径。
+LiteLLM 作为 Python 库内嵌，不单独部署 Gateway。Elasticsearch 承担审计投影与报告检索，
+不在 API 在线路径解析任何文档。
 
-### 25.2 Compose 原则
+### 22.2 Compose 原则
 
 - PostgreSQL、Redis 和 ES 使用命名 volume。
 - 锁定镜像版本或 digest。
@@ -2181,38 +1856,37 @@ LiteLLM 作为 Python 库内嵌，不单独部署 Gateway。MinerU 作为离线�
 - MCP 与 API 分容器时使用受限内部网络。
 - ES 设置适合本机的内存上限，避免开发机资源失控。
 
-### 25.3 启动顺序
+### 22.3 启动顺序
 
 ```text
 postgres + redis
   -> migrations
   -> fund-advisor-mcp
+  -> web-research-mcp
   -> agent-api
-  -> optional elasticsearch
-  -> optional document ingestion
+  -> elasticsearch
 ```
 
-### 25.4 备份
+### 22.4 备份
 
 - PostgreSQL：定期 `pg_dump`。
-- 原始文档：目录级备份并保留 hash。
 - ES：可从 PG 和日志源重建，不作为唯一备份。
 - Redis：不要求持久化关键业务数据。
 
-### 25.5 测试
+### 22.5 测试
 
 - `docker compose config` 校验。
 - 从空 volume 一键启动。
 - Migration、readiness 和进程重启测试。
 - 删除 ES volume 后重建索引。
 
-### 25.6 面试怎么讲
+### 22.6 面试怎么讲
 
 个人 MVP 用 Compose 是主动控制复杂度。只有出现多用户、高并发、滚动升级和弹性需求后，Kubernetes 才有明确收益。
 
-## 26. 实施顺序与验收
+## 23. 实施顺序与验收
 
-### 26.1 阶段一：可信工具闭环（已完成）
+### 23.1 阶段一：可信工具闭环（已完成）
 
 1. 把 Skill 核心改为可 import 包，CLI 保持兼容。
 2. 实现 MCP 九个工具和 `ToolEnvelope`。
@@ -2233,58 +1907,54 @@ postgres + redis
   -> Evidence API 可追溯
 ```
 
-### 26.2 阶段二：三通道 Agentic RAG（主链路已完成）
+### 23.2 阶段二：外部网页与文档背景（已完成）
 
-1. 指定文档读取。
-2. MinerU 摄取、版本与页码。
-3. BGE-M3 + pgvector 语义检索。
-4. Evidence 适配和 Citation。
-5. LangGraph 检索循环。
-6. Elasticsearch BM25 + RRF。
-7. Web 背景通道和安全限制。
+1. `web-research-mcp` 的 `web_search` / `web_fetch` / `document_read` 三工具。
+2. SSRF、重定向、大小与内容类型限制。
+3. 多供应商搜索兜底链（serper → tavily → google_cse → brave → serpapi）。
+4. 命中转低置信度 Evidence 与引用元数据。
+5. 单节点 `_gather_external_context` 接入 WEB_RESEARCH / DOCUMENT_QA 意图。
 
-### 26.3 阶段三：用户与组合（MVP 已完成）
+### 23.3 阶段三：用户与组合（MVP 已完成）
 
 1. 风险画像。
 2. 持仓和确定性组合计算。
 3. Prompt 隐私过滤。
 4. 适当性门禁。
 
-### 26.4 阶段四：治理（部分完成）
+### 23.4 阶段四：治理（部分完成）
 
 1. 多模型灾备。
 2. 更完整的指标和告警。
 3. 安全扫描、SBOM 和许可证检查。
 4. 压测和定期红队评测。
 
-## 27. 关键设计取舍
+## 24. 关键设计取舍
 
 | 问题 | 当前选择 | 没选的方案 | 原因 |
 | --- | --- | --- | --- |
 | 编排 | LangGraph 固定图 | 多 Agent 自由讨论 | 金融路径需要可预测、可测试 |
 | 工具协议 | MCP | 节点直接调用函数 | 标准契约、隔离和复用 |
-| 市场事实 | AKShare Skill | 模型/RAG/Web | 当前数值必须可审计 |
+| 市场事实 | AKShare Skill | 模型/Web | 当前数值必须可审计 |
 | 报告生成 | Claim + 模板渲染 | LLM 直接写全文 | 阻止新增或抄错数字 |
-| 向量库 | pgvector | 独立 Qdrant/Milvus | 个人规模复用 PG |
-| 关键词检索 | Elasticsearch | 只做向量 | BM25 和审计检索可复用 |
-| RAG | 三通道 JIT | 每问固定 Top-K | 按问题选择最合适来源 |
-| 文档解析 | MinerU | 自己解析 PDF | 复杂表格和扫描件能力更完整 |
+| 外部背景 | web-research MCP 实时读取 | 固定知识库/向量检索 | 无需摄取与向量库，按需读原文 |
+| 审计与报告检索 | Elasticsearch | 引入向量库 | 审计投影与报告全文检索复用，可从 PG 重建 |
 | 模型接入 | LiteLLM 外部 API | 首版自建 GPU | 降低 MVP 运维成本 |
 | 部署 | 模块化单体 + MCP 进程 | 首版微服务/K8s | 保持边界但控制复杂度 |
 
-## 28. 面试讲解主线
+## 25. 面试讲解主线
 
 建议按以下顺序讲项目，而不是按组件清单逐个介绍：
 
 1. **问题**：金融 Agent 最大风险不是回答不流畅，而是数字错误、来源不明和概念混淆。
-2. **事实边界**：市场数值只走 AKShare Skill/MCP，文档走 RAG，模型只负责理解和表达。
+2. **事实边界**：市场数值只走 AKShare Skill/MCP，文档按需实时读取，模型只负责理解和表达。
 3. **受控编排**：LangGraph 固定状态图，模型不能跳过工具、Evidence 和策略节点。
 4. **反幻觉机制**：ToolEnvelope -> Evidence -> Claim -> 确定性 Renderer -> Response Validator。
-5. **Agentic RAG**：按问题选择知识检索、指定文档和 Web 背景，JIT 获取，多轮但有上限。
-6. **工程能力**：PostgreSQL 主数据、Redis 缓存、ES 检索副本、OTel Trace、评测集和故障降级。
-7. **取舍**：个人 MVP 不上 K8s、多 Agent、独立向量库和自建 GPU，先证明可信闭环。
+5. **外部背景**：单节点按意图选择读用户指定文档或做网页背景，JIT 获取、低置信度、不参与数值。
+6. **工程能力**：PostgreSQL 主数据、Redis 缓存、ES 审计与报告检索、OTel Trace、评测集和故障降级。
+7. **取舍**：个人 MVP 不上 K8s、多 Agent、向量库和自建 GPU，先证明可信闭环。
 
-### 28.1 常见追问
+### 25.1 常见追问
 
 **为什么用了 LangGraph 还要自己写 Gate？**
 
@@ -2298,13 +1968,16 @@ LangGraph 负责节点和状态流转，不理解金融事实是否有效。Gate
 
 生成后核查很难证明遗漏了哪个数字。本设计先生成 Claim 引用，再由 Evidence 渲染数字，非法数字没有正常生成路径。
 
-**为什么同时使用 pgvector 和 Elasticsearch？**
+**为什么移除了向量检索和知识库？**
 
-pgvector 与事务主库共存，适合个人规模的语义检索；ES 提供 BM25、日志和审计全文搜索。两者数据职责不同，ES 可重建。
+金融事实（费率、评级、资产配置、估值）已经由实时可审计工具覆盖，条款类问题用 `document_read`
+按需读官方原文即可。维护一套向量库、嵌入和摄取管线，收益远小于运维和一致性成本，还容易让
+历史文档数值被误当成当前行情。移除后事实边界更清晰，Elasticsearch 也回归到审计与报告检索。
 
-**为什么不用 LightRAG？**
+**Web 背景会不会污染市场数值？**
 
-MVP 的重点是工具编排、证据门禁和三通道检索。基金条款问答先用简单向量检索足够；只有出现稳定的实体关系推理需求时才值得引入图谱构建成本。
+不会。网页与文档命中固定 `numeric_allowed=false`、`confidence=low`，只能进入定性解释，
+其中的数字只保留在引用原文里，不能进入数值 Claim。
 
 **如何证明没有幻觉？**
 
@@ -2314,7 +1987,7 @@ MVP 的重点是工具编排、证据门禁和三通道检索。基金条款问�
 
 系统能保证来源、时间、Schema 和内容哈希可追溯，不能保证公开源绝对正确。发生冲突时降级或拒绝确认，并保留审计记录，不用模型“修复”。
 
-## 29. Definition of Done
+## 26. Definition of Done
 
 首个可面试演示版本必须满足：
 
@@ -2329,4 +2002,4 @@ MVP 的重点是工具编排、证据门禁和三通道检索。基金条款问�
 - 持仓金额不会发送给外部模型。
 - 至少有一组自动评测报告展示路由、忠实度和引用结果。
 
-完成上述闭环后，再增加 RAG、组合和生产治理，能让项目演进路径清晰，也能在面试中准确区分“已实现”“正在实现”和“后续设计”。
+完成上述闭环后，再增加外部背景、组合和生产治理，能让项目演进路径清晰，也能在面试中准确区分“已实现”“正在实现”和“后续设计”。

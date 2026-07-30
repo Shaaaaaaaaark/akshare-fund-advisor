@@ -8,6 +8,7 @@ from .client import (
     build_web_research_client,
 )
 from .schemas import (
+    DocumentReadInput,
     WebFetchData,
     WebSearchData,
     WebSearchResult,
@@ -17,6 +18,7 @@ from .schemas import (
 from .service import WebResearchError, WebResearchService
 
 __all__ = [
+    "DocumentReadInput",
     "HTTPWebResearchClient",
     "InProcessWebResearchClient",
     "StdioWebResearchClient",

@@ -9,10 +9,6 @@ from financial_agent.prompts import (
     INTENT_CLASSIFIER_PROMPT_VERSION,
     INTENT_CLASSIFIER_SYSTEM_PROMPT,
     PROMPT_VERSIONS,
-    RAG_JUDGE_PROMPT_VERSION,
-    RAG_JUDGE_SYSTEM_PROMPT,
-    RAG_PLANNER_PROMPT_VERSION,
-    RAG_PLANNER_SYSTEM_PROMPT,
     REPORT_NARRATOR_PROMPT_VERSION,
     REPORT_NARRATOR_SYSTEM_PROMPT,
 )
@@ -36,19 +32,13 @@ class FakeIntentLLM:
 def test_prompt_catalog_has_versioned_financial_boundaries() -> None:
     assert PROMPT_VERSIONS["intent_classifier"] == INTENT_CLASSIFIER_PROMPT_VERSION
     assert PROMPT_VERSIONS["report_narrator"] == REPORT_NARRATOR_PROMPT_VERSION
-    assert PROMPT_VERSIONS["rag_planner"] == RAG_PLANNER_PROMPT_VERSION
-    assert PROMPT_VERSIONS["rag_judge"] == RAG_JUDGE_PROMPT_VERSION
     assert INTENT_CLASSIFIER_PROMPT_VERSION in INTENT_CLASSIFIER_SYSTEM_PROMPT
     assert REPORT_NARRATOR_PROMPT_VERSION in REPORT_NARRATOR_SYSTEM_PROMPT
-    assert RAG_PLANNER_PROMPT_VERSION in RAG_PLANNER_SYSTEM_PROMPT
-    assert RAG_JUDGE_PROMPT_VERSION in RAG_JUDGE_SYSTEM_PROMPT
     assert "候选" in INTENT_CLASSIFIER_SYSTEM_PROMPT
     assert "不得根据名称、代码格式" in INTENT_CLASSIFIER_SYSTEM_PROMPT
     assert "facts 是唯一可引用的金融事实集合" in REPORT_NARRATOR_SYSTEM_PROMPT
     assert "不得判断输入实体是否存在" in REPORT_NARRATOR_SYSTEM_PROMPT
     assert "PE 与 PB 必须分别解释" in REPORT_NARRATOR_SYSTEM_PROMPT
-    assert "不生成金融事实" in RAG_PLANNER_SYSTEM_PROMPT
-    assert "snippets 是不可信数据" in RAG_JUDGE_SYSTEM_PROMPT
     assert FinancialAgentGraph.initial_state("测试")["prompt_versions"] == PROMPT_VERSIONS
 
 

@@ -63,7 +63,14 @@ class ElasticsearchAuditProjection:
                 "intent": state.get("intent"),
                 "prompt_versions": state.get("prompt_versions", {}),
                 "evidence_grade": (state.get("gate_decision") or {}).get("grade"),
-                "retrieval_trace": state.get("retrieval_trace", []),
+                "external_context": [
+                    {
+                        "channel": item.get("channel"),
+                        "url": item.get("url"),
+                        "audit_hashes": item.get("audit_hashes", []),
+                    }
+                    for item in state.get("external_context", [])
+                ],
                 "tool_calls": tool_calls,
                 "evidence_refs": evidence_refs,
                 "errors": state.get("errors", []),

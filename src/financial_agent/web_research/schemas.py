@@ -13,6 +13,7 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 class WebToolName(StrEnum):
     WEB_SEARCH = "web_search"
     WEB_FETCH = "web_fetch"
+    DOCUMENT_READ = "document_read"
 
 
 class WebSearchInput(BaseModel):
@@ -28,6 +29,15 @@ class WebFetchInput(BaseModel):
 
     url: AnyHttpUrl
     max_chars: int = Field(default=12000, ge=1000, le=100000)
+
+
+class DocumentReadInput(BaseModel):
+    """读取用户给定的官方文档 URL（HTML/纯文本/PDF）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: AnyHttpUrl
+    max_chars: int = Field(default=20000, ge=1000, le=200000)
 
 
 class WebSearchResult(BaseModel):

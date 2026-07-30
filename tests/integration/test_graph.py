@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from conftest import FakeFundToolClient
 
 from financial_agent.orchestration import FinancialAgentGraph
-from financial_agent.rag import (
-    DocumentHit,
-    RetrievalAssessment,
-    RetrievalChannel,
-    RetrievalPlan,
-    RetrievalQuery,
+from financial_agent.web_research import (
+    WebFetchData,
+    WebSearchData,
+    WebSearchResult,
+    WebToolEnvelope,
+    WebToolName,
 )
+from financial_agent.web_research.schemas import WebAuditRecord
 
 
 @pytest.mark.asyncio
@@ -85,118 +88,123 @@ async def test_etf_analysis_fetches_full_tracking_index_chart(test_config) -> No
 
 
 @pytest.mark.asyncio
-async def test_agentic_rag_replans_until_evidence_is_sufficient(test_config) -> None:
-    class LoopRAG:
-        async def plan(self, **kwargs):
-            round_number = kwargs["round_number"]
-            return RetrievalPlan(
-                round_number=round_number,
-                queries=[
-                    RetrievalQuery(
-                        query=(
-                            "510300 投资范围"
-                            if round_number == 1
-                            else "510300 费用"
-                        ),
-                        channel=RetrievalChannel.KNOWLEDGE,
-                        reason="覆盖产品研究问题",
+async def test_web_research_intent_gathers_external_context(test_config) -> None:
+    """网页研究意图应调用 web-research MCP，并把命中转成低置信度背景证据。"""
+    now = datetime.now(timezone.utc)
+
+    class FakeWebClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, dict]] = []
+
+        async def call(self, tool, arguments):
+            self.calls.append((tool, arguments))
+            if tool == "web_search":
+                return WebToolEnvelope(
+                    tool=WebToolName.WEB_SEARCH,
+                    ok=True,
+                    queried_at=now,
+                    data=WebSearchData(
+                        query=arguments["query"],
+                        provider="Serper (Google)",
+                        results=[
+                            WebSearchResult(
+                                rank=1,
+                                title="监管政策解读",
+                                url="https://csrc.gov.cn/policy",
+                                snippet="政策背景摘要。",
+                            )
+                        ],
+                    ),
+                    data_audit=[
+                        WebAuditRecord(
+                            operation=WebToolName.WEB_SEARCH,
+                            provider="Serper (Google)",
+                            request={"query": arguments["query"]},
+                            validation="passed",
+                            response_sha256="search-hash",
+                            result_count=1,
+                        )
+                    ],
+                )
+            return WebToolEnvelope(
+                tool=WebToolName.WEB_FETCH,
+                ok=True,
+                queried_at=now,
+                data=WebFetchData(
+                    requested_url=arguments["url"],
+                    final_url=arguments["url"],
+                    title="监管政策解读",
+                    content="抓取后的政策背景正文，仅作定性参考。",
+                    content_type="text/html",
+                    truncated=False,
+                    content_sha256="fetch-hash",
+                ),
+                data_audit=[
+                    WebAuditRecord(
+                        operation=WebToolName.WEB_FETCH,
+                        provider="Public Web",
+                        request={"url": arguments["url"]},
+                        validation="passed",
+                        response_sha256="fetch-hash",
+                        result_count=1,
                     )
                 ],
-                reason="测试多轮规划",
             )
 
-        async def execute(self, plan):
-            topic = "投资范围" if plan.round_number == 1 else "费用"
-            return (
-                [
-                    DocumentHit(
-                        channel=RetrievalChannel.KNOWLEDGE,
-                        title="示例基金招募说明书",
-                        url="https://sse.com.cn/example.pdf",
-                        text=f"本段为{topic}相关的官方文档内容，用于测试充分性判断。",
-                        page=plan.round_number,
-                        version="2026-01",
-                        metadata={"chunk_id": f"chunk-{plan.round_number}"},
-                    )
-                ],
-                [],
-            )
+        async def healthcheck(self):
+            return True
 
-        async def assess(self, *, plan, **_kwargs):
-            return RetrievalAssessment(
-                sufficient=plan.round_number == 2,
-                retryable=plan.round_number == 1,
-                reason=(
-                    "仍缺少费用信息"
-                    if plan.round_number == 1
-                    else "投资范围和费用均已覆盖"
-                ),
-                missing_aspects=(
-                    ["费用"] if plan.round_number == 1 else []
-                ),
-            )
+    fake = FakeWebClient()
+    graph = FinancialAgentGraph(
+        test_config,
+        tool_client=FakeFundToolClient(),
+        web_client=fake,
+    )
+
+    result = await graph.ainvoke(
+        graph.initial_state("帮我查新闻：近期基金监管政策背景")
+    )
+
+    assert result["intent"] == "web_research"
+    assert [item[0] for item in fake.calls] == ["web_search", "web_fetch"]
+    assert result["external_context"]
+    hit = result["external_context"][0]
+    assert hit["channel"] == "web"
+    assert hit["text"] == "抓取后的政策背景正文，仅作定性参考。"
+    # 网页背景证据必须是低置信度、不可覆盖市场数值。
+    web_evidence = [
+        item
+        for item in result["evidence"]
+        if item.get("field") == "document_excerpt"
+    ]
+    assert web_evidence
+    assert all(item["numeric_allowed"] is False for item in web_evidence)
+
+
+@pytest.mark.asyncio
+async def test_web_research_survives_channel_failure(test_config) -> None:
+    """外部通道失败不应阻断主流程，只记录降级警告与错误。"""
+
+    class BrokenWebClient:
+        async def call(self, tool, arguments):
+            raise RuntimeError("proxy unreachable")
+
+        async def healthcheck(self):
+            return True
 
     graph = FinancialAgentGraph(
         test_config,
         tool_client=FakeFundToolClient(),
-        rag=LoopRAG(),
+        web_client=BrokenWebClient(),
     )
 
     result = await graph.ainvoke(
-        graph.initial_state("分析基金510300的投资范围和费用")
+        graph.initial_state("帮我查新闻：近期基金监管政策背景")
     )
 
-    assert result["status"] == "completed"
-    assert result["retrieval_round"] == 2
-    assert len(result["retrieval_trace"]) == 2
-    assert result["retrieval_trace"][0]["assessment"]["sufficient"] is False
-    assert result["retrieval_trace"][1]["assessment"]["sufficient"] is True
-    assert len(result["retrieval_results"]) == 2
-
-
-@pytest.mark.asyncio
-async def test_agentic_rag_hard_stops_at_configured_round_limit(test_config) -> None:
-    class EndlessRAG:
-        async def plan(self, **kwargs):
-            return RetrievalPlan(
-                round_number=kwargs["round_number"],
-                queries=[
-                    RetrievalQuery(
-                        query="继续检索",
-                        channel=RetrievalChannel.KNOWLEDGE,
-                        reason="测试轮次硬限制",
-                    )
-                ],
-                reason="持续请求下一轮",
-            )
-
-        async def execute(self, _plan):
-            return [], []
-
-        async def assess(self, **_kwargs):
-            return RetrievalAssessment(
-                sufficient=False,
-                retryable=True,
-                reason="模型持续要求重试",
-                missing_aspects=["更多资料"],
-            )
-
-    config = test_config.model_copy(
-        update={
-            "rag": test_config.rag.model_copy(
-                update={"max_rounds": 2}
-            )
-        }
+    assert result["intent"] == "web_research"
+    assert result["external_context"] == []
+    assert any(
+        item.get("code") == "EXTERNAL_CONTEXT_FAILED"
+        for item in result.get("errors", [])
     )
-    graph = FinancialAgentGraph(
-        config,
-        tool_client=FakeFundToolClient(),
-        rag=EndlessRAG(),
-    )
-
-    result = await graph.ainvoke(graph.initial_state("分析基金510300"))
-
-    assert result["retrieval_round"] == 2
-    assert len(result["retrieval_trace"]) == 2
-    assert result["retrieval_assessment"]["retryable"] is False
-    assert "最大检索轮次" in result["retrieval_assessment"]["reason"]
