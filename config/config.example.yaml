@@ -137,6 +137,9 @@ redis:
 rag:
   enabled: false
   web_enabled: false
+  # 固定知识向量库（通道一）默认关闭：产品事实优先走实时 Skill 工具，
+  # 文档条款优先 JIT 读取用户给定 URL；确有官方语料索引时再开启。
+  knowledge_enabled: false
   # 开启后由模型提出检索计划并判断充分性；异常时回退确定性策略
   use_llm_agent: true
   max_rounds: 3

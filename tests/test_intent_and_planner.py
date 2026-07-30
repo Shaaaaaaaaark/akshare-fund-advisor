@@ -56,3 +56,28 @@ def test_explicit_web_research_does_not_call_financial_tool() -> None:
     assert decision.intent == Intent.WEB_RESEARCH
     assert decision.entities[0].entity_type == "web_query"
     assert plan == []
+
+
+def test_fee_question_routes_to_fund_profile_tool() -> None:
+    decision = classify_by_rules("000001 的申购费率和持仓是多少")
+    plan = build_tool_plan(decision.intent, decision.entities)
+
+    assert decision.intent == Intent.FUND_PROFILE
+    assert [item.tool for item in plan] == ["fund_profile"]
+    assert plan[0].arguments["fund"] == "000001"
+
+
+def test_rating_question_routes_to_fund_rating_tool() -> None:
+    decision = classify_by_rules("000001 的基金评级是几星")
+    plan = build_tool_plan(decision.intent, decision.entities)
+
+    assert decision.intent == Intent.FUND_RATING
+    assert [item.tool for item in plan] == ["fund_rating"]
+    assert plan[0].arguments["fund"] == "000001"
+
+
+def test_rating_without_code_asks_for_clarification() -> None:
+    decision = classify_by_rules("这只基金的评级怎么样")
+
+    assert decision.intent == Intent.FUND_RATING
+    assert decision.needs_clarification

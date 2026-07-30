@@ -443,7 +443,8 @@ class RAGService:
 
         subject_code = _subject_code(entity_queries)
         candidates: list[RetrievalQuery] = []
-        if round_number == 1:
+        knowledge_on = self._config.rag.knowledge_enabled
+        if round_number == 1 and knowledge_on:
             variants = _query_variants(question, entity_queries)
             for query in variants[: self._config.rag.max_queries_per_round]:
                 candidates.append(
@@ -455,7 +456,7 @@ class RAGService:
                         limit=self._config.rag.max_chunks,
                     )
                 )
-        else:
+        elif knowledge_on:
             aspects = list((previous_assessment or _empty_assessment()).missing_aspects)
             if not aspects:
                 aspects = ["与问题直接相关的官方资料"]
@@ -514,6 +515,13 @@ class RAGService:
         seen: set[tuple[str, str]] = set()
         for item in plan.queries:
             if item.channel == RetrievalChannel.WEB and not self._config.rag.web_enabled:
+                continue
+            if (
+                item.channel == RetrievalChannel.KNOWLEDGE
+                and not self._config.rag.knowledge_enabled
+            ):
+                # 通道一默认关闭：即便模型规划了知识检索也一律丢弃，
+                # 产品事实交给实时工具，条款走 JIT，避免固定语料库幻觉。
                 continue
             if item.channel == RetrievalChannel.DIRECT_DOCUMENT and direct_url is None:
                 continue

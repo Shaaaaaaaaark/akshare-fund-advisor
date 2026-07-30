@@ -76,6 +76,8 @@ class FundAdvisorToolAdapter:
             ToolName.FUND_SEARCH: 6 * 60 * 60,
             ToolName.FUND_STATUS: 5 * 60,
             ToolName.FUND_ANALYZE: 30 * 60,
+            ToolName.FUND_PROFILE: 6 * 60 * 60,
+            ToolName.FUND_RATING: 12 * 60 * 60,
             ToolName.INDEX_VALUATION: 30 * 60,
             ToolName.STOCK_VALUATION: 30 * 60,
             ToolName.FUND_COMPARE: 30 * 60,
@@ -237,6 +239,24 @@ class FundAdvisorToolAdapter:
             ToolName.FUND_COMPARE,
             arguments,
             lambda advisor: advisor.compare(request.funds, request.years),
+        )
+
+    def fund_profile(self, **kwargs: Any) -> ToolEnvelope:
+        request = FundInput.model_validate(kwargs)
+        arguments = request.model_dump()
+        return self._execute(
+            ToolName.FUND_PROFILE,
+            arguments,
+            lambda advisor: advisor.profile(request.fund),
+        )
+
+    def fund_rating(self, **kwargs: Any) -> ToolEnvelope:
+        request = FundInput.model_validate(kwargs)
+        arguments = request.model_dump()
+        return self._execute(
+            ToolName.FUND_RATING,
+            arguments,
+            lambda advisor: advisor.rating(request.fund),
         )
 
     def interface_audit(self, **kwargs: Any) -> ToolEnvelope:

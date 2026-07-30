@@ -49,6 +49,22 @@ def build_tool_plan(
                 reason="查询申购赎回或场内交易状态",
             )
         ]
+    if intent == Intent.FUND_PROFILE:
+        return [
+            ToolPlanItem(
+                tool="fund_profile",
+                arguments={"fund": _first_query(entities)},
+                reason="取得基金基本信息、费率规则和资产配置等产品事实",
+            )
+        ]
+    if intent == Intent.FUND_RATING:
+        return [
+            ToolPlanItem(
+                tool="fund_rating",
+                arguments={"fund": _first_query(entities)},
+                reason="按代码精确匹配第三方基金评级",
+            )
+        ]
     if intent == Intent.INDEX_VALUATION:
         return [
             ToolPlanItem(

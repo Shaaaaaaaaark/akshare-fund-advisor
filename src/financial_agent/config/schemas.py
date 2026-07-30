@@ -240,6 +240,9 @@ class RAGConfig(BaseModel):
 
     enabled: bool = False
     web_enabled: bool = False
+    # 固定知识向量库（通道一）默认关闭：金融产品事实优先走实时 Skill 工具，
+    # 文档条款优先 JIT 读取用户给定 URL。仅在确有官方语料需要时才开启。
+    knowledge_enabled: bool = False
     use_llm_agent: bool = True
     max_rounds: int = Field(default=3, ge=1, le=5)
     max_queries_per_round: int = Field(default=2, ge=1, le=5)

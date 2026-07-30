@@ -190,6 +190,7 @@ async def test_llm_retrieval_plan_is_constrained_by_code(test_config) -> None:
                 update={
                     "enabled": True,
                     "web_enabled": False,
+                    "knowledge_enabled": True,
                     "use_llm_agent": True,
                     "max_queries_per_round": 2,
                     "max_chunks": 8,
@@ -215,6 +216,36 @@ async def test_llm_retrieval_plan_is_constrained_by_code(test_config) -> None:
     assert plan.queries[0].doc_types == ["fund_prospectus"]
     assert all(item.limit == 8 for item in plan.queries)
     assert "RAG 的检索规划器" in fake.messages[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_knowledge_channel_disabled_by_default(test_config) -> None:
+    """通道一默认关闭：即便模型规划知识检索也被丢弃，不查固定语料库。"""
+    config = test_config.model_copy(
+        update={
+            "rag": test_config.rag.model_copy(
+                update={
+                    "enabled": True,
+                    "web_enabled": False,
+                    "use_llm_agent": True,
+                }
+            )
+        }
+    )
+    assert config.rag.knowledge_enabled is False
+    fake = FakeRAGLLM()
+    service = RAGService(config, llm=fake)
+
+    plan = await service.plan(
+        question="分析基金510300的投资范围和费用",
+        intent="fund_analysis",
+        entity_queries=["510300"],
+        round_number=1,
+    )
+
+    assert all(
+        item.channel != RetrievalChannel.KNOWLEDGE for item in plan.queries
+    )
 
 
 @pytest.mark.asyncio

@@ -14,6 +14,8 @@ class ToolName(StrEnum):
     FUND_SEARCH = "fund_search"
     FUND_STATUS = "fund_status"
     FUND_ANALYZE = "fund_analyze"
+    FUND_PROFILE = "fund_profile"
+    FUND_RATING = "fund_rating"
     INDEX_VALUATION = "index_valuation"
     STOCK_VALUATION = "stock_valuation"
     FUND_COMPARE = "fund_compare"

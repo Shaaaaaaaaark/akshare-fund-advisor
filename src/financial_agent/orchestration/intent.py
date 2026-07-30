@@ -255,6 +255,44 @@ def classify_by_rules(query: str) -> IntentDecision:
             entities=[index],
             confidence=0.99,
         )
+    if any(marker in text for marker in ("评级", "星级", "几星", "评分", "晨星")):
+        return IntentDecision(
+            intent=Intent.FUND_RATING,
+            entities=funds or [EntityCandidate(entity_type="fund", query=_clean_subject(text))],
+            needs_clarification=not funds,
+            clarification_question=(
+                "请提供基金的明确 6 位代码以查询评级。" if not funds else None
+            ),
+            confidence=0.95,
+        )
+    if any(
+        marker in text
+        for marker in (
+            "费率",
+            "费用",
+            "手续费",
+            "管理费",
+            "托管费",
+            "申购费",
+            "赎回费",
+            "持仓",
+            "重仓",
+            "资产配置",
+            "仓位",
+            "档案",
+            "基本信息",
+            "基金经理",
+        )
+    ):
+        return IntentDecision(
+            intent=Intent.FUND_PROFILE,
+            entities=funds or [EntityCandidate(entity_type="fund", query=_clean_subject(text))],
+            needs_clarification=not funds,
+            clarification_question=(
+                "请提供基金的明确 6 位代码以查询档案。" if not funds else None
+            ),
+            confidence=0.94,
+        )
     if any(marker in text for marker in ("申购", "赎回", "交易状态", "开放购买", "能买吗")):
         return IntentDecision(
             intent=Intent.FUND_STATUS,

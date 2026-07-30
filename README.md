@@ -40,7 +40,7 @@ API 启动后访问 `http://127.0.0.1:8000/`，即可使用内置的轻量研究
 │       ├── orchestration/             # LangGraph 受控状态机
 │       ├── prompts/                   # 版本化生产 Prompt
 │       ├── mcp_client/                # inprocess/stdio/http MCP 客户端
-│       ├── mcp_server/                # 七个强类型 MCP 工具
+│       ├── mcp_server/                # 九个强类型 MCP 工具
 │       ├── evidence/                  # Evidence/Claim 与证据门禁
 │       ├── rag/
 │       │   ├── ingestion/             # 官方文档摄取
@@ -68,13 +68,13 @@ API 启动后访问 `http://127.0.0.1:8000/`，即可使用内置的轻量研究
 ## 当前能力
 
 - AKShare Skill：基金搜索/状态/分析、指数与个股 PE/PB、价格曲线、比较和接口审计。
-- MCP：七个基金、指数与个股工具，支持 `inprocess`、`stdio`、Streamable HTTP 三种传输。
+- MCP：九个基金、指数与个股工具（搜索、状态、分析、档案、评级、指数估值、个股估值、比较、接口审计），支持 `inprocess`、`stdio`、Streamable HTTP 三种传输。
 - Web Research MCP：独立提供 `web_search` 和 `web_fetch`，RAG 与其他 Agent 可共用。
 - LangGraph：固定状态图、工具白名单、实体歧义追问和 A-E 证据等级。
 - 反幻觉：金融数字按 `ToolEnvelope -> Evidence -> Claim -> Renderer` 流转，最终响应再次校验。
 - LiteLLM：可选意图分类和报告叙述；模型输出越界时回退确定性模板。
 - Prompt：集中版本管理、结构化输出约束和契约测试，业务节点不使用内联 system prompt。
-- Agentic RAG：LangGraph 显式执行检索规划、三通道检索、充分性判断和最多三轮缺口重查；简单市场问题通过 JIT 跳过文档检索。
+- Agentic RAG：LangGraph 显式执行检索规划、三通道检索、充分性判断和最多三轮缺口重查；简单市场问题通过 JIT 跳过文档检索。产品事实（费率、资产配置、评级等）优先走实时 Skill 工具，固定知识向量库（通道一）默认关闭，条款类问题走 JIT 读原文或诚实拒答。
 - 存储：PostgreSQL + pgvector、Redis 和 Elasticsearch 容器化部署。
 - 用户服务：风险画像、持仓存储、Decimal 组合计算和模型输入脱敏。
 - 会话记忆：仅从当前 `conversation_id` 的历史 Task/Report 构造上下文。

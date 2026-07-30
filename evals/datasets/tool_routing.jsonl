@@ -8,3 +8,5 @@
 {"case_id":"dca_001","query":"沪深300定投参考","expected_intent":"dca_reference","expected_tools":["index_valuation"]}
 {"case_id":"document_001","query":"读取https://sse.com.cn/example.pdf这份文档","expected_intent":"document_qa","expected_tools":[]}
 {"case_id":"web_001","query":"网页搜索一下最近的基金监管政策","expected_intent":"web_research","expected_tools":[]}
+{"case_id":"profile_001","query":"000001的申购费率和资产配置是多少","expected_intent":"fund_profile","expected_tools":["fund_profile"]}
+{"case_id":"rating_001","query":"000001的基金评级是几星","expected_intent":"fund_rating","expected_tools":["fund_rating"]}

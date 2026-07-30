@@ -46,6 +46,7 @@ Skill AdvisorError
 | --- | --- | --- |
 | `INVALID_ARGUMENT` | 空参数或参数范围错误 | `cannot_confirm` |
 | `FUND_NOT_FOUND` | 基金目录成功但无匹配 | `cannot_confirm` |
+| `FUND_RATING_NOT_FOUND` | 评级库成功但未收录该基金 | `cannot_confirm` |
 | `STOCK_NOT_FOUND` | A 股目录成功但无匹配 | `cannot_confirm` |
 | `AMBIGUOUS_FUND` | 基金名称对应多个候选 | `need_clarification` |
 | `ENTITY_AMBIGUOUS` | 股票或通用实体多个候选 | `need_clarification` |

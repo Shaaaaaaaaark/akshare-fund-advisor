@@ -46,6 +46,8 @@ bash "$SKILL_DIR/scripts/run.sh" --help
 | 不知道代码、只给了简称或主题 | `search` |
 | 问能不能买、能不能卖、高低位、是否适合定投 | `analyze` |
 | 明确问暂停申购、限购、赎回或交易时段 | `status` |
+| 问费率、手续费、资产配置、基本信息等产品档案 | `profile` |
+| 问基金评级、几星、评分 | `rating` |
 | 问指数估值、历史 PE/PB、专业估值图 | `valuation` |
 | 问几只基金怎么选 | `compare` |
 
@@ -83,6 +85,18 @@ bash "$SKILL_DIR/scripts/run.sh" valuation \
 
 ```bash
 bash "$SKILL_DIR/scripts/run.sh" compare --funds "000001" "110022"
+```
+
+查询基金档案（基本信息、费率规则、资产配置）：
+
+```bash
+bash "$SKILL_DIR/scripts/run.sh" profile --fund "000001"
+```
+
+查询基金评级（多家机构评级与类型）：
+
+```bash
+bash "$SKILL_DIR/scripts/run.sh" rating --fund "000001"
 ```
 
 审计真实接口：

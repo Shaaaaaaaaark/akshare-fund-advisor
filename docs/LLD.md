@@ -468,17 +468,22 @@ LiteLLM 解决供应商适配，不解决事实可信。反幻觉来自“模型
 
 ### 7.1 职责与边界
 
-MCP Server 把基金、指数和个股能力暴露为七个强类型工具：
+MCP Server 把基金、指数和个股能力暴露为九个强类型工具：
 
 | Tool | Skill 方法 |
 | --- | --- |
 | `fund_search` | `search` |
 | `fund_status` | `status` |
 | `fund_analyze` | `analyze` |
+| `fund_profile` | `profile` |
+| `fund_rating` | `rating` |
 | `index_valuation` | `valuation` |
 | `stock_valuation` | `stock_valuation` |
 | `fund_compare` | `compare` |
 | `interface_audit` | `audit` |
+
+`fund_profile` 聚合基本信息、费率规则和资产配置（雪球系稳定接口），`fund_rating`
+按代码精确匹配多家机构评级；两者把产品事实从固定文档收敛为实时可审计工具。
 
 MCP 负责参数校验、超时、并发、缓存、日志和统一信封；不允许重算或改写 Skill 的金融值。
 
@@ -851,12 +856,15 @@ class Intent(StrEnum):
     FUND_SEARCH = "fund_search"
     FUND_ANALYSIS = "fund_analysis"
     FUND_STATUS = "fund_status"
+    FUND_PROFILE = "fund_profile"
+    FUND_RATING = "fund_rating"
     INDEX_VALUATION = "index_valuation"
     STOCK_VALUATION = "stock_valuation"
     FUND_COMPARE = "fund_compare"
     DCA_REFERENCE = "dca_reference"
     SELL_OR_REBALANCE = "sell_or_rebalance"
     DOCUMENT_QA = "document_qa"
+    WEB_RESEARCH = "web_research"
     UNSUPPORTED = "unsupported"
 ```
 
@@ -906,10 +914,13 @@ TOOL_POLICY = {
     Intent.FUND_SEARCH: ["fund_search", "index_valuation(指数主题时)"],
     Intent.FUND_ANALYSIS: ["fund_analyze"],
     Intent.FUND_STATUS: ["fund_status"],
+    Intent.FUND_PROFILE: ["fund_profile"],
+    Intent.FUND_RATING: ["fund_rating"],
     Intent.INDEX_VALUATION: ["index_valuation"],
     Intent.STOCK_VALUATION: ["stock_valuation"],
     Intent.FUND_COMPARE: ["fund_compare"],
     Intent.DCA_REFERENCE: ["fund_analyze", "index_valuation"],
+    Intent.WEB_RESEARCH: [],  # 只走受控 Web 通道，不调用金融工具
 }
 ```
 
@@ -1313,7 +1324,13 @@ Agentic 不等于无限循环。这里的“自主”被限制在三种通道、
 
 ## 15. 通道一：知识检索与文档摄取
 
-状态：`已实现，MinerU 通过配置的 CLI 接入`
+状态：`已实现，MinerU 通过配置的 CLI 接入；通道一默认关闭（rag.knowledge_enabled=false）`
+
+> 金融投资场景不依赖固定文档语料库：费率、资产配置、评级、基本信息等产品事实
+> 优先走实时 Skill 工具（`fund_profile`、`fund_rating`），条款类问题优先通道二 JIT
+> 读原文，取不到就诚实返回“当前无法确认”。本节摄取管线仅在确有官方语料索引需求
+> 时按 `knowledge_enabled=true` 启用；`_deterministic_plan` 与 `_normalize_plan`
+> 在关闭时都会丢弃 KNOWLEDGE 通道查询。
 
 ### 15.1 摄取流程
 
@@ -2198,7 +2215,7 @@ postgres + redis
 ### 26.1 阶段一：可信工具闭环（已完成）
 
 1. 把 Skill 核心改为可 import 包，CLI 保持兼容。
-2. 实现 MCP 七个工具和 `ToolEnvelope`。
+2. 实现 MCP 九个工具和 `ToolEnvelope`。
 3. 实现 Evidence/Claim/Gate/Renderer。
 4. 实现 LangGraph 的搜索、分析、估值三条路径。
 5. 实现 FastAPI 和 PostgreSQL 任务/报告存储。

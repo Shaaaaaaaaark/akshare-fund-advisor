@@ -91,6 +91,9 @@ INTERFACE_CONTRACTS = {
         "volume",
     },
     "fund_individual_detail_hold_xq": {"资产类型", "仓位占比"},
+    "fund_individual_basic_info_xq": {"item", "value"},
+    "fund_individual_detail_info_xq": {"费用类型", "条件或名称", "费用"},
+    "fund_rating_all": {"代码", "简称", "基金公司", "类型"},
     "fund_portfolio_hold_em": {
         "股票代码",
         "股票名称",
@@ -2848,6 +2851,138 @@ class FundAdvisor:
             },
         }
 
+    def profile(self, query: str) -> Dict[str, Any]:
+        """基金档案：基本信息 + 费率规则 + 资产配置。
+
+        全部来自雪球系稳定接口，逐接口审计并带 frame_sha256。任一接口失败走
+        optional 降级为 warning，不猜测、不补值；三个接口全部失败时抛出
+        CANNOT_CONFIRM 级错误，绝不虚构产品条款。
+        """
+        fund = self.resolve(query)
+        code = fund["code"]
+
+        basic_frame = self._call(
+            "fund_individual_basic_info_xq",
+            "雪球-基金-基本信息",
+            self.ak.fund_individual_basic_info_xq,
+            symbol=code,
+            optional=True,
+        )
+        fee_frame = self._call(
+            "fund_individual_detail_info_xq",
+            "雪球-基金-费率与买卖规则",
+            self.ak.fund_individual_detail_info_xq,
+            symbol=code,
+            optional=True,
+        )
+        hold_frame = self._call(
+            "fund_individual_detail_hold_xq",
+            "雪球-基金-资产配置",
+            self.ak.fund_individual_detail_hold_xq,
+            symbol=code,
+            optional=True,
+        )
+
+        basic_info = self._item_value_pairs(basic_frame)
+        fee_rules = (
+            [
+                {
+                    "fee_type": json_value(row.get("费用类型")),
+                    "condition": json_value(row.get("条件或名称")),
+                    "fee": optional_float(row.get("费用")),
+                }
+                for _, row in fee_frame.iterrows()
+            ]
+            if fee_frame is not None
+            else []
+        )
+        allocation = (
+            [
+                {
+                    "asset_type": json_value(row.get("资产类型")),
+                    "weight_pct": optional_float(row.get("仓位占比")),
+                }
+                for _, row in hold_frame.iterrows()
+            ]
+            if hold_frame is not None
+            else []
+        )
+
+        if basic_frame is None and fee_frame is None and hold_frame is None:
+            raise AdvisorError(
+                "DATA_SOURCE_ERROR",
+                "基金档案接口均失败，当前无法确认产品事实",
+                {"fund_code": code},
+            )
+
+        return {
+            "ok": True,
+            "action": "profile",
+            "fund": fund,
+            "basic_info": basic_info,
+            "fee_rules": fee_rules,
+            "asset_allocation": allocation,
+            "notes": (
+                "产品事实来自雪球实时接口；费率与买卖规则不是当前市场数值，"
+                "交易前请以基金公告和销售平台为准。"
+            ),
+        }
+
+    def rating(self, query: str) -> Dict[str, Any]:
+        """基金评级：多家机构评级 + 类型。
+
+        评级全量接口按代码精确过滤，未命中返回 NOT_FOUND，不做近似匹配，
+        避免把评级张冠李戴到别的基金。
+        """
+        fund = self.resolve(query)
+        code = fund["code"]
+        frame = self._call(
+            "fund_rating_all",
+            "天天基金-基金评级",
+            self.ak.fund_rating_all,
+        )
+        matched = frame[frame["代码"].map(normalize_code).eq(normalize_code(code))]
+        if matched.empty:
+            raise AdvisorError(
+                "FUND_RATING_NOT_FOUND",
+                f"评级数据未收录该基金：{code}",
+                {"fund_code": code},
+            )
+        row = matched.iloc[0]
+
+        def _agency(column: str) -> Optional[float]:
+            return (
+                optional_float(row.get(column))
+                if column in matched.columns
+                else None
+            )
+
+        return {
+            "ok": True,
+            "action": "rating",
+            "fund": fund,
+            "fund_type": json_value(row.get("类型")),
+            "fund_company": json_value(row.get("基金公司")),
+            "ratings": {
+                "shanghai_securities": _agency("上海证券"),
+                "merchants_securities": _agency("招商证券"),
+                "jian_jin_xin": _agency("济安金信"),
+                "morningstar": _agency("晨星评级"),
+                "five_star_count": _agency("5星评级家数"),
+            },
+            "notes": "评级为第三方机构历史结论，不构成投资建议，也不代表当前业绩。",
+        }
+
+    @staticmethod
+    def _item_value_pairs(frame: Optional[pd.DataFrame]) -> Dict[str, Any]:
+        if frame is None or frame.empty:
+            return {}
+        return {
+            str(row.get("item")): json_value(row.get("value"))
+            for _, row in frame.iterrows()
+            if row.get("item")
+        }
+
     def compare(self, queries: Sequence[str], years: int = 3) -> Dict[str, Any]:
         flattened: List[str] = []
         for query in queries:
@@ -3177,6 +3312,18 @@ def build_parser() -> argparse.ArgumentParser:
     compare_parser = subparsers.add_parser("compare", help="比较 2 到 5 只基金")
     compare_parser.add_argument("--funds", required=True, nargs="+")
     compare_parser.add_argument("--years", type=int, default=3, choices=(1, 3, 5))
+
+    profile_parser = subparsers.add_parser(
+        "profile",
+        help="基金档案：基本信息、费率规则和资产配置",
+    )
+    profile_parser.add_argument("--fund", required=True, help="明确代码或唯一基金名称")
+
+    rating_parser = subparsers.add_parser(
+        "rating",
+        help="基金评级：多家机构评级和类型",
+    )
+    rating_parser.add_argument("--fund", required=True, help="明确代码或唯一基金名称")
     return parser
 
 
@@ -3205,6 +3352,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 args.lof,
                 args.index,
             )
+        elif args.action == "profile":
+            payload = advisor.profile(args.fund)
+        elif args.action == "rating":
+            payload = advisor.rating(args.fund)
         else:
             payload = advisor.compare(args.funds, args.years)
         payload.update(advisor.common_output())

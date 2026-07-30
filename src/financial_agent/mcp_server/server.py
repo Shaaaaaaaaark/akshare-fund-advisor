@@ -1,4 +1,4 @@
-"""MCP stdio server exposing the seven audited Fund Advisor tools."""
+"""MCP stdio server exposing the nine audited Fund Advisor tools."""
 
 from __future__ import annotations
 
@@ -89,6 +89,18 @@ def stock_valuation(
 def fund_compare(funds: list[str], years: int = 3) -> dict[str, Any]:
     """Compare two to five funds while preserving their metric bases."""
     return _dump(get_adapter().fund_compare(funds=funds, years=years))
+
+
+@mcp.tool()
+def fund_profile(fund: str) -> dict[str, Any]:
+    """Return audited fund profile: basics, fee rules and asset allocation."""
+    return _dump(get_adapter().fund_profile(fund=fund))
+
+
+@mcp.tool()
+def fund_rating(fund: str) -> dict[str, Any]:
+    """Return third-party fund ratings and category by exact code match."""
+    return _dump(get_adapter().fund_rating(fund=fund))
 
 
 @mcp.tool()

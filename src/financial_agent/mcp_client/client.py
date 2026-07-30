@@ -69,7 +69,7 @@ class StdioFundToolClient:
                 async with ClientSession(reader, writer) as session:
                     await session.initialize()
                     tools = await session.list_tools()
-            return len(tools.tools) == 7
+            return len(tools.tools) == 9
         except Exception:
             return False
 
@@ -99,7 +99,7 @@ class HTTPFundToolClient:
                 async with ClientSession(reader, writer) as session:
                     await session.initialize()
                     tools = await session.list_tools()
-            return len(tools.tools) == 7
+            return len(tools.tools) == 9
         except Exception:
             return False
 

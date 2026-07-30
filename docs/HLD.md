@@ -50,7 +50,7 @@
 
 ### 4.2 MCP 层
 
-- 将基金、指数和个股能力暴露为七个强类型工具。
+- 将基金、指数和个股能力暴露为九个强类型工具。
 - 参数校验、进程隔离、并发限制、超时、缓存和调用日志。
 - 将 CLI JSON 规范化为统一 `ToolEnvelope`，不修改金融数值。
 
@@ -154,6 +154,8 @@ RECEIVED
 | 基金搜索 | `fund_search` | 无 | 模糊名称 |
 | 产品分析 | `fund_analyze` | 招募说明书、定期报告 | 无 |
 | 能否申赎 | `fund_status` | 交易规则 | 无 |
+| 产品档案 | `fund_profile` | 无（费率/配置走实时接口） | 无 |
+| 基金评级 | `fund_rating` | 无 | 无 |
 | 指数估值 | `index_valuation` | 指数编制方案 | 无 |
 | 个股估值 | `stock_valuation` | 公司公告和定期报告 | 无 |
 | 基金比较 | `fund_compare` | 产品文档 | 同类产品确认 |
@@ -178,10 +180,15 @@ RECEIVED
 | `fund_search` | `search` | `query`, `limit` |
 | `fund_status` | `status` | `fund` |
 | `fund_analyze` | `analyze` | `fund`, `years` |
+| `fund_profile` | `profile` | `fund` |
+| `fund_rating` | `rating` | `fund` |
 | `index_valuation` | `valuation` | `index`, `years`, `max_points` |
 | `stock_valuation` | 可导入方法 | `stock`, `years`, `max_points` |
 | `fund_compare` | `compare` | `funds`, `years` |
 | `interface_audit` | `audit` | 代表基金、ETF、LOF、指数 |
+
+`fund_profile` 聚合基金基本信息、费率规则和资产配置，`fund_rating` 返回多家机构
+评级；两者把原本依赖固定文档的产品事实收敛为实时可审计工具，均带 `frame_sha256`。
 
 网页研究使用独立 `web-research-mcp`，不与市场事实工具混用：
 
@@ -348,11 +355,13 @@ JIT 通道（无需预建索引）：
 
 | 通道 | 对标 Mira | 本项目用途 | 检索方式 |
 | --- | --- | --- | --- |
-| 通道一 · 基金文档知识检索 | `knowledge_answer` | 招募书、定期报告、指数方案、监管规则的语义检索 | 轻量索引 + 向量语义检索 |
+| 通道一 · 基金文档知识检索 | `knowledge_answer` | 招募书、定期报告、指数方案、监管规则的语义检索 | 轻量索引 + 向量语义检索（默认关闭） |
 | 通道二 · 指定文档精确读取 | `read_lark_content` | 用户给出基金公告/文档 URL 时直接读全文 | JIT 直接读取，不做语义检索 |
 | 通道三 · 互联网背景检索 | `web_search` + `web_fetch` | 政策、新闻等**定性背景**补充 | JIT 实时搜索 + 抓原文 |
 
 > **金融红线（本项目对 Mira 的关键收紧）**：通道三只用于**非数值的定性背景**，结果标记为低置信度事件证据；**任何净值、PE/PB、收益率、申赎状态等市场数值只能来自 AKShare Skill/MCP**，web 与文档 RAG 一律不得产出或覆盖数值。
+
+> **通道一默认关闭（`rag.knowledge_enabled=false`）**：金融投资场景不依赖固定文档语料库。费率、资产配置、评级、基本信息等**产品事实优先走实时 Skill 工具**（`fund_profile`、`fund_rating` 等）；条款类问题优先通道二 JIT 读原文，取不到就诚实返回“当前无法确认”。仅在确有官方语料索引需求时才开启通道一。
 
 ### 9.5 Agentic 检索循环
 
@@ -376,9 +385,9 @@ LangGraph 显式节点。LLM 可以提出候选查询和缺口判断，代码负
 | 能力 | 选定 | 备选 |
 | --- | --- | --- |
 | 检索范式 | Agentic RAG（LangGraph 编排，参考 Mira） | 一次性检索→生成（Naive RAG） |
-| 通道一：知识检索 | 简单向量语义检索起步 | LightRAG/GraphRAG（进阶可选）、LlamaIndex、Haystack |
+| 通道一：知识检索 | 简单向量语义检索起步（默认关闭） | LightRAG/GraphRAG（进阶可选）、LlamaIndex、Haystack |
 | 通道二：精确读取 | 自建文档读取工具（走对象存储/URL） | — |
-| 通道三：互联网 | web_search + web_fetch（仅非数值背景） | 暂不接入 |
+| 通道三：互联网 | 独立 `web-research-mcp`：web_search + web_fetch（仅非数值背景，已实现） | 多供应商搜索兜底链 |
 | 文档解析 | MinerU（含内置 OCR，强表格/公式/扫描件） | Docling、Unstructured、Tika |
 | Embedding | BGE-M3（走 API 或 CPU） | `multilingual-e5-large`、GTE |
 | 向量存储 | pgvector（复用 PostgreSQL） | Qdrant、Milvus |
@@ -673,7 +682,7 @@ PUT  /v1/users/me/portfolio
 
 ### 阶段 1：可信工具闭环（已完成）
 
-- 实现 `fund-advisor-mcp` 七个工具。
+- 实现 `fund-advisor-mcp` 九个工具。
 - 定义 `ToolEnvelope`、Evidence 和 Claim Schema。
 - 用 LangGraph 状态机完成搜索、分析、估值三条链路。
 - 用 LiteLLM 直连外部模型 API 生成报告。

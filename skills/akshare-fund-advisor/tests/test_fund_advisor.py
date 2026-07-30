@@ -645,5 +645,103 @@ class AuditAndErrorOutputTest(unittest.TestCase):
         self.assertFalse(payload["data_policy"]["ai_may_generate_market_data"])
 
 
+class ProfileAndRatingTest(unittest.TestCase):
+    def _fund(self):
+        return {"code": "000001", "name": "华夏成长混合", "type": "混合型"}
+
+    def test_profile_aggregates_audited_xq_interfaces(self):
+        basic = pd.DataFrame(
+            {"item": ["基金代码", "基金名称"], "value": ["000001", "华夏成长混合"]}
+        )
+        fees = pd.DataFrame(
+            {
+                "费用类型": ["买入规则"],
+                "条件或名称": ["0<金额<100万"],
+                "费用": [1.5],
+            }
+        )
+        hold = pd.DataFrame({"资产类型": ["股票", "债券"], "仓位占比": [94.56, 1.72]})
+        ak = SimpleNamespace(
+            __version__="1.18.64",
+            fund_individual_basic_info_xq=lambda **_: basic,
+            fund_individual_detail_info_xq=lambda **_: fees,
+            fund_individual_detail_hold_xq=lambda **_: hold,
+        )
+        advisor = make_advisor(ak=ak)
+        advisor.resolve = lambda _query: self._fund()
+
+        result = advisor.profile("000001")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "profile")
+        self.assertEqual(result["basic_info"]["基金名称"], "华夏成长混合")
+        self.assertEqual(result["fee_rules"][0]["fee"], 1.5)
+        self.assertEqual(result["asset_allocation"][0]["asset_type"], "股票")
+        interfaces = {item["interface"] for item in advisor.data_audit}
+        self.assertIn("fund_individual_basic_info_xq", interfaces)
+        self.assertIn("fund_individual_detail_hold_xq", interfaces)
+
+    def test_profile_raises_when_all_interfaces_fail(self):
+        def _boom(**_):
+            raise RuntimeError("upstream blocked")
+
+        ak = SimpleNamespace(
+            __version__="1.18.64",
+            fund_individual_basic_info_xq=_boom,
+            fund_individual_detail_info_xq=_boom,
+            fund_individual_detail_hold_xq=_boom,
+        )
+        advisor = make_advisor(ak=ak)
+        advisor.resolve = lambda _query: self._fund()
+
+        with self.assertRaises(fund_advisor.AdvisorError) as ctx:
+            advisor.profile("000001")
+        self.assertEqual(ctx.exception.code, "DATA_SOURCE_ERROR")
+
+    def test_rating_matches_fund_by_exact_code(self):
+        ratings = pd.DataFrame(
+            {
+                "代码": ["000001", "270007"],
+                "简称": ["华夏成长混合", "广发大盘"],
+                "基金公司": ["华夏", "广发"],
+                "类型": ["混合型-灵活", "混合型-灵活"],
+                "上海证券": [4.0, 1.0],
+                "晨星评级": [3.0, 3.0],
+            }
+        )
+        ak = SimpleNamespace(
+            __version__="1.18.64",
+            fund_rating_all=lambda: ratings,
+        )
+        advisor = make_advisor(ak=ak)
+        advisor.resolve = lambda _query: self._fund()
+
+        result = advisor.rating("000001")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["fund_company"], "华夏")
+        self.assertEqual(result["ratings"]["shanghai_securities"], 4.0)
+
+    def test_rating_not_found_returns_error(self):
+        ratings = pd.DataFrame(
+            {
+                "代码": ["270007"],
+                "简称": ["广发大盘"],
+                "基金公司": ["广发"],
+                "类型": ["混合型-灵活"],
+            }
+        )
+        ak = SimpleNamespace(
+            __version__="1.18.64",
+            fund_rating_all=lambda: ratings,
+        )
+        advisor = make_advisor(ak=ak)
+        advisor.resolve = lambda _query: self._fund()
+
+        with self.assertRaises(fund_advisor.AdvisorError) as ctx:
+            advisor.rating("000001")
+        self.assertEqual(ctx.exception.code, "FUND_RATING_NOT_FOUND")
+
+
 if __name__ == "__main__":
     unittest.main()
