@@ -7,7 +7,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from financial_agent.config import get_config
+from fund_advisor_mcp.config import get_config
 
 from .adapter import FundAdvisorToolAdapter
 

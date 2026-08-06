@@ -21,9 +21,7 @@ COPY . .
 RUN python -m pip install --no-deps .
 
 RUN groupadd --system finagent \
-    && useradd --system --gid finagent --home-dir /app finagent \
-    && mkdir -p /app/data/documents \
-    && chown -R finagent:finagent /app/data
+    && useradd --system --gid finagent --home-dir /app finagent
 
 USER finagent
 
@@ -40,6 +38,6 @@ CMD ["sh", "-c", "python -m ruff check --no-cache . && python -m pytest -q -p no
 
 FROM base AS runtime
 
-EXPOSE 8000 8001 8002
+EXPOSE 8001 8002
 
-CMD ["financial-agent"]
+CMD ["fund-advisor-mcp"]

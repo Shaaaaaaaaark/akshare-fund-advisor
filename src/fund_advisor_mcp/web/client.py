@@ -7,7 +7,7 @@ import shlex
 import sys
 from typing import Any, Protocol
 
-from financial_agent.config import AppConfig, get_config
+from fund_advisor_mcp.config import AppConfig, get_config
 
 from .schemas import WebToolEnvelope
 from .service import WebResearchService
@@ -53,7 +53,7 @@ class StdioWebResearchClient:
         if configured:
             parts = shlex.split(configured)
             return parts[0], parts[1:]
-        return sys.executable, ["-m", "financial_agent.web_research.server"]
+        return sys.executable, ["-m", "fund_advisor_mcp.web.server"]
 
     async def call(
         self,

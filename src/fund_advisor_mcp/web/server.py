@@ -7,8 +7,9 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from financial_agent.config import get_config
+from fund_advisor_mcp.config import get_config
 
+from .schemas import WebSourceType
 from .service import WebResearchService
 
 settings = get_config()
@@ -40,6 +41,7 @@ async def web_search(
     query: str,
     max_results: int = 5,
     freshness_days: int | None = None,
+    source_types: list[WebSourceType] | None = None,
 ) -> dict[str, Any]:
     """Search public web pages for qualitative background information."""
     return _dump(
@@ -47,6 +49,7 @@ async def web_search(
             query=query,
             max_results=max_results,
             freshness_days=freshness_days,
+            source_types=source_types or [],
         )
     )
 
@@ -90,4 +93,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

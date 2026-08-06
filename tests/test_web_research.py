@@ -3,11 +3,12 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from financial_agent.web_research import (
+from fund_advisor_mcp.web import (
     WebFetchData,
     WebResearchError,
     WebResearchService,
     WebSearchData,
+    WebSourceType,
 )
 
 
@@ -41,6 +42,17 @@ async def test_web_search_returns_non_numeric_audited_envelope(
                             "url": "https://example.com/policy",
                             "description": "用于研究政策背景的网页摘要。",
                             "page_age": "2 days ago",
+                        },
+                        {
+                            "title": "公开博主的基金分享",
+                            "url": "https://xueqiu.com/123456/789",
+                            "description": "个人公开观点。",
+                            "page_age": "1 day ago",
+                        },
+                        {
+                            "title": "行业深度报告",
+                            "url": "https://research.example.com/report",
+                            "description": "公开研究报告入口。",
                         }
                     ]
                 }
@@ -61,10 +73,54 @@ async def test_web_search_returns_non_numeric_audited_envelope(
     assert envelope.ok
     assert isinstance(envelope.data, WebSearchData)
     assert envelope.data.results[0].title == "监管政策背景"
+    assert envelope.data.results[1].source_type is WebSourceType.CREATOR
+    assert envelope.data.results[1].domain == "xueqiu.com"
+    assert envelope.data.results[2].source_type is WebSourceType.RESEARCH
     assert envelope.data_policy.numeric_allowed is False
     assert envelope.data_policy.may_override_market_tools is False
     assert envelope.data_audit[0].validation == "passed"
     assert envelope.data_audit[0].response_sha256
+
+
+@pytest.mark.asyncio
+async def test_web_search_filters_requested_source_types(test_config) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "web": {
+                    "results": [
+                        {
+                            "title": "财经媒体文章",
+                            "url": "https://www.stcn.com/article",
+                            "description": "媒体背景。",
+                        },
+                        {
+                            "title": "公开博主观点",
+                            "url": "https://xueqiu.com/123456/789",
+                            "description": "个人公开观点。",
+                        },
+                    ]
+                }
+            },
+        )
+
+    service = WebResearchService(
+        _web_config(test_config),
+        transport=httpx.MockTransport(handler),
+    )
+
+    envelope = await service.web_search(
+        query='"600519" site:xueqiu.com',
+        max_results=5,
+        source_types=["creator"],
+    )
+
+    assert envelope.ok
+    assert isinstance(envelope.data, WebSearchData)
+    assert [item.title for item in envelope.data.results] == ["公开博主观点"]
+    assert envelope.data.results[0].rank == 1
+    assert envelope.data_audit[0].request["source_types"] == ["creator"]
 
 
 @pytest.mark.asyncio
@@ -538,7 +594,7 @@ async def test_document_read_accepts_pdf_content(
     monkeypatch.setattr(service, "_validate_public_url", allow_url)
     # 用桩替换真实 pypdf 解析，保持测试无外部依赖。
     monkeypatch.setattr(
-        "financial_agent.web_research.service._extract_pdf_text",
+        "fund_advisor_mcp.web.service._extract_pdf_text",
         lambda _content: "招募说明书 PDF 正文段落。",
     )
 
@@ -567,5 +623,3 @@ async def test_document_read_rejects_private_address(test_config) -> None:
     assert envelope.error is not None
     assert envelope.error.code == "WEB_FETCH_PRIVATE_ADDRESS"
     assert envelope.data is None
-
-

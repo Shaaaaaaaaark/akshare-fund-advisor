@@ -1,167 +1,160 @@
-# Financial Investment Agent
+# AKShare Financial Research Agent
 
-面向个人使用和 GitHub 开源的基金与指数投资研究 Agent。项目采用 Docker Compose 统一运行，核心原则是：市场数据只来自可审计工具，金融计算由确定性代码完成，大模型负责受控编排与解释。
+面向中国基金、指数和 A 股研究的个人数据分析工具，也是用于面试展示可信 Agent
+工程能力的项目。
 
-当前已打通 `API -> LangGraph -> MCP -> AKShare Skill -> Evidence -> Claim -> Report` 主链路，并实现独立网页研究 MCP、用户画像、组合计算、持久化、缓存、可观测性和 Docker Compose。产品形态收敛为 **Agent + 两个 MCP（fund-advisor 市场事实 / web-research 外部内容）+ Skill**，不使用固定知识库和向量检索。
+项目当前优先做好两件事：
 
-## Web 界面
+1. 用 AKShare 获取并审计基金、指数、ETF 和 A 股数据，进行确定性分析。
+2. 用 LangGraph 固定状态图调用这些工具，关联已审计事实字段并解释其含义，但不生成
+   市场事实、不预测涨跌、不替用户决策。
 
-API 启动后访问 `http://127.0.0.1:8000/`，即可使用内置的轻量研究界面。界面支持问题输入、示例查询、可选 Bearer Token，以及证据等级、关键事实、分析、风险和来源引用展示。
+## 产品定位
 
-产品采用 Agent Chat 结构：
+它不是荐股机器人，也不是量化交易平台。目标是回答：
 
-- 左侧管理多个独立对话；
-- 中间进行连续追问，同一对话会继承已确认的基金或指数实体；
-- 新建对话不继承旧对话内容，不提供跨对话全局记忆；
-- 右侧固定展示研究摘要、关键数据、分析、风险和 Evidence；
-- 指数估值报告展示 PE/PB 历史曲线、P20 机会值、P80 危险值和指数点位曲线。
+- 一只基金的产品类型、费用、评级、历史收益、波动和回撤如何？
+- ETF 的场内价格、IOPV 和溢价风险如何？
+- 指数或个股当前 PE/PB 位于历史什么位置？
+- 多只基金是否同口径、能否直接比较？
+- 基金产品、跟踪指数估值、历史风险和交易状态之间存在什么关联？
 
-前端由 FastAPI 直接托管，不需要安装 Node.js 或运行额外构建命令。
+Agent 的职责是组织工具调用和说明关联，不能把相关性写成因果，也不能补齐工具没有
+返回的数据。
+
+## 当前状态
+
+| 模块 | 状态 | 说明 |
+| --- | --- | --- |
+| AKShare Skill CLI | 已实现 | `search`、`status`、`analyze`、`profile`、`rating`、`valuation`、`compare`、`audit` |
+| Fund Advisor MCP | 已实现 | 九个强类型市场事实工具，stdio 工具发现已验证 |
+| Web Research MCP | 已实现 | 三个非数值背景工具，stdio 工具发现已验证 |
+| LangGraph Agent | 已实现 | 固定状态图、FactRef、事实字段关联、输出门禁和单轮 CLI |
+| FastAPI / Web UI / 持久化平台 | 当前不做 | 不作为本阶段面试和个人使用的必要依赖 |
+| 组合分析 / 回测 / 自动提醒 | 后续扩展 | 等单标的数据分析稳定后再评估 |
+
+> MCP 包、依赖、配置、入口和测试接线已完成。Compose runtime/test 镜像、容器内测试、
+> 两个 MCP 服务健康检查、HTTP 9+3 工具发现和 Agent 容器闭环均已通过。
+> A 股 `stock_valuation` 由 MCP 和 LangGraph Agent 暴露，Skill CLI 仍不增加重复子命令。
+
+## 核心工程设计
+
+```text
+用户问题
+  -> LangGraph Agent
+       - 固定 StateGraph
+       - 规则优先识别问题
+       - 代码白名单选择工具
+       - 关联已审计工具结果
+       - 校验事实、关联和限制
+  -> MCP
+       - 强类型参数
+       - 超时、缓存和错误语义
+       - 原样透传审计字段
+  -> AKShare Skill
+       - 实体解析
+       - Schema / 时效校验
+       - frame_sha256 审计
+       - 确定性指标计算
+```
+
+市场事实只能来自通过审计的 Skill/MCP 结果。Web 内容固定
+`numeric_allowed=false`，不能覆盖净值、价格、PE、PB、收益率、回撤、交易状态或
+实体存在性。
+
+## 已实现的数据分析
+
+- 基金：历史收益、年化波动、下行波动、最大回撤、修复日期、最长水下期、月度收益统计。
+- 产品：基金类型、经理、费用、规模、资产配置、评级、可用时的持仓集中度。
+- ETF/LOF：历史价格或净值、实时价格、IOPV、统一方向的溢价率。
+- 指数：PE TTM、PB、历史分位和估值图表数据。
+- A 股：PE TTM、PB 与前复权价格历史，三者独立展示。
+- 比较：两到五只基金的同口径比较和不可比提示。
+- Web 背景：单标分析同步检索公开研究文章、财经媒体和博主/社区链接，来源分类不作身份认证。
+- 审计：接口、参数、字段、行数、数据日期、内容指纹和失败语义。
+
+## LangGraph Agent 的关联说明
+
+LangGraph Agent 只在已审计结果之间做可验证的关联说明，例如：
+
+- 基金历史回撤较大，同时股票仓位较高：说明两项事实同时存在，不宣称后者必然导致前者。
+- ETF 价格上涨且溢价扩大：提示场内追价风险，不等于基金本身高估。
+- 指数 PE 分位较高但 PB 分位中性：分别解释盈利估值与净资产估值，禁止合成总分。
+- 个股价格接近区间高位且 PE 分位较高：描述历史位置，不预测后续涨跌。
+- 两只基金收益差异明显但产品类型或基准不同：先提示不可直接归因于管理能力。
+
+每条说明必须绑定输入工具、字段、数据日期和限制条件。
+
+启用 Web Research 后，基金和股票单标分析会在市场工具之外追加两次可选搜索，分别覆盖
+研究/媒体文章和博主/社区观点。搜索结果只展示标题、链接、域名和来源类别；网页摘要中的
+数字不能成为市场事实，Web 失败也不能改变 Fund MCP 的错误语义。
+
+## 稳定运行入口
+
+```bash
+export SKILL_DIR="$PWD/skills/akshare-fund-advisor"
+bash "$SKILL_DIR/scripts/setup.sh"
+
+bash "$SKILL_DIR/scripts/run.sh" search --query "沪深300"
+bash "$SKILL_DIR/scripts/run.sh" analyze --fund "510300" --years 3
+bash "$SKILL_DIR/scripts/run.sh" valuation --index "沪深300" --years 10
+bash "$SKILL_DIR/scripts/run.sh" compare --funds "000001" "110022" --years 3
+bash "$SKILL_DIR/scripts/run.sh" audit
+```
+
+完整命令见 [Skill 使用说明](skills/akshare-fund-advisor/USAGE.md)。
+
+LangGraph Agent：
+
+```bash
+python3.11 -m venv .venv-agent
+.venv-agent/bin/python -m pip install -r requirements.txt
+.venv-agent/bin/python -m pip install --no-deps -e .
+
+.venv-agent/bin/fund-advisor-agent ask \
+  --question "沪深300指数估值" \
+  --output text
+```
 
 ## 目录结构
 
 ```text
 .
-├── AGENTS.md                           # 代码助手与仓库级金融约束
-├── CONTRIBUTING.md                     # 开发、测试和提交规范
-├── SECURITY.md                         # 漏洞、密钥和隐私策略
-├── docs/
-│   ├── README.md                       # 文档索引与阅读顺序
-│   ├── HLD.md                          # Agent 高层设计
-│   ├── LLD.md                          # Agent 低层设计与面试讲解
-│   ├── PROMPT_DESIGN.md                # Prompt 版本、边界与评测
-│   ├── ERROR_HANDLING.md               # 错误码、状态与降级契约
-│   └── WEB_RESEARCH_MCP.md              # 网页搜索与抓取工具
-├── skills/
-│   └── akshare-fund-advisor/          # 可独立打包的 AKShare Skill
-├── src/
-│   └── financial_agent/
-│       ├── api/                       # HTTP/API 入口
-│       ├── orchestration/             # LangGraph 受控状态机
-│       ├── prompts/                   # 版本化生产 Prompt
-│       ├── mcp_client/                # inprocess/stdio/http MCP 客户端
-│       ├── mcp_server/                # 九个强类型 MCP 工具
-│       ├── evidence/                  # Evidence/Claim 与证据门禁
-│       ├── web_research/               # 独立网页研究 MCP 与客户端
-│       ├── portfolio/                 # 用户画像与组合计算
-│       ├── policies/                  # 适当性与合规规则
-│       ├── observability/             # Trace、指标和审计
-│       └── web/                       # 内置单页研究界面
-├── mcp_servers/
-│   ├── fund_advisor/                  # Skill 的 MCP 适配层
-│   └── web_research/                  # 网页搜索 MCP 启动入口
-├── evals/
-│   ├── datasets/                      # 金融 Agent 评测集
-│   └── runners/                       # 自动评测执行器
-├── tests/
-│   ├── integration/                   # 跨模块测试
-│   └── e2e/                           # 端到端测试
-└── deploy/
-    └── compose/                       # 个人部署编排
+├── docs/                              # 架构、错误语义和任务文档
+├── src/                               # 仓库级源码根（顺依赖方向）
+│   ├── fund_advisor_agent/            # LangGraph 固定状态图与响应门禁
+│   └── fund_advisor_mcp/
+│       ├── fund/                      # 市场事实 MCP
+│       └── web/                       # 外部背景 MCP
+├── skills/akshare-fund-advisor/       # 纯数据层：可独立拷贝
+│   ├── scripts/fund_advisor.py        # 数据访问、校验、指标和规则
+│   ├── references/                    # 接口和指标口径
+│   └── tests/                         # Skill 回归测试
+├── tests/                             # MCP、Web 与 LangGraph 图级测试
+└── deploy/                            # 两个 MCP 服务的 Docker Compose
 ```
 
-这些目录是代码职责边界。Compose 将 API、MCP 和各存储组件隔离为独立容器。
+## 当前优先任务
 
-## 当前能力
-
-- AKShare Skill：基金搜索/状态/分析、指数与个股 PE/PB、价格曲线、比较和接口审计。
-- MCP：九个基金、指数与个股工具（搜索、状态、分析、档案、评级、指数估值、个股估值、比较、接口审计），支持 `inprocess`、`stdio`、Streamable HTTP 三种传输。
-- Web Research MCP：独立提供 `web_search`、`web_fetch` 和 `document_read`（读取用户给定 URL 的 HTML/文本/PDF 原文），其他 Agent 可共用。
-- LangGraph：固定状态图、工具白名单、实体歧义追问和 A-E 证据等级。
-- 反幻觉：金融数字按 `ToolEnvelope -> Evidence -> Claim -> Renderer` 流转，最终响应再次校验。
-- LiteLLM：可选意图分类和报告叙述；模型输出越界时回退确定性模板。
-- Prompt：集中版本管理、结构化输出约束和契约测试，业务节点不使用内联 system prompt。
-- 外部背景：仅网页研究/读文档意图触发 web-research MCP，命中统一标记为低置信度、`numeric_allowed=false`，不能覆盖市场数值；产品事实（费率、资产配置、评级等）走实时 Skill 工具，条款类问题走 JIT 读原文或诚实拒答。
-- 存储：PostgreSQL、Redis 和 Elasticsearch 容器化部署（Elasticsearch 仅用于审计与报告检索）。
-- 用户服务：风险画像、持仓存储、Decimal 组合计算和模型输入脱敏。
-- 会话记忆：仅从当前 `conversation_id` 的历史 Task/Report 构造上下文。
-
-## Docker Compose 运行
-
-本机只需要 Docker Desktop，不需要安装 Python、Node.js、PostgreSQL、Redis 或 Elasticsearch。
-
-```bash
-cp config/config.example.yaml config/config.local.yaml
-```
-
-在 `config/config.local.yaml` 中填写 DeepSeek API Key。该文件只读挂载到 API 容器，不会写入镜像或 Git。
-
-启用网页搜索时还需填写 Brave Search API Key：
-
-```yaml
-web_research:
-  enabled: true
-  api_key: "YOUR_BRAVE_SEARCH_API_KEY"
-```
-
-启动全部服务：
-
-```bash
-docker compose -f deploy/compose/compose.yaml up --build -d
-```
-
-Web 界面：`http://127.0.0.1:8000/`。
-
-接口文档：`http://127.0.0.1:8000/docs`。
-
-查看状态和日志：
-
-```bash
-docker compose -f deploy/compose/compose.yaml ps
-docker compose -f deploy/compose/compose.yaml logs -f agent-api fund-advisor-mcp
-```
-
-停止服务：
-
-```bash
-docker compose -f deploy/compose/compose.yaml down
-```
-
-PostgreSQL、Redis、Elasticsearch 和文档使用 Docker named volume 持久化。仅在明确需要删除全部数据时执行：
-
-```bash
-docker compose -f deploy/compose/compose.yaml down -v
-```
-
-默认只有 `127.0.0.1:8000` 暴露给宿主机。MCP、PostgreSQL、Redis 和 Elasticsearch 只在 Compose 内部网络访问。
-
-## 测试与评测
-
-测试依赖只安装在 `test` 镜像，不进入运行镜像。该命令依次执行 Ruff 和 Pytest：
-
-```bash
-docker compose -f deploy/compose/compose.yaml \
-  --profile test run --rm test
-```
-
-服务启动后执行工具路由评测：
-
-```bash
-docker compose -f deploy/compose/compose.yaml \
-  exec agent-api python evals/runners/run_tool_routing.py
-```
-
-数据库迁移由 `migrate` 容器在启动时自动执行。
-
-## 读取官方文档
-
-本项目不预建知识库，也不做文档摄取。需要解释基金合同、招募说明书、指数编制方案等条款时，直接在提问中给出官方文档 URL：web-research MCP 的 `document_read` 工具会实时读取该 URL 的 HTML/纯文本/PDF 原文（复用 SSRF 校验和逐跳重定向），转成低置信度背景证据供报告引用。任何市场数值仍只能来自 AKShare 工具，文档只提供条款文本。
+1. [基金与股票候选筛选](docs/tasks/TASK_asset_screening.md) 已完成 AKShare 接口审计，生产接入待实施。
+2. [基金与个股数据分析处理](docs/tasks/TASK_fund_stock_data_analysis.md) 已完成当前任务清单。
+3. [LangGraph Agent](docs/tasks/TASK_langgraph_agent.md) 已完成核心实现与 Docker 验证。
+4. 保持 Ark 结构化模型和金融门禁回归稳定。
+5. [组合分析](docs/tasks/TASK_portfolio_analysis.md) 保留为后续扩展。
 
 ## 文档
 
 - [文档索引](docs/README.md)
-- [仓库 Agent 规范](AGENTS.md)
-- [金融 Agent HLD](docs/HLD.md)
-- [金融 Agent LLD](docs/LLD.md)
-- [Prompt 设计与治理](docs/PROMPT_DESIGN.md)
-- [错误处理与降级](docs/ERROR_HANDLING.md)
+- [高层设计](docs/HLD.md)
+- [低层设计](docs/LLD.md)
+- [错误处理](docs/ERROR_HANDLING.md)
 - [Web Research MCP](docs/WEB_RESEARCH_MCP.md)
-- [贡献指南](CONTRIBUTING.md)
-- [安全策略](SECURITY.md)
-- [Skill 调用规范](skills/akshare-fund-advisor/SKILL.md)
-- [Skill 使用说明](skills/akshare-fund-advisor/USAGE.md)
+- [候选筛选任务](docs/tasks/TASK_asset_screening.md)
+- [LangGraph Agent 任务](docs/tasks/TASK_langgraph_agent.md)
+- [Skill 入口](skills/akshare-fund-advisor/SKILL.md)
 - [Skill 内部设计](skills/akshare-fund-advisor/DESIGN.md)
 
 ## 边界
 
-本项目不执行交易、不承诺收益，也不允许模型生成或补齐净值、价格、PE、PB、收益率、回撤、申赎状态等金融事实。
+本项目仅用于金融信息分析和个人研究参考，不构成投资建议，不执行交易，不承诺收益。
+历史统计和关联说明不代表因果关系，也不代表未来表现。

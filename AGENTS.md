@@ -1,135 +1,132 @@
 # Repository Agent Guide
 
-本文件适用于整个仓库，供代码助手、自动化 Agent 和贡献者在修改项目时遵循。
-`skills/akshare-fund-advisor/SKILL.md` 对 Skill 内金融数据处理有更严格的要求；
-修改 Skill 时必须同时遵守两份文件。
+本文件适用于整个仓库。修改 Skill 时还必须遵守
+`skills/akshare-fund-advisor/SKILL.md`。
 
-## 项目目标
+## 项目方向
 
-本项目是面向中国基金、指数和 A 股研究的专业 Agent，产品形态参考 Wind、
-同花顺等金融终端的对话研究能力，但不复制其品牌或商业数据。
+项目首先用于面试展示可信 Agent 工程，同时提供基金、指数、ETF 和 A 股数据分析供个人
+研究参考。
 
-核心目标：
+当前优先级：
 
-- 市场事实可验证、可追溯。
-- 不存在、歧义、过期和上游失败必须明确区分。
-- 大模型只参与受限语言任务，不成为金融事实源。
-- 同一对话可承接上下文，不做跨对话全局记忆。
-- 面向个人 Docker Compose 部署，同时保持可扩展的工程边界。
+1. 按已审计接口推进基金与股票候选筛选；
+2. 完善基金、指数和个股数据分析；
+3. 保持 MCP、LangGraph、金融门禁和 Ark 结构化模型回归稳定。
 
-## 事实来源优先级
+当前不优先：
 
-从高到低：
+- 组合分析和回测；
+- FastAPI/Web UI；
+- PostgreSQL、Redis、Elasticsearch；
+- 多 Agent、RAG、向量库和长期记忆；
+- 自动交易和收益预测。
 
-1. 通过 Schema、时效和 `frame_sha256` 审计的 AKShare MCP 工具结果。
-2. 带来源、版本和页码的官方文档 Evidence。
-3. Web 通道提供的非数值背景信息。
-4. 模型常识不得作为基金、股票、指数或市场数值的事实来源。
+## 实现状态
 
-以下内容只能来自通过审计的工具结果：
+- Skill CLI 已实现，是当前稳定运行入口。
+- Fund MCP 和 Web MCP 的命名空间、入口、配置和测试接线已完成。
+- LangGraph Agent 固定图、MCP Client、FactRef、关联说明、门禁和 CLI 已实现。
+- Compose 已收敛为两个 MCP 服务；镜像、容器测试、健康检查、HTTP 工具发现和 Agent
+  容器闭环已验证。
+- Ark thinking 模型的 Pydantic 结构化关联输出和门禁闭环已验证。
+- 基金和股票单标分析已接入研究/媒体文章与博主/社区公开链接的可选 Web 搜索。
+- 财务、行业和基金质量候选接口审计已完成；`stock_screen`、`fund_screen` 尚未实现。
 
-- 基金净值、ETF/股票价格、指数点位。
-- PE、PB、收益率、波动率、回撤和历史分位。
-- 申购、赎回、限额、交易状态和数据日期。
-- 基金、股票和指数是否存在以及规范代码。
+不得把后续组合能力写成“已实现”。
+
+## 事实来源
+
+优先级从高到低：
+
+1. 通过 Schema、时效和 `frame_sha256` 审计的 AKShare Skill / Fund MCP；
+2. 用户给定的官方文档原文；
+3. Web MCP 提供的非数值背景；
+4. 模型常识不得作为市场事实。
+
+以下内容只能来自审计工具：
+
+- 净值、价格、指数点位；
+- PE、PB、收益率、波动、回撤和历史分位；
+- 申购、赎回、限额和交易状态；
+- 实体是否存在及其规范代码。
 
 模型不得生成、补齐、插值、前向填充、修复或改写上述内容。
 
-## 实体与错误语义
-
-实体候选不等于实体已确认。基金、股票和指数必须由 Skill 或工具目录解析。
+## 错误语义
 
 必须区分：
 
-- `NOT_FOUND`：目录查询成功，但没有该实体。
-- `AMBIGUOUS`：存在多个候选，需要用户确认。
-- `UNSUPPORTED`：实体可能存在，但当前市场或数据接口不支持。
-- `UPSTREAM_ERROR`：数据源失败，无法判断实体是否存在。
-- `STALE_DATA`：数据存在但时效不满足使用要求。
+- `NOT_FOUND`；
+- `AMBIGUOUS`；
+- `UNSUPPORTED`；
+- `UPSTREAM_ERROR`；
+- `STALE_DATA`。
 
-上游失败时只能回答“当前无法确认”，不得回答“该标的不存在”。无有效 Evidence
-时不得生成事实、图表或投资结论。
+上游失败只能回答“当前无法确认”，不能回答“该标的不存在”。
 
 ## 架构边界
 
-- `orchestration/`：意图、状态机和工具白名单，不直接查询行情。
-- `mcp_server/`：参数校验、超时、缓存和 `ToolEnvelope`，不改写金融数值。
-- `skills/akshare-fund-advisor/`：AKShare 调用、实体解析、确定性计算和数据审计。
-- `evidence/`：Evidence、Claim、门禁、确定性渲染和最终响应校验。
-- `rag/`：官方文档、指定文档和 Web 背景检索，不覆盖市场事实。
-- `portfolio/`：使用 `Decimal` 计算组合指标，并在外发模型前脱敏。
-- `web/`：只消费 API 返回的数据，不从模型文本解析图表数值。
-
-依赖方向应保持：
+当前依赖方向：
 
 ```text
-API/Web -> Orchestration -> MCP -> Skill
-                    |
-                    +-> RAG -> Evidence -> Claim -> Renderer
+LangGraph Agent
+  -> MCP
+     -> AKShare Skill
 ```
 
-## Prompt 规则
+- `skills/akshare-fund-advisor/scripts/fund_advisor.py`：实体解析、AKShare 调用、确定性指标和审计。
+- `src/fund_advisor_mcp/fund/`：市场事实 MCP，不改写 Skill 数值。
+- `src/fund_advisor_mcp/web/`：非数值背景 MCP，固定 `numeric_allowed=false`。
+- `src/fund_advisor_agent/`：只做固定图编排、工具路由、关联说明和输出校验。
 
-生产 Prompt 统一定义在 `src/financial_agent/prompts/`，业务节点不得新增内联
-system prompt。
+源码层级顺依赖方向：仓库级 `src/` 存放 Agent 与 MCP，`skills/akshare-fund-advisor/`
+回归纯数据层（SKILL.md + scripts + references），可独立拷贝。
 
-修改 Prompt 时必须：
+LangGraph 只使用 `StateGraph` 和显式条件边。不得恢复 LangChain Agent、开放式 ReAct、
+动态工具规划、数据库 checkpoint、长期记忆或多 Agent。
 
-1. 更新对应 `*_PROMPT_VERSION`。
-2. 保持结构化输出字段与 Pydantic Schema 一致。
-3. 不把代码门禁迁移成纯文本约束。
-4. 增加或更新 Prompt 契约测试。
-5. 在 `docs/PROMPT_DESIGN.md` 记录职责或安全边界变化。
+## Agent 关联说明
 
-Prompt 可以限制模型行为，但不能负责数据真实性、时效、权限和数值一致性。
+Agent 可以解释多个工具事实如何共同影响研究理解，但必须：
 
-## 配置与密钥
+- 每条关联引用具体工具和字段；
+- 区分事实、关联和限制；
+- 明确相关性不等于因果；
+- 不从历史统计预测未来收益；
+- 不把净值位置写成估值；
+- 不把 PE/PB 合成综合分；
+- 不输出确定性交易指令。
 
-- 所有自定义配置进入 `config/config.example.yaml` 和 Pydantic 配置模型。
-- 真实密钥只能写入被忽略的 `config/config.local.yaml` 或环境变量。
-- 不提交 API Key、Token、个人持仓、原始私有文档和生产数据库快照。
-- 日志默认不记录 Prompt、模型响应、完整持仓或密钥。
+LangGraph 节点必须保持单一职责，节点间只通过 `AgentState` 传递结构化数据。工具计划、
+错误分支和最终放行条件由代码决定，模型不得直接修改图状态或选择未注册工具。
 
-## 代码修改原则
+## 修改原则
 
-- 优先复用现有模块、Schema 和错误模型。
-- 金融计算使用确定性函数；金额和仓位计算使用 `Decimal`。
-- 新增工具必须同时更新 MCP Schema、Adapter、Server、工具发现数量和测试。
-- 新增市场数值必须提供来源接口、字段口径、时效规则和审计记录。
-- 不在前端、Prompt 或报告文本中复制一套金融计算。
-- 不顺手重构无关模块，不覆盖用户未提交的修改。
+- 优先复用现有 Schema、错误模型和指标函数。
+- 金融计算只能使用确定性函数。
+- 新增工具必须同步 Schema、Adapter、Server、工具数量和测试。
+- 新增市场数值必须同步接口来源、字段口径、时效和审计记录。
+- 不在 Agent 文本中复制计算逻辑。
+- 不改写用户未提交的无关修改。
 
-## 验证要求
+## 验证
 
-默认在 Docker 中验证：
+当前稳定验证入口：
 
 ```bash
-docker compose -f deploy/compose/compose.yaml \
-  --profile test run --rm --build test
+export SKILL_DIR="$PWD/skills/akshare-fund-advisor"
+.venv-agent/bin/python -m ruff check --no-cache .
+.venv-agent/bin/python -m pytest -q -p no:cacheprovider
+AKSHARE_FUND_VENV="$PWD/.venv-agent" bash "$SKILL_DIR/scripts/run.sh" audit
 ```
 
-涉及运行链路时还要检查：
-
-```bash
-docker compose -f deploy/compose/compose.yaml up -d --build
-curl -fsS http://127.0.0.1:8000/health/ready
-```
-
-按改动风险补充验证：
-
-- 意图或规划：工具路由评测。
-- MCP 或 Skill：真实 AKShare 冒烟测试和 `data_audit`。
-- Evidence 或报告：数值忠实度、D/E 级无事实测试。
-- 会话：同对话承接和新对话隔离。
-- 前端：固定图表、空状态、PE/PB 切换和浏览器控制台。
+Docker 相关改动仍须重新运行 Compose 测试、两个 MCP 服务健康检查和 HTTP 工具发现。
 
 ## 文档同步
 
-文档入口见 `docs/README.md`。出现以下变更时必须同步文档：
-
-- 架构和职责变化：`docs/HLD.md`、`docs/LLD.md`。
-- Prompt 变化：`docs/PROMPT_DESIGN.md`。
-- 错误码或降级变化：`docs/ERROR_HANDLING.md`。
-- 配置、启动命令或目录变化：`README.md`。
-- Skill 接口和指标变化：Skill 目录下的 `references/`。
-
+- 产品方向或架构：`README.md`、`docs/HLD.md`、`docs/LLD.md`
+- 错误语义：`docs/ERROR_HANDLING.md`
+- Web MCP：`docs/WEB_RESEARCH_MCP.md`
+- Skill 接口和指标：Skill 目录及 `references/`
+- 实施优先级：`docs/tasks/`

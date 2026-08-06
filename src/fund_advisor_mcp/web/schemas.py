@@ -16,12 +16,24 @@ class WebToolName(StrEnum):
     DOCUMENT_READ = "document_read"
 
 
+class WebSourceType(StrEnum):
+    OFFICIAL = "official"
+    RESEARCH = "research"
+    MEDIA = "media"
+    CREATOR = "creator"
+    OTHER = "other"
+
+
 class WebSearchInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     query: str = Field(min_length=1, max_length=500)
     max_results: int = Field(default=5, ge=1, le=20)
     freshness_days: int | None = Field(default=None, ge=1, le=365)
+    source_types: list[WebSourceType] = Field(
+        default_factory=list,
+        max_length=5,
+    )
 
 
 class WebFetchInput(BaseModel):
@@ -49,6 +61,8 @@ class WebSearchResult(BaseModel):
     snippet: str
     published_at: str | None = None
     language: str | None = None
+    source_type: WebSourceType = WebSourceType.OTHER
+    domain: str | None = None
 
 
 class WebSearchData(BaseModel):
@@ -113,4 +127,3 @@ class WebToolEnvelope(BaseModel):
     data_policy: WebDataPolicy = Field(default_factory=WebDataPolicy)
     queried_at: datetime
     error: WebToolError | None = None
-

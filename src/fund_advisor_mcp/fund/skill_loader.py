@@ -12,10 +12,13 @@ from types import ModuleType
 
 def _find_skill_script() -> Path:
     configured = os.environ.get("FINAGENT_SKILL_DIR")
+    # src/fund_advisor_mcp/fund/skill_loader.py -> parents[3] == 仓库根
+    repo_root = Path(__file__).resolve().parents[3]
     roots = [
         Path(configured).expanduser() if configured else None,
+        repo_root / "skills" / "akshare-fund-advisor",
         Path.cwd() / "skills" / "akshare-fund-advisor",
-        Path(__file__).resolve().parents[3] / "skills" / "akshare-fund-advisor",
+        Path.cwd(),
     ]
     candidates = [
         root / "scripts" / "fund_advisor.py"

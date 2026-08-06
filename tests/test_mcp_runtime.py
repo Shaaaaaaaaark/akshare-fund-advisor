@@ -3,8 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from financial_agent.mcp_client.client import _parse_result
-from financial_agent.mcp_server.skill_loader import _find_skill_script
+from fund_advisor_mcp.fund.client import _parse_result
+from fund_advisor_mcp.fund.skill_loader import _find_skill_script
 
 
 def test_skill_script_can_be_configured_outside_installed_package(

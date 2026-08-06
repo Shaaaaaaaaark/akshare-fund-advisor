@@ -39,6 +39,8 @@ analyze     分析历史位置、风险、估值和定投条件
 valuation   生成指数历史 PE/PB 图表数据
 audit       调用真实接口检查 Schema 和数据指纹
 compare     比较 2 到 5 只基金
+profile     查询基金基本信息、费率规则和资产配置
+rating      查询第三方基金评级和分类
 ```
 
 所有结果输出为 JSON。不要从终端提示文本或模型记忆补齐缺失字段。
@@ -158,7 +160,18 @@ bash "$SKILL_DIR/scripts/run.sh" compare \
 
 不同类型或不同口径不能只按收益率排序。
 
-## 9. 真实接口审计
+## 9. 查询基金档案与评级
+
+```bash
+bash "$SKILL_DIR/scripts/run.sh" profile --fund "000001"
+bash "$SKILL_DIR/scripts/run.sh" rating --fund "000001"
+```
+
+`profile` 返回基本信息、费率规则和资产配置；可选接口失败时保留已取得字段并写入
+`data_warnings`。`rating` 按基金代码精确匹配，未收录时返回
+`FUND_RATING_NOT_FOUND`，不能用名称近似匹配或模型补齐。
+
+## 10. 真实接口审计
 
 ```bash
 bash "$SKILL_DIR/scripts/run.sh" audit
@@ -184,7 +197,22 @@ bash "$SKILL_DIR/scripts/run.sh" audit \
 
 `audit` 调用真实网络接口，结果受当前网络、反爬和上游状态影响。历史审计记录只能说明当时的状态，不能替代本次运行。
 
-## 10. 通用审计字段
+财务、行业和基金质量候选接口使用独立 discovery audit，不会注册生产工具：
+
+```bash
+AKSHARE_FUND_VENV="$PWD/.venv-agent" \
+  "$PWD/.venv-agent/bin/python" \
+  "$SKILL_DIR/scripts/audit_quality_interfaces.py" \
+  --group all \
+  --as-of 20260804 \
+  --report-date 20251231 \
+  --fund-year 2025
+```
+
+可用分组为 `stock_financial`、`industry`、`fund_quality` 和 `all`。该脚本只输出接口
+Schema、日期、缺失、质量检查和内容哈希；不会筛选资产或改变 MCP 工具数。
+
+## 11. 通用审计字段
 
 成功和已初始化后的失败响应都可能包含：
 
@@ -209,7 +237,7 @@ disclaimer
 3. 指标自己的日期和 `latest_age_days` 合格。
 4. `data_warnings` 中没有声明该数据不可用于结论。
 
-## 11. 定投规则
+## 12. 定投规则
 
 当前规则不输出固定金额倍数：
 
@@ -221,7 +249,7 @@ disclaimer
 
 具体金额需要用户提供每期预算、当前与目标仓位、资金期限、应急资金和最大可承受回撤。
 
-## 12. 常见错误
+## 13. 常见错误
 
 ### `MISSING_DEPENDENCY`
 
@@ -255,7 +283,7 @@ bash "$SKILL_DIR/scripts/setup.sh"
 
 AKShare 的 PE/PB 接口均未返回可用数据。检查 `data_audit` 与 `data_warnings` 后再重试。
 
-## 13. 开发验证
+## 14. 开发验证
 
 ```bash
 "$SKILL_DIR/.venv/bin/python" -m py_compile \

@@ -3,9 +3,9 @@ requires = ["setuptools>=75", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "financial-investment-agent"
+name = "akshare-fund-advisor"
 version = "0.1.0"
-description = "Evidence-gated financial research agent for Chinese funds and indexes"
+description = "Audited LangGraph research agent for Chinese funds and stocks"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
@@ -16,39 +16,27 @@ dependencies = [
     "numpy==2.0.2",
     "requests==2.32.5",
     "curl_cffi==0.13.0",
-    "litellm>=1.44.0",
-    "pydantic>=2.5.0",
-    "PyYAML>=6.0.1",
-    "fastapi>=0.115.0,<1.0.0",
-    "uvicorn[standard]>=0.30.0,<1.0.0",
-    "langgraph>=0.2.0,<2.0.0",
-    "mcp>=1.0.0,<2.0.0",
-    "SQLAlchemy>=2.0.0,<3.0.0",
-    "alembic>=1.13.0,<2.0.0",
-    "psycopg[binary]>=3.2.0,<4.0.0",
-    "redis>=5.0.0,<8.0.0",
-    "elasticsearch>=8.14.0,<9.0.0",
-    "httpx>=0.27.0,<1.0.0",
-    "beautifulsoup4>=4.12.0,<5.0.0",
-    "pypdf>=5.0.0,<7.0.0",
-    "opentelemetry-api>=1.27.0,<2.0.0",
-    "opentelemetry-sdk>=1.27.0,<2.0.0",
-    "opentelemetry-instrumentation-fastapi>=0.48b0,<1.0.0",
+    "pydantic==2.13.4",
+    "PyYAML==6.0.3",
+    "langgraph==1.2.10",
+    "mcp==1.29.0",
+    "openai==2.53.0",
+    "httpx==0.28.1",
+    "beautifulsoup4==4.15.0",
+    "pypdf==6.14.2",
 ]
 
 [project.scripts]
-financial-agent = "financial_agent.api.cli:main"
-fund-advisor-mcp = "financial_agent.mcp_server.server:main"
-web-research-mcp = "financial_agent.web_research.server:main"
+fund-advisor-mcp = "fund_advisor_mcp.fund.server:main"
+web-research-mcp = "fund_advisor_mcp.web.server:main"
+fund-advisor-agent = "fund_advisor_agent.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools.package-data]
-"financial_agent.web" = ["*.html", "*.css", "*.js"]
+include = ["fund_advisor_mcp*", "fund_advisor_agent*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "skills/akshare-fund-advisor/tests"]

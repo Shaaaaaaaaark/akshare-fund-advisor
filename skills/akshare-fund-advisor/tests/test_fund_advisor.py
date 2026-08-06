@@ -31,8 +31,12 @@ def make_advisor(ak=None, now=None):
     advisor._calendar_frame = None
     advisor._etf_spot_frame = None
     advisor._stock_names_frame = None
+    advisor._rating_frame = None
+    advisor._rating_unavailable = False
+    advisor._rating_audit = []
     advisor._profile_cache = {}
     advisor._valuation_cache = {}
+    advisor._valuation_audit_cache = {}
     return advisor
 
 
@@ -411,6 +415,9 @@ class DataFallbackTest(unittest.TestCase):
         self.assertEqual(result["charts"]["pe_ttm"]["metric"], "PE_TTM")
         self.assertEqual(result["charts"]["pb"]["metric"], "PB")
         self.assertEqual(result["charts"]["stock_price"]["unit"], "元")
+        self.assertTrue(result["data_quality"]["pe_ttm_available"])
+        self.assertTrue(result["data_quality"]["pb_available"])
+        self.assertTrue(result["data_quality"]["price_available"])
         self.assertFalse(result["data_integrity"]["ai_generated_market_data"])
 
     def test_valuation_uses_akshare_only_and_records_both_interfaces(self):
@@ -741,6 +748,217 @@ class ProfileAndRatingTest(unittest.TestCase):
         with self.assertRaises(fund_advisor.AdvisorError) as ctx:
             advisor.rating("000001")
         self.assertEqual(ctx.exception.code, "FUND_RATING_NOT_FOUND")
+
+
+class AnalysisContractTest(unittest.TestCase):
+    def test_analyze_exposes_stable_sections(self):
+        advisor = make_advisor()
+        advisor.data_audit.append(
+            {
+                "interface": "stock_index_pe_lg",
+                "parameters": {"kwargs": {"symbol": "其他指数"}},
+                "validation": "passed",
+                "frame_sha256": "unrelated-audit",
+            }
+        )
+        fund = {"code": "000001", "name": "示例基金A", "type": "混合型"}
+        profile = {
+            "benchmark": "沪深300收益率",
+            "derived": {
+                "known_ongoing_fee_pct": 0.8,
+                "share_scale_yi_units": 10.0,
+            },
+        }
+        metrics = {
+            "latest_date": date.today(),
+            "latest_age_days": 0,
+            "returns_pct": {"12_month": 8.0},
+            "annualized_volatility_pct": 12.0,
+            "current_drawdown_pct": -2.0,
+            "max_drawdown_pct": -15.0,
+            "positive_day_ratio_pct": 52.0,
+            "history_position_percentile": 60.0,
+            "holding_experience": {"longest_underwater_days": 120},
+        }
+        advisor.resolve = lambda _query: fund
+        advisor._status_for_fund = lambda *_args, **_kwargs: {"available": True}
+        advisor._historical_metrics = lambda *_args, **_kwargs: (
+            metrics,
+            "累计净值",
+            "场外累计净值口径",
+        )
+        advisor._fund_profile = lambda _fund: profile
+        advisor._fund_rating = lambda *_args, **_kwargs: {
+            "fund_type": "混合型",
+            "fund_company": "示例基金公司",
+            "ratings": {
+                "shanghai_securities": 4.0,
+                "merchants_securities": None,
+                "jian_jin_xin": None,
+                "morningstar": 3.0,
+                "five_star_count": 1.0,
+            },
+        }
+        advisor._index_valuation = lambda *_args: {"available": False}
+        advisor._etf_spot = lambda _fund: None
+        advisor._portfolio_snapshot = lambda _fund: {
+            "asset_allocation": [{"asset_type": "股票", "weight_pct": 80.0}],
+            "stock_concentration": None,
+        }
+        advisor._strategy_output = lambda *_args: {}
+
+        result = advisor.analyze("000001")
+
+        self.assertEqual(result["analysis"]["identity"]["code"], "000001")
+        self.assertEqual(
+            result["analysis"]["performance"]["annualized_volatility_pct"],
+            12.0,
+        )
+        self.assertEqual(
+            result["analysis"]["trading_context"]["metric_basis"],
+            "累计净值",
+        )
+        self.assertEqual(result["analysis"]["data_quality"]["latest_age_days"], 0)
+        self.assertEqual(
+            result["analysis"]["product_profile"]["rating"]["fund_company"],
+            "示例基金公司",
+        )
+        for group in (
+            "product_profile",
+            "performance",
+            "valuation",
+            "trading_context",
+            "data_quality",
+        ):
+            self.assertIn("metric_basis", result["analysis"][group])
+            self.assertIn("as_of", result["analysis"][group])
+            self.assertIn("data_audit", result["analysis"][group])
+            self.assertIn("warnings", result["analysis"][group])
+        self.assertIn(
+            "第三方基金评级",
+            result["metric_coverage"]["available"],
+        )
+        self.assertEqual(result["analysis"]["valuation"]["metric_basis"], "unavailable")
+        self.assertEqual(result["analysis"]["valuation"]["data_audit"], [])
+
+    def test_compare_marks_share_class_difference_as_not_comparable(self):
+        advisor = make_advisor()
+
+        def analyze(query, **_kwargs):
+            return {
+                "ok": True,
+                "fund": {
+                    "code": query,
+                    "name": f"示例基金{'A' if query == 'A' else 'C'}",
+                    "type": "混合型",
+                },
+                "fund_profile": {"benchmark": "沪深300收益率"},
+                "metric_basis": "累计净值",
+            }
+
+        advisor.analyze = analyze
+
+        result = advisor.compare(["A", "C"])
+
+        self.assertFalse(result["comparability"]["same_share_class"])
+        self.assertFalse(
+            result["comparability"]["comparable_for_return_ranking"]
+        )
+        self.assertFalse(result["comparison_table"]["sorting_applied"])
+        self.assertEqual(result["comparison_table"]["sorted_views"], {})
+
+    def test_compare_sorts_only_comparable_non_missing_metrics(self):
+        advisor = make_advisor()
+
+        def analyze(query, **_kwargs):
+            value = 8.0 if query == "000001" else 5.0
+            return {
+                "ok": True,
+                "fund": {
+                    "code": query,
+                    "name": "示例基金A",
+                    "type": "混合型",
+                },
+                "fund_profile": {
+                    "benchmark": "沪深300收益率",
+                    "derived": {
+                        "known_ongoing_fee_pct": (
+                            0.6 if query == "000001" else None
+                        )
+                    },
+                },
+                "fund_rating": {
+                    "ratings": {
+                        "morningstar": (
+                            4.0 if query == "000001" else None
+                        )
+                    }
+                },
+                "portfolio_snapshot": {
+                    "asset_allocation": {
+                        "items": [
+                            {"asset_type": "股票", "weight_pct": 80.0}
+                        ]
+                    }
+                },
+                "metric_basis": "累计净值",
+                "metrics": {
+                    "latest_date": date.today(),
+                    "returns_pct": {"12_month": value},
+                    "annualized_volatility_pct": (
+                        12.0 if query == "000001" else 9.0
+                    ),
+                    "max_drawdown_pct": (
+                        -15.0 if query == "000001" else -10.0
+                    ),
+                    "holding_experience": {
+                        "annualized_return_pct": value
+                    },
+                },
+            }
+
+        advisor.analyze = analyze
+
+        result = advisor.compare(["000001", "000002"])
+
+        self.assertTrue(result["comparison_table"]["sorting_applied"])
+        self.assertEqual(
+            [
+                item["fund_code"]
+                for item in result["comparison_table"]["sorted_views"][
+                    "return_12_month_pct_desc"
+                ]
+            ],
+            ["000001", "000002"],
+        )
+        self.assertEqual(
+            [
+                item["fund_code"]
+                for item in result["comparison_table"]["sorted_views"][
+                    "annualized_volatility_pct_asc"
+                ]
+            ],
+            ["000002", "000001"],
+        )
+        self.assertEqual(
+            result["comparison_table"]["sorted_views"][
+                "known_ongoing_fee_pct_asc"
+            ],
+            [
+                {
+                    "fund_code": "000001",
+                    "fund_name": "示例基金A",
+                    "value": 0.6,
+                }
+            ],
+        )
+
+    def test_annualized_return_formula_declares_percent_unit(self):
+        formula = make_advisor().common_output()["derived_formulas"][
+            "annualized_return_pct"
+        ]
+
+        self.assertTrue(formula.endswith("* 100"))
 
 
 if __name__ == "__main__":

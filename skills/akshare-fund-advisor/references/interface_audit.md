@@ -9,6 +9,10 @@
 - 每次运行重新检查 Schema，并记录参数、行数、列名和 DataFrame SHA-256。
 - 接口失败如实记录；失败不等于零值、停牌、暂停申购或无行情。
 
+本文只记录当前生产接口。财务、行业和基金质量的候选接口 discovery audit 见
+[quality_interface_audit.md](quality_interface_audit.md)；候选接口在正式接入
+`INTERFACE_CONTRACTS` 前不得作为生产事实来源。
+
 ## 源码契约
 
 | 接口 | 上游 | 已验证输入 | 关键输出 |

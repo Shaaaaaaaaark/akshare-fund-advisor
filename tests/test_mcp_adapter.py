@@ -1,7 +1,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from financial_agent.mcp_server.adapter import FundAdvisorToolAdapter
+from fund_advisor_mcp.fund.adapter import FundAdvisorToolAdapter
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 

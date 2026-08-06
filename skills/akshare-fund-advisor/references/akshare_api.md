@@ -2,6 +2,9 @@
 
 本文只记录 Skill 实际使用的接口和口径。AKShare 版本固定为 `1.18.64`，上游网站变更时应重新做真实数据冒烟测试。
 
+尚未进入生产的财务、行业和基金质量候选接口单独记录在
+[quality_interface_audit.md](quality_interface_audit.md)，不得把候选接口写成已实现能力。
+
 官方文档：
 
 - [AKShare 数据字典](https://akshare.akfamily.xyz/)

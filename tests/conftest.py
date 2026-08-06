@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
 
-from financial_agent.config import AppConfig, get_config
-from financial_agent.mcp_server.schemas import ToolEnvelope, ToolName
+from fund_advisor_mcp.config import AppConfig
+from fund_advisor_mcp.fund.schemas import ToolEnvelope, ToolName
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
@@ -25,7 +24,7 @@ class FakeFundToolClient:
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     async def call(self, tool: str, arguments: dict[str, Any]) -> ToolEnvelope:
-        from financial_agent.mcp_server.schemas import ToolError
+        from fund_advisor_mcp.fund.schemas import ToolError
 
         self.calls.append((tool, arguments))
         if self.error_code:
@@ -143,22 +142,17 @@ def valuation_envelope(tool: str = "index_valuation") -> ToolEnvelope:
 
 
 @pytest.fixture
-def test_config(tmp_path: Path) -> AppConfig:
-    config = get_config()
+def test_config() -> AppConfig:
+    config = AppConfig()
     return config.model_copy(
         update={
-            "storage": config.storage.model_copy(
-                update={
-                    "database_url": f"sqlite:///{tmp_path / 'agent.db'}",
-                    "document_dir": str(tmp_path / "documents"),
-                }
-            ),
             "mcp": config.mcp.model_copy(update={"transport": "inprocess"}),
             "agent": config.agent.model_copy(
                 update={
                     "use_llm_for_intent": False,
-                    "use_llm_for_report": False,
+                    "use_llm_for_associations": False,
                 }
             ),
+            "model": config.model.model_copy(update={"enabled": False}),
         }
     )

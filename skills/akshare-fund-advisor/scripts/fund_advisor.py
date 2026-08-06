@@ -1026,8 +1026,15 @@ class FundAdvisor:
         self._calendar_frame: Optional[pd.DataFrame] = None
         self._etf_spot_frame: Optional[pd.DataFrame] = None
         self._stock_names_frame: Optional[pd.DataFrame] = None
+        self._rating_frame: Optional[pd.DataFrame] = None
+        self._rating_unavailable = False
+        self._rating_audit: List[Dict[str, Any]] = []
         self._profile_cache: Dict[str, Optional[Dict[str, Any]]] = {}
         self._valuation_cache: Dict[Tuple[str, int], Dict[str, Any]] = {}
+        self._valuation_audit_cache: Dict[
+            Tuple[str, int],
+            List[Dict[str, Any]],
+        ] = {}
 
     def _add_source(
         self,
@@ -1293,6 +1300,64 @@ class FundAdvisor:
         self._profile_cache[code] = profile
         return profile
 
+    def _fund_rating(
+        self,
+        fund: Dict[str, Any],
+        *,
+        optional: bool,
+    ) -> Optional[Dict[str, Any]]:
+        if self._rating_frame is None:
+            if optional and self._rating_unavailable:
+                return None
+            audit_start = len(self.data_audit)
+            frame = self._call(
+                "fund_rating_all",
+                "天天基金-基金评级",
+                self.ak.fund_rating_all,
+                optional=optional,
+                allow_empty=True,
+            )
+            self._rating_audit = list(self.data_audit[audit_start:])
+            if frame is None:
+                self._rating_unavailable = True
+                return None
+            self._rating_frame = frame
+
+        matched = self._rating_frame[
+            self._rating_frame["代码"]
+            .map(normalize_code)
+            .eq(normalize_code(fund["code"]))
+        ]
+        if matched.empty:
+            if optional:
+                return None
+            raise AdvisorError(
+                "FUND_RATING_NOT_FOUND",
+                f"评级数据未收录该基金：{fund['code']}",
+                {"fund_code": fund["code"]},
+            )
+        row = matched.iloc[0]
+
+        def agency(column: str) -> Optional[float]:
+            return (
+                optional_float(row.get(column))
+                if column in matched.columns
+                else None
+            )
+
+        return {
+            "fund_type": json_value(row.get("类型")),
+            "fund_company": json_value(row.get("基金公司")),
+            "ratings": {
+                "shanghai_securities": agency("上海证券"),
+                "merchants_securities": agency("招商证券"),
+                "jian_jin_xin": agency("济安金信"),
+                "morningstar": agency("晨星评级"),
+                "five_star_count": agency("5星评级家数"),
+            },
+            "notes": "评级为第三方机构历史结论，不构成投资建议，也不代表当前业绩。",
+        }
+
     def _portfolio_snapshot(
         self,
         fund: Dict[str, Any],
@@ -1532,6 +1597,7 @@ class FundAdvisor:
         if cache_key in self._valuation_cache:
             return self._valuation_cache[cache_key]
 
+        audit_start = len(self.data_audit)
         pe_frame = self._call(
             "stock_index_pe_lg",
             "乐咕乐股-指数市盈率",
@@ -1620,6 +1686,9 @@ class FundAdvisor:
                 ),
             }
         self._valuation_cache[cache_key] = result
+        self._valuation_audit_cache[cache_key] = list(
+            self.data_audit[audit_start:]
+        )
         return result
 
     def valuation(
@@ -2110,6 +2179,19 @@ class FundAdvisor:
                 "combined_percentile_policy": "禁止将 PE 与 PB 分位简单平均",
             },
             "charts": charts,
+            "data_quality": {
+                "pe_ttm_available": pe is not None,
+                "pb_available": pb is not None,
+                "price_available": stock_price is not None,
+                "available_series": available,
+                "missing_series": [
+                    name
+                    for name in ("PE_TTM", "PB", "STOCK_PRICE")
+                    if name not in available
+                ],
+                "latest_date": max(latest_dates) if latest_dates else None,
+                "warnings": list(self.data_warnings),
+            },
             "limitations": [
                 "历史 PE/PB 和股价不预测未来涨跌。",
                 "个股估值需结合盈利质量、行业周期和财务报告，不构成投资建议。",
@@ -2727,6 +2809,8 @@ class FundAdvisor:
         years: int = 3,
         include_spot: bool = True,
     ) -> Dict[str, Any]:
+        audit_start = len(self.data_audit)
+        warning_start = len(self.data_warnings)
         fund = self.resolve(query)
         availability = self._status_for_fund(fund, optional=True)
         metrics, metric_basis, basis_note = self._historical_metrics(
@@ -2746,6 +2830,7 @@ class FundAdvisor:
                 },
             )
         profile = self._fund_profile(fund)
+        rating = self._fund_rating(fund, optional=True)
         valuation = self._index_valuation(fund, profile, 10)
         spot = self._etf_spot(fund) if include_spot else None
         fund_text = " ".join(
@@ -2787,6 +2872,13 @@ class FundAdvisor:
             available_metrics.append("份额规模")
         else:
             missing_metrics.append("份额规模")
+        if rating and any(
+            value is not None
+            for value in rating.get("ratings", {}).values()
+        ):
+            available_metrics.append("第三方基金评级")
+        else:
+            missing_metrics.append("第三方基金评级")
         missing_metrics.append("基金净资产规模")
         if portfolio.get("asset_allocation"):
             available_metrics.append("报告期资产配置")
@@ -2804,11 +2896,193 @@ class FundAdvisor:
             missing_metrics.extend(["跟踪误差", "跟踪差异"])
         else:
             missing_metrics.extend(["基金经理任职变化", "相对业绩基准超额收益"])
+        metric_coverage = {
+            "available": available_metrics,
+            "missing_or_not_reliably_available": missing_metrics,
+            "rule": "缺失指标不得由模型推断或用近似指标替代。",
+        }
+        operation_audit = self.data_audit[audit_start:]
+        operation_warnings = self.data_warnings[warning_start:]
+
+        def audit_view(
+            interfaces: Optional[set[str]] = None,
+            supplemental: Optional[Sequence[Dict[str, Any]]] = None,
+        ) -> List[Dict[str, Any]]:
+            selected = [
+                item
+                for item in operation_audit
+                if interfaces is None or item.get("interface") in interfaces
+            ]
+            for item in supplemental or []:
+                if (
+                    (interfaces is None or item.get("interface") in interfaces)
+                    and item not in selected
+                ):
+                    selected.append(item)
+            return [
+                {
+                    key: item[key]
+                    for key in (
+                        "interface",
+                        "parameters",
+                        "validation",
+                        "frame_sha256",
+                        "error",
+                    )
+                    if key in item
+                }
+                for item in selected
+            ]
+
+        def warning_view(
+            interfaces: Optional[set[str]] = None,
+        ) -> List[Dict[str, Any]]:
+            return [
+                item
+                for item in operation_warnings
+                if interfaces is None or item.get("interface") in interfaces
+            ]
+
+        def group_metadata(
+            basis: str,
+            as_of: Any,
+            interfaces: Optional[set[str]] = None,
+            supplemental_audit: Optional[
+                Sequence[Dict[str, Any]]
+            ] = None,
+        ) -> Dict[str, Any]:
+            return {
+                "metric_basis": basis,
+                "as_of": json_value(as_of),
+                "data_audit": audit_view(interfaces, supplemental_audit),
+                "warnings": warning_view(interfaces),
+            }
+
+        product_interfaces = {
+            "fund_info_ths",
+            "fund_rating_all",
+            "fund_individual_detail_hold_xq",
+            "fund_portfolio_hold_em",
+        }
+        performance_interfaces = {
+            "fund_open_fund_info_em",
+            "fund_etf_hist_em",
+            "fund_lof_hist_em",
+            "fund_etf_hist_sina",
+        }
+        valuation_interfaces = {
+            "stock_index_pe_lg",
+            "stock_index_pb_lg",
+        }
+        trading_interfaces = {
+            "fund_purchase_em",
+            "tool_trade_date_hist_sina",
+            "fund_etf_spot_em",
+        }
+        allocation = portfolio.get("asset_allocation")
+        concentration = portfolio.get("stock_concentration")
+        product_as_of = {
+            "profile": None,
+            "rating": None,
+            "asset_allocation": (
+                allocation.get("report_date")
+                if isinstance(allocation, dict)
+                else None
+            ),
+            "stock_concentration": (
+                concentration.get("report_period")
+                if isinstance(concentration, dict)
+                else None
+            ),
+        }
+        performance_as_of = metrics.get("latest_date")
+        valuation_as_of = {
+            "pe_ttm": (valuation.get("pe_ttm") or {}).get("latest_date"),
+            "pb": (valuation.get("pb") or {}).get("latest_date"),
+        }
+        valuation_audit = self._valuation_audit_cache.get(
+            (str(valuation.get("index_name") or ""), 10),
+            [],
+        )
+        trading_as_of = {
+            "status": availability.get("source_report_date"),
+            "market_snapshot": (spot or {}).get("date"),
+        }
+        performance = {
+            "returns_pct": metrics.get("returns_pct"),
+            "annualized_volatility_pct": metrics.get(
+                "annualized_volatility_pct"
+            ),
+            "current_drawdown_pct": metrics.get("current_drawdown_pct"),
+            "max_drawdown_pct": metrics.get("max_drawdown_pct"),
+            "positive_day_ratio_pct": metrics.get("positive_day_ratio_pct"),
+            "history_position_percentile": metrics.get(
+                "history_position_percentile"
+            ),
+            "holding_experience": metrics.get("holding_experience"),
+            "latest_date": performance_as_of,
+            **group_metadata(
+                metric_basis,
+                performance_as_of,
+                performance_interfaces,
+            ),
+        }
+        valuation_analysis = {
+            **valuation,
+            **group_metadata(
+                (
+                    "matched_index_pe_ttm_and_pb"
+                    if valuation.get("available")
+                    else "unavailable"
+                ),
+                valuation_as_of,
+                valuation_interfaces,
+                valuation_audit,
+            ),
+        }
+        analysis = {
+            "identity": fund,
+            "product_profile": {
+                "profile": profile,
+                "rating": rating,
+                "portfolio_snapshot": portfolio,
+                **group_metadata(
+                    "source_product_facts_and_disclosed_holdings",
+                    product_as_of,
+                    product_interfaces,
+                    self._rating_audit,
+                ),
+            },
+            "performance": performance,
+            "holding_experience": metrics.get("holding_experience"),
+            "valuation": valuation_analysis,
+            "trading_context": {
+                "basis_note": basis_note,
+                "execution_status": availability,
+                "market_snapshot": spot,
+                **group_metadata(
+                    metric_basis,
+                    trading_as_of,
+                    trading_interfaces,
+                ),
+            },
+            "data_quality": {
+                "lookback_years": years,
+                "latest_date": performance_as_of,
+                "latest_age_days": latest_age,
+                "metric_coverage": metric_coverage,
+                **group_metadata(
+                    "data_quality_metadata",
+                    performance_as_of,
+                ),
+            },
+        }
         return {
             "ok": True,
             "action": "analyze",
             "fund": fund,
             "fund_profile": profile,
+            "fund_rating": rating,
             "lookback_years": years,
             "valuation_lookback_years": 10,
             "metric_basis": metric_basis,
@@ -2817,11 +3091,8 @@ class FundAdvisor:
             "index_valuation": valuation,
             "market_snapshot": spot,
             "portfolio_snapshot": portfolio,
-            "metric_coverage": {
-                "available": available_metrics,
-                "missing_or_not_reliably_available": missing_metrics,
-                "rule": "缺失指标不得由模型推断或用近似指标替代。",
-            },
+            "metric_coverage": metric_coverage,
+            "analysis": analysis,
             **strategy,
             "execution_status": availability,
             "data_integrity": {
@@ -2935,42 +3206,18 @@ class FundAdvisor:
         避免把评级张冠李戴到别的基金。
         """
         fund = self.resolve(query)
-        code = fund["code"]
-        frame = self._call(
-            "fund_rating_all",
-            "天天基金-基金评级",
-            self.ak.fund_rating_all,
-        )
-        matched = frame[frame["代码"].map(normalize_code).eq(normalize_code(code))]
-        if matched.empty:
+        rating = self._fund_rating(fund, optional=False)
+        if rating is None:
             raise AdvisorError(
-                "FUND_RATING_NOT_FOUND",
-                f"评级数据未收录该基金：{code}",
-                {"fund_code": code},
+                "DATA_SOURCE_ERROR",
+                "基金评级接口当前无法确认",
+                {"fund_code": fund["code"]},
             )
-        row = matched.iloc[0]
-
-        def _agency(column: str) -> Optional[float]:
-            return (
-                optional_float(row.get(column))
-                if column in matched.columns
-                else None
-            )
-
         return {
             "ok": True,
             "action": "rating",
             "fund": fund,
-            "fund_type": json_value(row.get("类型")),
-            "fund_company": json_value(row.get("基金公司")),
-            "ratings": {
-                "shanghai_securities": _agency("上海证券"),
-                "merchants_securities": _agency("招商证券"),
-                "jian_jin_xin": _agency("济安金信"),
-                "morningstar": _agency("晨星评级"),
-                "five_star_count": _agency("5星评级家数"),
-            },
-            "notes": "评级为第三方机构历史结论，不构成投资建议，也不代表当前业绩。",
+            **rating,
         }
 
     @staticmethod
@@ -3012,20 +3259,154 @@ class FundAdvisor:
                 )
 
         successful = [item for item in results if item.get("ok")]
-        fund_types = {
-            item["fund"].get("type") for item in successful if item["fund"].get("type")
+
+        def share_class(item: Dict[str, Any]) -> Optional[str]:
+            name = str(item.get("fund", {}).get("name") or "").strip()
+            matched = re.search(r"([AC])(?:类)?[）)]?$", name, re.IGNORECASE)
+            return matched.group(1).upper() if matched else None
+
+        def benchmark(item: Dict[str, Any]) -> Optional[str]:
+            value = (item.get("fund_profile") or {}).get("benchmark")
+            text = str(value or "").strip()
+            return text or None
+
+        def all_same(values: Sequence[Optional[str]]) -> Optional[bool]:
+            if not values or any(value is None for value in values):
+                return None
+            return len(set(values)) == 1
+
+        fund_types = [
+            str(item["fund"].get("type") or "").strip() or None
+            for item in successful
+        ]
+        share_classes = [share_class(item) for item in successful]
+        metric_bases = [
+            str(item.get("metric_basis") or "").strip() or None
+            for item in successful
+        ]
+        benchmarks = [benchmark(item) for item in successful]
+        checks = {
+            "same_reported_fund_type": all_same(fund_types),
+            "same_share_class": all_same(share_classes),
+            "same_metric_basis": all_same(metric_bases),
+            "same_tracking_or_benchmark": all_same(benchmarks),
         }
-        metric_bases = {
-            item.get("metric_basis") for item in successful if item.get("metric_basis")
-        }
+        comparison_ready = (
+            len(successful) == len(results)
+            and bool(successful)
+            and all(value is True for value in checks.values())
+        )
+
+        def comparison_row(item: Dict[str, Any]) -> Dict[str, Any]:
+            metrics = item.get("metrics") or {}
+            experience = metrics.get("holding_experience") or {}
+            profile = item.get("fund_profile") or {}
+            rating = item.get("fund_rating") or {}
+            portfolio = item.get("portfolio_snapshot") or {}
+            allocation = portfolio.get("asset_allocation")
+            if isinstance(allocation, dict):
+                allocation_items = allocation.get("items")
+            elif isinstance(allocation, list):
+                allocation_items = allocation
+            else:
+                allocation_items = None
+            return {
+                "fund_code": item["fund"].get("code"),
+                "fund_name": item["fund"].get("name"),
+                "fund_type": item["fund"].get("type"),
+                "share_class": share_class(item),
+                "metric_basis": item.get("metric_basis"),
+                "tracking_or_benchmark": benchmark(item),
+                "as_of": metrics.get("latest_date"),
+                "return_12_month_pct": (
+                    (metrics.get("returns_pct") or {}).get("12_month")
+                ),
+                "annualized_return_pct": experience.get(
+                    "annualized_return_pct"
+                ),
+                "max_drawdown_pct": metrics.get("max_drawdown_pct"),
+                "annualized_volatility_pct": metrics.get(
+                    "annualized_volatility_pct"
+                ),
+                "known_ongoing_fee_pct": (
+                    (profile.get("derived") or {}).get(
+                        "known_ongoing_fee_pct"
+                    )
+                ),
+                "ratings": rating.get("ratings"),
+                "asset_allocation": allocation_items,
+            }
+
+        comparison_rows = [comparison_row(item) for item in successful]
+
+        def sorted_view(
+            field: str,
+            *,
+            reverse: bool,
+        ) -> List[Dict[str, Any]]:
+            values = [
+                {
+                    "fund_code": row["fund_code"],
+                    "fund_name": row["fund_name"],
+                    "value": row[field],
+                }
+                for row in comparison_rows
+                if isinstance(row.get(field), (int, float))
+                and not isinstance(row.get(field), bool)
+            ]
+            return sorted(
+                values,
+                key=lambda row: row["value"],
+                reverse=reverse,
+            )
+
+        sorted_views = (
+            {
+                "return_12_month_pct_desc": sorted_view(
+                    "return_12_month_pct",
+                    reverse=True,
+                ),
+                "annualized_return_pct_desc": sorted_view(
+                    "annualized_return_pct",
+                    reverse=True,
+                ),
+                "max_drawdown_pct_desc_shallower_first": sorted_view(
+                    "max_drawdown_pct",
+                    reverse=True,
+                ),
+                "annualized_volatility_pct_asc": sorted_view(
+                    "annualized_volatility_pct",
+                    reverse=False,
+                ),
+                "known_ongoing_fee_pct_asc": sorted_view(
+                    "known_ongoing_fee_pct",
+                    reverse=False,
+                ),
+            }
+            if comparison_ready
+            else {}
+        )
         return {
             "ok": bool(successful),
             "action": "compare",
             "lookback_years": years,
             "results": results,
+            "comparison_table": {
+                "rows": comparison_rows,
+                "sorting_applied": comparison_ready,
+                "sorted_views": sorted_views,
+                "sorting_policy": (
+                    "仅在基金类型、份额类别、指标口径和跟踪标的/业绩基准均一致时排序；"
+                    "缺失值不作为零参与排序。"
+                ),
+            },
             "comparability": {
-                "same_reported_fund_type": len(fund_types) <= 1,
-                "same_metric_basis": len(metric_bases) <= 1,
+                **checks,
+                "reported_fund_types": fund_types,
+                "share_classes": share_classes,
+                "metric_bases": metric_bases,
+                "tracking_or_benchmarks": benchmarks,
+                "comparable_for_return_ranking": comparison_ready,
                 "note": (
                     "不同基金类型、跟踪标的或指标口径不应直接按收益率排名；"
                     "分别比较估值、历史位置、收益、回撤、波动、费用、溢价和定投适配性。"
@@ -3228,7 +3609,7 @@ class FundAdvisor:
                 "current_drawdown_pct": "(latest / running_peak - 1) * 100",
                 "max_drawdown_pct": "min(value / running_peak - 1) * 100",
                 "annualized_volatility_pct": "std(daily_return, ddof=1) * sqrt(250) * 100",
-                "annualized_return_pct": "(ending / beginning) ** (365.25 / elapsed_days) - 1",
+                "annualized_return_pct": "((ending / beginning) ** (365.25 / elapsed_days) - 1) * 100",
                 "downside_volatility_pct": "sqrt(mean(min(daily_return, 0) ** 2)) * sqrt(250) * 100",
                 "calmar_ratio": "annualized_return_pct / abs(max_drawdown_pct)",
                 "history_percentile": "count(observation <= current) / observation_count * 100",

@@ -6,12 +6,14 @@
 
 ## 特性
 
-- **多入口意图映射**：`search` / `status` / `analyze` / `valuation` / `compare` / `audit` 六个稳定命令。
+- **多入口意图映射**：`search` / `status` / `analyze` / `valuation` / `compare` / `profile` / `rating` / `audit` 八个稳定命令。
 - **可核验数据**：每次接口调用都经过 Schema、空值与时效校验，并记录内容指纹（`frame_sha256`）与审计信息。
 - **专业指数估值**：PE TTM / PB 历史双图，含 3/5/10/20 年独立分位、均值、中位数、标准差参考线与极值。
 - **单一可信数据源**：指数估值只调用 AKShare `stock_index_pe_lg` 和 `stock_index_pb_lg`，并保留上游来源与审计记录。
 - **条件式策略**：基础定投、减量、等待、暂停追价等规则输出，标记为 `rule_based_policy_not_market_data`，不输出机械金额倍数。
 - **确定性指标**：收益、波动、最大回撤、修复时间、历史分位、ETF 溢价等按固定公式计算。
+- **稳定分析契约**：产品、表现、估值、交易和数据质量分组均带口径、源日期、审计引用和 warning。
+- **受控比较**：合并可用评级与资产配置，只在类型、份额、口径和基准一致时生成排序视图。
 
 ## 环境要求
 
@@ -61,6 +63,8 @@ bash "$SKILL_DIR/scripts/run.sh" --help
 | `analyze` | 唯一基金名称或代码 | 产品、历史指标、估值、溢价和策略规则 |
 | `valuation` | 精确指数名称、别名或代码 | PE/PB 历史统计和图表点 |
 | `compare` | 2 到 5 只基金 | 各基金独立分析及可比性提示 |
+| `profile` | 唯一基金名称或代码 | 类型、经理、费用、规模和资产配置 |
+| `rating` | 唯一基金名称或代码 | 第三方评级和基金分类 |
 | `audit` | 代表性基金和指数 | 真实接口 Schema 与数据指纹审计 |
 
 所有命令输出 JSON。成功退出码为 `0`，业务或数据错误为 `1`，Shell 环境缺失时 `run.sh` 返回非零。
@@ -119,25 +123,42 @@ bash "$SKILL_DIR/scripts/run.sh" audit
 
 ## Agent 集成边界
 
-本项目适合作为金融 Agent 的事实工具，而不是完整 Agent：
+本 Skill 是金融 Agent 的事实与确定性计算层；仓库内同时提供最小 LangGraph Agent：
 
 - **Skill 内**：基金/指数解析、AKShare 查询、Schema 与时效校验、`frame_sha256` 审计、确定性指标和有限规则输出。
-- **MCP 层**：工具 Schema、鉴权、限流、缓存、调用日志和进程隔离。
-- **RAG 层**：基金合同、招募说明书、定期报告、指数编制方案和监管规则；不存储或替代实时行情。
-- **Agent 层**：用户风险画像、持仓和成本、跨工具编排、组合分析、合规检查与最终报告。
+- **MCP 层**：九个市场事实工具、三个 Web 背景工具，以及 Schema、超时、进程内缓存、调用日志和进程隔离。
+- **Web MCP**：搜索公开研究、财经媒体和博主/社区链接，按需读取网页和用户给定文档，只提供 `numeric_allowed=false` 的背景。
+- **LangGraph Agent 层**：固定状态图、工具白名单、FactRef、单标文章/博主双查询、事实字段关联说明和输出校验。
 
-外部模型不得用训练记忆、网页摘要或 RAG 内容覆盖 Skill 返回的当前数值、日期、来源和警告。
+LangGraph Agent 可以关联解释基金产品、历史风险、指数估值和交易状态，但不得把相关性
+写成因果，也不得用训练记忆、网页摘要或外部文档覆盖 Skill 返回的数值、日期、来源和
+警告。
+
+启用 Web Research 时，基金和股票单标分析固定追加两次可选搜索。输出中的来源类别只按
+域名和标题规则生成，不代表博主身份或内容真实性已经核验；搜索失败时保留已审计的市场
+分析并标记部分结果。
+
+Agent 单轮入口：
+
+```bash
+fund-advisor-agent ask \
+  --question "沪深300指数估值" \
+  --output text
+```
+
+默认使用规则关联；只有显式配置 OpenAI-compatible 模型并启用开关时才调用结构化模型。
 
 ## 项目结构
 
 ```text
-akshare-fund-advisor/
+skills/akshare-fund-advisor/   # 纯数据层，可独立拷贝
 ├── SKILL.md                 # 模型调用顺序、回答格式和禁止事项
 ├── DESIGN.md                # 系统设计、数据源、指标与策略
 ├── USAGE.md                 # 独立安装、命令和排错说明
 ├── requirements.txt         # 锁定的运行依赖
 ├── scripts/
 │   ├── fund_advisor.py      # CLI、数据访问、校验、指标与策略规则
+│   ├── audit_quality_interfaces.py # 候选筛选接口 discovery audit
 │   ├── run.sh               # 选择虚拟环境并启动 CLI
 │   └── setup.sh             # 创建虚拟环境并安装锁定依赖
 ├── tests/
@@ -146,7 +167,16 @@ akshare-fund-advisor/
     ├── akshare_api.md       # 接口、字段与公式契约
     ├── professional_metrics.md  # 专业指标解释
     ├── valuation_chart.md   # 指数估值图数据与渲染契约
-    └── interface_audit.md   # 真实接口审计方法与历史记录
+    ├── interface_audit.md   # 生产接口审计方法与历史记录
+    └── quality_interface_audit.md # 财务、行业和基金质量候选接口审计
+```
+
+MCP 与 LangGraph Agent 源码位于仓库级源码根（不随 skill 拷贝）：
+
+```text
+src/
+├── fund_advisor_mcp/        # config、fund/ 市场事实 MCP、web/ 背景 MCP
+└── fund_advisor_agent/      # LangGraph 固定状态图、FactRef、门禁与 CLI
 ```
 
 ## 开发验证
@@ -160,6 +190,16 @@ sh -n "$SKILL_DIR/scripts/setup.sh"
 
 单元测试不访问真实网络。接口或字段变化时，更新代码与文档后必须重新运行真实 `audit`，不得用 Mock 结果替代真实接口验证。
 
+根目录安装 Agent 依赖后，还需运行：
+
+```bash
+.venv-agent/bin/python -m ruff check --no-cache .
+.venv-agent/bin/python -m pytest -q -p no:cacheprovider
+```
+
+当前本地和容器测试、stdio/HTTP 工具发现、Docker 服务健康检查及 Agent 容器闭环均已
+通过；Ark thinking 模型的 Pydantic 结构化关联输出与门禁闭环也已验证。
+
 ## 文档
 
 - 使用说明：[USAGE.md](USAGE.md)
@@ -170,6 +210,7 @@ sh -n "$SKILL_DIR/scripts/setup.sh"
 - 指标解释：[references/professional_metrics.md](references/professional_metrics.md)
 - 估值图契约：[references/valuation_chart.md](references/valuation_chart.md)
 - 接口审计：[references/interface_audit.md](references/interface_audit.md)
+- 候选接口审计：[references/quality_interface_audit.md](references/quality_interface_audit.md)
 
 ## 免责声明
 

@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
-from financial_agent.config import AppConfig, get_config
+from fund_advisor_mcp.config import AppConfig, get_config
 
 from .cache import EnvelopeCache, build_envelope_cache
 from .schemas import (
@@ -34,6 +34,7 @@ _RETRYABLE_CODES = {
     "DATA_SOURCE_ERROR",
     "VALUATION_SOURCE_UNAVAILABLE",
     "RATE_LIMITED",
+    "UPSTREAM_TIMEOUT",
 }
 
 

@@ -15,12 +15,6 @@
 ## 2. 系统结构
 
 ```text
-金融 Agent / MCP 适配器
-    |
-    v
-scripts/run.sh
-    |
-    v
 scripts/fund_advisor.py
     |-- CLI 参数与退出码
     |-- 基金/指数精确解析
@@ -29,6 +23,15 @@ scripts/fund_advisor.py
     |-- 确定性指标计算
     |-- 条件式买卖与定投规则
     `-- JSON 输出、审计和警告
+
+src/fund_advisor_mcp/fund/
+    `-- 通过 Adapter 加载 FundAdvisor，暴露九个市场事实工具
+
+src/fund_advisor_mcp/web/
+    `-- 搜索、网页和指定文档的非数值背景工具
+
+src/fund_advisor_agent/
+    `-- 固定状态图、工具路由、跨结果关联说明和输出校验
 ```
 
 ### 2.1 与金融 Agent 的职责边界
@@ -40,15 +43,20 @@ Skill 内保留能够独立验证和测试的金融事实能力：
 - 基金指标、指数 PE/PB、ETF 溢价等确定性计算。
 - 不依赖用户长期状态的透明规则化参考。
 
-Skill 外由金融 Agent、MCP 服务和 RAG 系统承担：
+Skill 外由同仓 MCP 和 LangGraph Agent 承担：
 
-- MCP Schema、鉴权、限流、缓存、调用追踪和服务隔离。
-- 用户风险画像、持仓、成本、目标仓位、预算、期限和会话记忆。
-- 招募说明书、基金合同、定期报告、指数编制方案和监管规则的 RAG。
-- 宏观、新闻、公告等其他工具编排，以及组合级分析和最终报告。
-- 合规策略、隐私权限、人工复核和具体金额建议。
+- MCP Schema、超时、缓存、调用追踪和服务隔离。
+- 用户指定网页和文档的安全读取；这些内容不能覆盖市场数值。
+- 单标分析时固定检索研究/媒体文章和博主/社区公开链接，来源分类不作身份认证。
+- 基金、指数和个股工具的受控编排。
+- 多个已审计结果之间的关联说明，但不得宣称无证据因果关系。
+- 最终回答的数值忠实度、限制条件和禁止交易指令校验。
 
-边界原则是“Skill 产出证据，Agent 组织决策上下文”。RAG 不存储或替代实时行情与当前估值；外部模型不得改写 Skill 的数值、日期、来源和警告。
+LangGraph 仅负责固定 `StateGraph`、显式条件边和结构化状态传递。第一版不使用
+LangChain Agent、ReAct、数据库 checkpoint、长期 Memory 或多 Agent。
+
+边界原则是“Skill 产出审计事实，Agent 组织研究上下文”。外部模型不得改写 Skill 的
+数值、日期、来源和警告，也不得把净值位置写成估值或把相关性写成因果。
 
 文件职责：
 
@@ -59,6 +67,8 @@ Skill 外由金融 Agent、MCP 服务和 RAG 系统承担：
 | `scripts/run.sh` | 选择 Skill 虚拟环境并启动 CLI |
 | `scripts/setup.sh` | 创建虚拟环境并安装锁定依赖 |
 | `tests/test_fund_advisor.py` | 指标、降级、审计和错误输出回归测试 |
+| `../../src/fund_advisor_mcp/` | Fund/Web MCP 配置、Client、Adapter 与 Server |
+| `../../src/fund_advisor_agent/` | 固定 LangGraph、FactRef、关联门禁和单轮 CLI |
 | `references/akshare_api.md` | 接口、字段和公式契约 |
 | `references/professional_metrics.md` | 专业指标解释 |
 | `references/valuation_chart.md` | 指数估值图数据和渲染契约 |
@@ -74,6 +84,8 @@ Skill 外由金融 Agent、MCP 服务和 RAG 系统承担：
 | `analyze` | 唯一基金名称或代码 | 产品、历史指标、估值、溢价和策略规则 |
 | `valuation` | 精确指数名称、别名或代码 | PE/PB 历史统计和图表点 |
 | `compare` | 2 到 5 只基金 | 各基金独立分析及可比性提示 |
+| `profile` | 唯一基金名称或代码 | 类型、经理、费率、规模和资产配置 |
+| `rating` | 唯一基金名称或代码 | 第三方评级和基金分类 |
 | `audit` | 代表性基金和指数 | 真实接口 Schema 与数据指纹审计 |
 
 所有命令输出 JSON。成功时退出码为 `0`，业务或数据错误时为 `1`，Shell 环境缺失时 `run.sh` 返回非零。
@@ -205,8 +217,18 @@ PE 与 PB 独立计算，不生成综合分位。只有一侧通过时，另一�
 - ETF 历史口径不依赖申购状态接口。
 - 交易日历时效。
 - audit 失败计数和错误响应审计字段。
+- 分组口径、源日期、审计引用和 warning。
+- 可选评级合并与严格可比条件下的比较排序。
 
 发布或接口升级前还需运行真实 `audit` 和代表性 `search/analyze/valuation` 冒烟测试。真实审计结果会随网络和上游状态变化，不能由单元测试替代。
+
+根目录测试还覆盖 MCP 信封、Web 搜索降级与 SSRF、LangGraph 错误分支、FactRef 审计引用、
+Web 数字隔离和模型失败回退。当前本地/容器测试、stdio/HTTP 工具发现、Docker 健康检查
+和 Agent 容器闭环已通过；Ark thinking 模型的 Pydantic 结构化输出冒烟也已通过。
+
+财务、行业和基金质量候选接口使用独立
+`scripts/audit_quality_interfaces.py` 做 discovery audit。只有通过 Schema、时效、作用域
+和字段语义审查的接口，才能按本节扩展原则进入生产 `INTERFACE_CONTRACTS`。
 
 ## 10. 扩展原则
 

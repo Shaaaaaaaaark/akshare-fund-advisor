@@ -12,6 +12,7 @@ from .schemas import (
     WebFetchData,
     WebSearchData,
     WebSearchResult,
+    WebSourceType,
     WebToolEnvelope,
     WebToolName,
 )
@@ -28,8 +29,8 @@ __all__ = [
     "WebResearchService",
     "WebSearchData",
     "WebSearchResult",
+    "WebSourceType",
     "WebToolEnvelope",
     "WebToolName",
     "build_web_research_client",
 ]
-

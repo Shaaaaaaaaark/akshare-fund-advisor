@@ -16,7 +16,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from bs4 import BeautifulSoup
 
-from financial_agent.config import AppConfig, get_config
+from fund_advisor_mcp.config import AppConfig, get_config
 
 from .schemas import (
     DocumentReadInput,
@@ -26,12 +26,49 @@ from .schemas import (
     WebSearchData,
     WebSearchInput,
     WebSearchResult,
+    WebSourceType,
     WebToolEnvelope,
     WebToolError,
     WebToolName,
 )
 
-logger = logging.getLogger("financial_agent.web_research")
+logger = logging.getLogger("fund_advisor_mcp.web")
+
+_CREATOR_DOMAINS = (
+    "xueqiu.com",
+    "zhihu.com",
+    "weibo.com",
+    "mp.weixin.qq.com",
+    "bilibili.com",
+    "douyin.com",
+    "toutiao.com",
+    "caifuhao.eastmoney.com",
+    "blog.sina.com.cn",
+)
+_OFFICIAL_DOMAINS = (
+    "gov.cn",
+    "csrc.gov.cn",
+    "amac.org.cn",
+    "sse.com.cn",
+    "szse.cn",
+    "bse.cn",
+    "cninfo.com.cn",
+)
+_RESEARCH_DOMAINS = (
+    "pdf.dfcfw.com",
+    "reportapi.eastmoney.com",
+)
+_MEDIA_DOMAINS = (
+    "eastmoney.com",
+    "stcn.com",
+    "cls.cn",
+    "yicai.com",
+    "21jingji.com",
+    "cnstock.com",
+    "cs.com.cn",
+    "finance.sina.com.cn",
+)
+_RESEARCH_TITLE_TERMS = ("研究报告", "券商研报", "行业研报", "深度报告")
 
 
 class WebResearchError(RuntimeError):
@@ -94,6 +131,9 @@ class WebResearchService:
                             "query": request.query,
                             "max_results": request.max_results,
                             "freshness_days": request.freshness_days,
+                            "source_types": [
+                                item.value for item in request.source_types
+                            ],
                             "provider": provider_name,
                             "attempts": attempts,
                         },
@@ -238,6 +278,11 @@ class WebResearchService:
                 )
                 continue
             attempts.append({"provider": name, "error_code": None})
+            data = _filter_search_results(
+                data,
+                request.source_types,
+                request.max_results,
+            )
             return data, name, attempts
         raise WebResearchError(
             "WEB_SEARCH_ALL_PROVIDERS_FAILED",
@@ -417,6 +462,10 @@ class WebResearchService:
             snippet = str(raw.get("description") or "").strip()
             if not url_value or not title:
                 continue
+            metadata = _source_metadata(url_value, title)
+            if metadata is None:
+                continue
+            domain, source_type = metadata
             results.append(
                 WebSearchResult(
                     rank=len(results) + 1,
@@ -427,6 +476,8 @@ class WebResearchService:
                         raw.get("page_age") or raw.get("age")
                     ),
                     language=_optional_text(raw.get("language")),
+                    source_type=source_type,
+                    domain=domain,
                 )
             )
         return WebSearchData(
@@ -505,6 +556,10 @@ class WebResearchService:
             snippet = str(raw.get(snippet_key) or "").strip()
             if not url_value or not title:
                 continue
+            metadata = _source_metadata(url_value, title)
+            if metadata is None:
+                continue
+            domain, source_type = metadata
             published = (
                 _optional_text(raw.get(date_key)) if date_key else None
             )
@@ -516,6 +571,8 @@ class WebResearchService:
                     snippet=snippet,
                     published_at=published,
                     language=None,
+                    source_type=source_type,
+                    domain=domain,
                 )
             )
         return WebSearchData(
@@ -801,6 +858,62 @@ class WebResearchService:
             queried_at=queried_at,
             error=error,
         )
+
+
+def _source_metadata(
+    url: str,
+    title: str,
+) -> tuple[str, WebSourceType] | None:
+    """Classify a public search result without treating the label as verified."""
+    parsed = urlparse(url)
+    domain = (parsed.hostname or "").lower().rstrip(".")
+    if (
+        parsed.scheme.lower() not in {"http", "https"}
+        or not domain
+        or parsed.username
+        or parsed.password
+        or any(character.isspace() for character in url)
+    ):
+        return None
+    source_type: WebSourceType
+    if _matches_domain(domain, _CREATOR_DOMAINS):
+        source_type = WebSourceType("creator")
+    elif _matches_domain(domain, _OFFICIAL_DOMAINS):
+        source_type = WebSourceType("official")
+    elif _matches_domain(domain, _RESEARCH_DOMAINS) or any(
+        term in title for term in _RESEARCH_TITLE_TERMS
+    ):
+        source_type = WebSourceType("research")
+    elif _matches_domain(domain, _MEDIA_DOMAINS):
+        source_type = WebSourceType("media")
+    else:
+        source_type = WebSourceType("other")
+    return domain, source_type
+
+
+def _filter_search_results(
+    data: WebSearchData,
+    source_types: list[WebSourceType],
+    maximum: int,
+) -> WebSearchData:
+    allowed = set(source_types)
+    selected = [
+        result
+        for result in data.results
+        if not allowed or result.source_type in allowed
+    ][:maximum]
+    reranked = [
+        result.model_copy(update={"rank": index})
+        for index, result in enumerate(selected, start=1)
+    ]
+    return data.model_copy(update={"results": reranked})
+
+
+def _matches_domain(domain: str, candidates: tuple[str, ...]) -> bool:
+    return any(
+        domain == candidate or domain.endswith(f".{candidate}")
+        for candidate in candidates
+    )
 
 
 def _brave_freshness(days: int | None) -> str | None:

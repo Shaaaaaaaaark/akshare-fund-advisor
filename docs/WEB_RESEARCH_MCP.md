@@ -2,54 +2,43 @@
 
 ## 1. 目标
 
-`web-research-mcp` 为 Agent 提供统一的公网搜索、网页读取和官方文档读取能力。
-它与 `fund-advisor-mcp` 独立部署：
+`web-research-mcp` 提供公网搜索、网页读取和用户指定文档读取。它只提供**非数值背景**，
+不能确认基金/股票/指数是否存在，也不能覆盖 Fund Advisor MCP 的市场事实。
+
+当前代码位于：
 
 ```text
-fund-advisor-mcp
-  -> AKShare 市场事实
-
-web-research-mcp
-  -> 公开网页的定性背景
+src/fund_advisor_mcp/web/
 ```
 
-网页结果不能覆盖 AKShare 返回的净值、价格、PE、PB、收益率、回撤和交易状态。
+顶层包、stdio/HTTP Client、FastMCP Server 和 `web-research-mcp` 命令入口均已接线。
 
-搜索走**多供应商兜底链**：按配置顺序依次尝试 `serper → tavily → google_cse →
-brave → serpapi`，前一个供应商认证失败、限流、超额或上游报错时自动降级到下一个，
-任一供应商 HTTP 正常即返回其结果。只有填了凭证的供应商才会被真正调用，其余自动
-跳过。无论命中哪个供应商，网页内容始终是非数值背景。
-
-## 2. MCP 工具
+## 2. 工具
 
 ### `web_search`
-
-参数：
 
 ```json
 {
   "query": "近期基金监管政策",
   "max_results": 5,
-  "freshness_days": 7
+  "freshness_days": 7,
+  "source_types": ["official", "research", "media"]
 }
 ```
 
-返回：
+返回标题、URL、摘要、排名、可用的发布时间以及搜索审计哈希。
 
-- 标题
-- URL
-- 搜索摘要
-- 排名
-- 可用时的发布时间和语言
-- 搜索响应 SHA-256
+搜索结果还包含确定性来源分类：
 
-`freshness_days` 会映射为各供应商的时间窗口（Brave 用 `pd/pw/pm/py`，
-谷歌系用 `qdr:d/w/m/y`）。审计记录里的 `provider` 和 `attempts` 会写明最终命中的
-供应商以及降级过程。
+```text
+official | research | media | creator | other
+```
+
+分类只依据公开 URL 域名和标题关键词，用于区分官方、机构研究、财经媒体和博主/社区
+入口，不代表平台账号身份或内容真实性已经核验。`source_types` 可按上述类别过滤结果；
+不传时保留全部类别。
 
 ### `web_fetch`
-
-参数：
 
 ```json
 {
@@ -58,220 +47,155 @@ brave → serpapi`，前一个供应商认证失败、限流、超额或上游�
 }
 ```
 
-返回：
-
-- 请求 URL 和最终 URL
-- 页面标题
-- 清洗后的 HTML/纯文本/Markdown 正文
-- 是否截断
-- 正文 SHA-256
-
-抓取前后都会执行 URL 和 DNS 校验，禁止本机、私网、保留地址、带用户凭证的 URL
-以及未授权域名。
+读取并清洗 HTML、纯文本或 Markdown。
 
 ### `document_read`
 
-参数：
-
 ```json
 {
-  "url": "https://www.sse.com.cn/example/prospectus.pdf",
+  "url": "https://example.com/document.pdf",
   "max_chars": 20000
 }
 ```
 
-返回结构与 `web_fetch` 相同（请求/最终 URL、标题、正文、是否截断、正文 SHA-256），
-差异在于：
+在 `web_fetch` 基础上额外支持 PDF 文本抽取，适用于用户明确给出的基金合同、招募说明书、
+公司公告或监管文档 URL。
 
-- 在 `web_fetch` 支持的 HTML/纯文本/Markdown 之外，额外允许 `application/pdf`，
-  用 `pypdf` 抽取全部页面文本。
-- 面向用户明确给出的官方文档 URL（合同、招募说明书、指数编制方案等条款原文），
-  复用同一套 SSRF 校验和逐跳重定向。
-- 正文为空时返回 `DOCUMENT_EMPTY`，PDF 解析失败时返回 `DOCUMENT_PARSE_FAILED`。
+## 3. 固定数据策略
 
-文档只提供条款文本，任何市场数值仍只能来自 `fund-advisor-mcp`。
-
-## 3. 数据策略
-
-每个工具响应固定包含：
+每个工具信封固定包含：
 
 ```json
 {
-  "data_policy": {
-    "purpose": "background_only",
-    "numeric_allowed": false,
-    "ai_may_generate_market_data": false,
-    "may_override_market_tools": false
-  }
+  "purpose": "background_only",
+  "numeric_allowed": false,
+  "ai_may_generate_market_data": false,
+  "may_override_market_tools": false
 }
 ```
 
-Web 命中进入 Evidence 后：
+因此：
 
-- `channel=web`
-- `confidence=low`
-- `numeric_allowed=false`
-- 检测 Prompt injection
-- 只生成来源引用和定性背景提示
-- 不生成金融数值 Fact
+- 文本中的价格、净值、PE、PB、收益率和日期不能升级为市场事实；
+- Web 内容不能确认实体存在；
+- Web 内容只能用于政策、事件、公告和条款背景；
+- Agent 必须把外部文本视为不可信数据，而不是指令。
 
-## 4. 你需要提供的信息
+## 4. 搜索供应商
 
-### 必需
+默认降级顺序：
 
-1. **至少一个搜索供应商的 API Key**
+```text
+serper -> tavily -> google_cse -> brave -> serpapi
+```
 
-   兜底链支持以下供应商，任填一个即可用，填多个可自动降级：
+只调用配置完整且已启用的供应商。
 
-   | 供应商 | 结果来源 | 免费额度（以官网为准） | 需提供 |
-   | --- | --- | --- | --- |
-   | `serper` | 谷歌 | 注册送约 2,500 次 | `api_key` |
-   | `tavily` | Agent 原生 | 约 1,000 次/月 | `api_key` |
-   | `google_cse` | 谷歌官方 | 约 100 次/天 | `api_key` + `cx` |
-   | `brave` | 独立索引 | 约 2,000 次/月 | `api_key` |
-   | `serpapi` | 谷歌 | 约 100 次/月 | `api_key` |
+| 供应商 | 必需配置 |
+| --- | --- |
+| Serper | `api_key` |
+| Tavily | `api_key` |
+| Google CSE | `api_key` + `cx` |
+| Brave | `api_key` |
+| SerpAPI | `api_key` |
 
-   密钥不要在聊天、代码或 Git 中发送，只写入 `config.local.yaml` 或环境变量。
+认证、限流、5xx、无效响应或网络异常触发降级。正常返回空结果视为成功，不继续调用其他
+供应商。
 
-2. **是否允许容器访问公网**
+## 5. SSRF 和下载安全
 
-   Docker 网络至少需要访问：
+每次请求必须：
 
-   ```text
-   所选供应商的 API 域名（如 google.serper.dev / api.tavily.com 等）
-   搜索结果对应的公网 https/http 页面
-   DNS 解析服务
-   ```
+1. 只允许不含用户凭证的公网 HTTP/HTTPS URL；
+2. DNS 解析后拒绝本机、私网、链路本地、多播和保留地址；
+3. 每次重定向重新执行 URL 和 DNS 校验；
+4. 限制重定向次数；
+5. 限制 `Content-Length` 和实际读取字节数；
+6. 限制正文字符数；
+7. 校验内容类型；
+8. 可选启用域名 allowlist。
 
-   谷歌系与 Brave 在中国大陆通常需要代理，`tavily` / `serper` 亦然。
+禁止只校验初始 URL 后自动跟随重定向。
 
-### 可选
+## 6. LangGraph Agent 使用方式
 
-- 自定义 `search_chain` 顺序（默认 `serper → tavily → google_cse → brave → serpapi`）。
-- 允许抓取的域名列表；空列表表示任意公网域名。
-- 默认搜索语言，当前为 `zh-hans`。
-- 单次最大结果数，当前为 `10`。
-- 网页最大正文字符数，当前为 `12000`。
-- 网页最大下载字节数，当前为 `2 MiB`。
-- 是否需要公司代理，以及代理地址和认证方式。
-- 若要接入表中之外的供应商，需提供其 API 文档、Endpoint、认证方式、请求/响应
-  示例、限流和计费规则。
+```text
+政策/新闻问题
+  -> CLASSIFY
+  -> PLAN_REGISTERED_TOOLS
+  -> web_search
+  -> VALIDATE_TOOL_ENVELOPES
+  -> 非数值背景
 
-## 5. 配置
+明确文档 URL
+  -> CLASSIFY
+  -> document_read
+  -> VALIDATE_TOOL_ENVELOPES
+  -> 文档条款背景
+```
 
-在被 Git 忽略的 `config/config.local.yaml` 中填入你有的供应商 Key（填几个都行）：
+当前固定图对政策/新闻问题只执行 `web_search`；`web_fetch` 已作为独立 MCP 工具提供，
+但尚未加入搜索结果后的自动二次抓取链。
+
+基金单标分析和股票单标估值在启用 Web Research 后，固定追加两次可选搜索：
+
+```text
+"标的" + 深度分析/研究报告/财经媒体
+"标的" + 观点/分享 + site:xueqiu.com OR site:zhihu.com
+```
+
+两次搜索均为 `required=false`：
+
+- 第一条只保留 `official/research/media`，第二条只保留 `creator`；
+- Web 搜索失败时，保留通过审计的市场分析并返回 `partial_result`；
+- Fund MCP 失败时，不能使用文章或博主观点替代市场事实；
+- 输出直接展示标题、链接、域名和来源类别，不把摘要中的数字渲染为市场事实；
+- 当前不自动抓取搜索结果全文，避免把外部页面中的提示文本带入模型上下文。
+
+LangGraph Agent 可以把 Web 背景与市场工具事实并列说明，例如“监管规则发生变化，同时
+基金状态工具显示当前可申购”，但 Web 结果必须保持 `numeric_allowed=false`，也不能宣称
+前者导致后者，除非存在明确官方依据。
+
+## 7. 配置示例
 
 ```yaml
 web_research:
-  # 可选：自定义顺序；留空用内置默认
+  enabled: true
   search_chain: [serper, tavily, google_cse, brave, serpapi]
   providers:
     serper:
-      api_key: "YOUR_SERPER_API_KEY"
+      api_key: ""
     tavily:
-      api_key: "YOUR_TAVILY_API_KEY"
+      api_key: ""
     google_cse:
-      api_key: "YOUR_GOOGLE_API_KEY"
-      cx: "YOUR_SEARCH_ENGINE_ID"
+      api_key: ""
+      cx: ""
     brave:
-      api_key: "YOUR_BRAVE_API_KEY"
+      api_key: ""
     serpapi:
-      api_key: "YOUR_SERPAPI_API_KEY"
-  # 非 Docker 直跑时还需显式启用
-  # enabled: true
+      api_key: ""
+  allowed_domains: []
+  max_results: 10
+  max_content_chars: 12000
+  max_fetch_bytes: 2097152
 ```
 
-也可以只通过环境变量注入单个密钥（嵌套用 `__` 分隔）：
+真实密钥只放在被忽略的本地配置或环境变量中。
 
-```bash
-export FINAGENT__WEB_RESEARCH__PROVIDERS__SERPER__API_KEY='YOUR_SERPER_API_KEY'
-```
+## 8. 测试
 
-Compose 已配置：
+当前测试覆盖：
 
-```text
-web-research-mcp:8002
-agent-api -> http://web-research-mcp:8002/mcp
-```
+- 多供应商顺序与凭证过滤；
+- 认证、限流和网络错误降级；
+- 正常空结果；
+- HTML 清洗；
+- PDF 内容类型与抽取；
+- 私网地址拦截；
+- 重定向逐跳校验；
+- 内容哈希与 `numeric_allowed=false`。
 
-宿主机不会暴露 `8002`。
+stdio 和 Compose 内 HTTP 工具发现均已验证为 `web_search`、`web_fetch`、
+`document_read` 三个工具，Docker 服务健康检查通过。
 
-## 6. Agent 的使用方式
-
-Agent 显式问题：
-
-```text
-网页搜索一下最近的基金监管政策
-搜索股票 600519 的近期新闻
-查一下某项政策的背景和影响
-读一下这份招募说明书 https://www.sse.com.cn/example/prospectus.pdf
-```
-
-会路由为：
-
-```text
-intent=web_research
-  -> 不调用金融工具
-  -> web_search
-  -> 逐条 web_fetch
-  -> WEB Evidence（低置信度背景）
-
-intent=document_qa（问题含官方文档 URL）
-  -> 从原文提取 URL
-  -> document_read
-  -> 文档 Evidence（低置信度背景）
-```
-
-只有 `web_research` 和 `document_qa` 意图会触发本 MCP；其余意图只用市场工具事实。
-无论走哪个通道，市场数值仍只来自 `fund-advisor-mcp`，网页与文档内容只作定性背景。
-
-## 7. 启动与验证
-
-配置 API Key 后重建：
-
-```bash
-docker compose -f deploy/compose/compose.yaml up -d --build
-```
-
-检查服务：
-
-```bash
-docker compose -f deploy/compose/compose.yaml ps
-curl -fsS http://127.0.0.1:8000/health/ready
-```
-
-API readiness 应包含：
-
-```json
-{
-  "checks": {
-    "database": true,
-    "mcp": true,
-    "web_mcp": true
-  }
-}
-```
-
-`web_mcp=true` 表示协议和工具发现正常，不代表任一供应商 API Key 一定有效。必须再
-执行一次真实 `web_search` 冒烟测试确认供应商认证。
-
-## 8. 错误语义
-
-| 错误码 | 含义 |
-| --- | --- |
-| `WEB_RESEARCH_DISABLED` | 工具未启用 |
-| `WEB_SEARCH_NOT_CONFIGURED` | 兜底链中没有任何凭证齐全的供应商 |
-| `WEB_SEARCH_AUTH_FAILED` | 某供应商 API Key 无效或权限不足 |
-| `WEB_SEARCH_RATE_LIMITED` | 某供应商限流或免费额度用尽 |
-| `WEB_SEARCH_UPSTREAM_ERROR` | 某供应商服务临时失败 |
-| `WEB_SEARCH_INVALID_RESPONSE` | 某供应商返回无效响应 |
-| `WEB_SEARCH_ALL_PROVIDERS_FAILED` | 兜底链中所有已配置供应商均失败 |
-| `WEB_FETCH_INVALID_URL` | URL 非公网 HTTP/HTTPS 或包含凭证 |
-| `WEB_FETCH_PRIVATE_ADDRESS` | 指向本机、私网或保留地址 |
-| `WEB_FETCH_DOMAIN_BLOCKED` | 不在域名 allowlist |
-| `WEB_FETCH_INVALID_REDIRECT` | 重定向响应缺少目标地址 |
-| `WEB_FETCH_TOO_MANY_REDIRECTS` | 重定向次数超过限制 |
-| `WEB_FETCH_TOO_LARGE` | 页面超过下载限制 |
-| `WEB_FETCH_UNSUPPORTED_CONTENT` | 不是 HTML/纯文本/Markdown（`document_read` 额外允许 PDF） |
-| `DOCUMENT_EMPTY` | 目标文档没有可抽取的正文 |
-| `DOCUMENT_PARSE_FAILED` | 无法解析 PDF 文档 |
+详细错误码见 [ERROR_HANDLING.md](ERROR_HANDLING.md)。
