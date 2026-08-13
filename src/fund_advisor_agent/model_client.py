@@ -1,4 +1,4 @@
-"""Optional OpenAI-compatible structured association client."""
+"""Optional OpenAI-compatible structured research client."""
 
 from __future__ import annotations
 
@@ -7,18 +7,17 @@ from typing import Protocol
 
 from fund_advisor_mcp.config import ModelConfig
 
-from .associations import AssociationModel, RuleBasedAssociationModel
 from .prompts import (
-    ASSOCIATION_PROMPT_VERSION,
-    ASSOCIATION_SYSTEM_PROMPT,
     INTENT_PROMPT_VERSION,
     INTENT_SYSTEM_PROMPT,
+    RESEARCH_PROMPT_VERSION,
+    RESEARCH_SYSTEM_PROMPT,
 )
+from .research import ResearchModel, RuleBasedResearchModel
 from .state import (
-    AssociationBatch,
-    AssociationDraft,
     FactRef,
     IntentDecision,
+    ResearchSynthesis,
 )
 
 
@@ -26,7 +25,7 @@ class IntentClassifier(Protocol):
     async def classify(self, question: str) -> IntentDecision: ...
 
 
-class OpenAIAssociationModel:
+class OpenAIResearchModel:
     def __init__(self, config: ModelConfig) -> None:
         from openai import AsyncOpenAI
 
@@ -37,11 +36,11 @@ class OpenAIAssociationModel:
             timeout=config.timeout_seconds,
         )
 
-    async def build_associations(
+    async def build_research(
         self,
         facts: list[FactRef],
         question: str,
-    ) -> list[AssociationDraft]:
+    ) -> ResearchSynthesis:
         payload = [
             {
                 "fact_id": fact.fact_id,
@@ -63,8 +62,8 @@ class OpenAIAssociationModel:
                 {
                     "role": "system",
                     "content": (
-                        f"{ASSOCIATION_SYSTEM_PROMPT}\n"
-                        f"prompt_version={ASSOCIATION_PROMPT_VERSION}"
+                        f"{RESEARCH_SYSTEM_PROMPT}\n"
+                        f"prompt_version={RESEARCH_PROMPT_VERSION}"
                     ),
                 },
                 {
@@ -75,13 +74,13 @@ class OpenAIAssociationModel:
                     ),
                 },
             ],
-            response_format=AssociationBatch,
+            response_format=ResearchSynthesis,
             **_extra_request_options(self._config),
         )
         parsed = completion.choices[0].message.parsed
         if parsed is None:
-            raise RuntimeError("模型未返回结构化关联说明")
-        return parsed.associations
+            raise RuntimeError("模型未返回结构化研究综合")
+        return parsed
 
 
 class OpenAIIntentClassifier:
@@ -119,10 +118,10 @@ class OpenAIIntentClassifier:
         return parsed
 
 
-def build_association_model(config: ModelConfig) -> AssociationModel:
+def build_research_model(config: ModelConfig) -> ResearchModel:
     if config.enabled and config.api_key and config.model:
-        return OpenAIAssociationModel(config)
-    return RuleBasedAssociationModel()
+        return OpenAIResearchModel(config)
+    return RuleBasedResearchModel()
 
 
 def build_intent_classifier(

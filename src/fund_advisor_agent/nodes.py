@@ -7,7 +7,6 @@ from typing import Any
 
 from fund_advisor_mcp.config import AppConfig, get_config
 
-from .associations import AssociationModel
 from .clients import McpToolClient
 from .model_client import IntentClassifier
 from .policies import (
@@ -16,15 +15,16 @@ from .policies import (
     should_use_intent_model,
 )
 from .renderer import render_answer
+from .research import ResearchModel
 from .state import (
     AgentState,
     AgentStatus,
-    AssociationDraft,
     RegisteredTool,
+    ResearchSynthesis,
     ToolCallSpec,
     ToolExecution,
 )
-from .validator import validate_associations, validate_tool_results
+from .validator import validate_research_synthesis, validate_tool_results
 
 
 class AgentNodes:
@@ -32,13 +32,13 @@ class AgentNodes:
         self,
         fund_client: McpToolClient,
         web_client: McpToolClient,
-        association_model: AssociationModel,
+        research_model: ResearchModel,
         intent_classifier: IntentClassifier | None,
         config: AppConfig | None = None,
     ) -> None:
         self._fund_client = fund_client
         self._web_client = web_client
-        self._association_model = association_model
+        self._research_model = research_model
         self._intent_classifier = intent_classifier
         self._config = config or get_config()
 
@@ -155,29 +155,36 @@ class AgentNodes:
             "errors": [*state.errors, *errors],
         }
 
-    async def build_associations(
+    async def build_research_synthesis(
         self,
         value: AgentState,
     ) -> dict[str, Any]:
         state = _state(value)
         try:
-            raw_associations = await self._association_model.build_associations(
+            raw_synthesis = await self._research_model.build_research(
                 state.facts,
                 state.question,
             )
-            associations = [
-                item
-                if isinstance(item, AssociationDraft)
-                else AssociationDraft.model_validate(item)
-                for item in raw_associations
-            ]
-            return {"associations": associations}
+            synthesis = (
+                raw_synthesis
+                if isinstance(raw_synthesis, ResearchSynthesis)
+                else ResearchSynthesis.model_validate(raw_synthesis)
+            )
+            return {
+                "research_questions": synthesis.research_questions,
+                "evidence_summary": synthesis.evidence_summary,
+                "next_steps": synthesis.next_steps,
+                "associations": synthesis.associations,
+            }
         except Exception as exc:
             return {
+                "research_questions": [],
+                "evidence_summary": [],
+                "next_steps": [],
                 "associations": [],
                 "warnings": [
                     *state.warnings,
-                    f"关联模型不可用，已回退为事实报告：{type(exc).__name__}",
+                    f"研究模型不可用，已回退为事实报告：{type(exc).__name__}",
                 ],
                 "status": (
                     AgentStatus.PARTIAL_RESULT
@@ -191,7 +198,16 @@ class AgentNodes:
         value: AgentState,
     ) -> dict[str, Any]:
         state = _state(value)
-        associations, warnings = validate_associations(
+        (
+            research_questions,
+            evidence_summary,
+            next_steps,
+            associations,
+            warnings,
+        ) = validate_research_synthesis(
+            state.research_questions,
+            state.evidence_summary,
+            state.next_steps,
             state.associations,
             state.facts,
         )
@@ -199,6 +215,9 @@ class AgentNodes:
         if warnings and status is AgentStatus.RUNNING:
             status = AgentStatus.PARTIAL_RESULT
         return {
+            "research_questions": research_questions,
+            "evidence_summary": evidence_summary,
+            "next_steps": next_steps,
             "associations": associations,
             "warnings": [*state.warnings, *warnings],
             "status": status,

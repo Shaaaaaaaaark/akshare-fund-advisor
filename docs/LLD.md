@@ -20,7 +20,7 @@
 ### 1.2 验证状态
 
 - 根目录 Ruff 通过；
-- 81 个 Skill、MCP、Web、候选接口审计和 LangGraph 测试通过；
+- 89 个 Skill、MCP、Web、候选接口审计和 LangGraph 测试通过；
 - Fund MCP 九工具与 Web MCP 三工具的 stdio 发现通过；
 - 最近一次真实 AKShare 审计 13/15 通过，`fund_etf_hist_em` 和 `fund_lof_hist_em`
   上游断连被正确记录为 `DATA_SOURCE_ERROR`；
@@ -61,6 +61,7 @@ akshare-fund-advisor/
 │       ├── clients.py
 │       ├── policies.py
 │       ├── associations.py
+│       ├── research.py
 │       ├── validator.py
 │       ├── renderer.py
 │       ├── model_client.py
@@ -374,7 +375,7 @@ START
   -> PLAN_REGISTERED_TOOLS
   -> CALL_MCP
   -> VALIDATE_TOOL_ENVELOPES
-  -> BUILD_ASSOCIATIONS
+  -> BUILD_RESEARCH_SYNTHESIS
   -> VALIDATE_RESPONSE
   -> RENDER_ANSWER
   -> END
@@ -388,8 +389,8 @@ START
 | `PLAN_REGISTERED_TOOLS` | 按代码白名单生成工具计划 | 否 |
 | `CALL_MCP` | 通过 MCP Client 执行工具 | 否 |
 | `VALIDATE_TOOL_ENVELOPES` | 校验成功、审计、时效、错误和 Web 数据策略 | 否 |
-| `BUILD_ASSOCIATIONS` | 基于允许的事实引用生成非因果关联草稿 | 是 |
-| `VALIDATE_RESPONSE` | 校验引用、数字、因果词和禁止指令 | 否 |
+| `BUILD_RESEARCH_SYNTHESIS` | 基于允许的事实生成结构化研究综合 | 是 |
+| `VALIDATE_RESPONSE` | 校验问题、证据、引用、数字、因果词和禁止指令 | 否 |
 | `RENDER_ANSWER` | 从事实引用确定性注入数值、单位和日期 | 否 |
 
 图保持无环，不在节点间运行自治反思或无限重试。
@@ -400,7 +401,7 @@ START
 
 | 工具语义 | 图状态 | 输出 |
 | --- | --- | --- |
-| 成功且审计通过 | `running` | 继续构建关联 |
+| 成功且审计通过 | `running` | 继续构建研究综合 |
 | 成功但存在非关键 warning | `partial_result` | 带限制继续 |
 | `AMBIGUOUS` | `need_clarification` | 返回候选并结束 |
 | `NOT_FOUND` | `not_found` | 明确未找到并结束 |
@@ -431,7 +432,7 @@ START
 知乎等博主/社区公开观点。二者均为 `required=false`，在 `CALL_MCP` 中受并发上限约束。
 Web 失败产生 `partial_result`；必需的市场工具失败仍按其原始错误语义终止。
 
-### 8.6 事实引用和关联 Schema
+### 8.6 事实引用和研究综合 Schema
 
 `VALIDATE_TOOL_ENVELOPES` 将允许使用的字段转换为稳定引用：
 
@@ -447,9 +448,15 @@ FactRef
   source_kind        # market | entity | background
 ```
 
-模型只接收必要的 `FactRef` 和非数值解释元数据，输出：
+模型只接收必要的 `FactRef` 和非数值解释元数据，一次输出：
 
 ```text
+ResearchSynthesis
+  research_questions[]  # 最多三个 ResearchQuestion
+  evidence_summary[]    # supporting | opposing | unknown
+  next_steps[]          # 研究动作，不是交易动作
+  associations[]        # 非因果关联
+
 AssociationDraft
   evidence_refs      # 至少两个 fact_id
   relationship       # co_occurrence | contrast | consistency | data_limit
@@ -463,10 +470,10 @@ AssociationDraft
 
 ### 8.7 模型客户端
 
-定义项目内 `AssociationModel` Protocol，业务节点不直接依赖供应商 SDK：
+定义项目内 `ResearchModel` Protocol，业务节点不直接依赖供应商 SDK：
 
 ```text
-build_associations(facts, question) -> list[AssociationDraft]
+build_research(facts, question) -> ResearchSynthesis
 ```
 
 首版要求：
@@ -474,9 +481,34 @@ build_associations(facts, question) -> list[AssociationDraft]
 - 只配置一个 OpenAI-compatible 模型客户端；
 - 使用 Pydantic 结构化输出；
 - Prompt 和输出 Schema 版本化；
-- 超时或结构化输出失败时回退为无关联说明的确定性事实报告；
+- 超时或结构化输出失败时回退为确定性事实报告；
 - 测试使用 Fake Model，不访问真实模型；
 - 只有出现两个以上模型供应商时才评估 LiteLLM。
+
+#### 8.7.1 当前模型职责与后续演进
+
+当前代码中的模型能力是刻意受限的：
+
+- `OpenAIResearchModel` 只接收允许使用的 `FactRef`；
+- 模型一次返回结构化 `ResearchSynthesis`；
+- `ResearchQuestion` 整理待核验问题；
+- `EvidenceSummary` 按 supporting / opposing / unknown 分组事实引用；
+- `ResearchNextStep` 生成后续研究清单；
+- `AssociationDraft` 保留非因果关联说明；
+- `OpenAIIntentClassifier` 仅在配置开启且规则未提取到实体时补充意图；
+- 模型异常或输出不合法时回退为确定性事实报告；
+- 工具计划、错误状态、事实有效性和最终放行均由代码决定。
+
+这些模型输出必须满足：
+
+- 使用 Pydantic 结构化 Schema，不接收自由工具控制权；
+- 只能引用已有事实或 Web 背景引用，不能产生新的市场数据；
+- 工具调用和错误分支继续由固定图与代码白名单决定；
+- 输出继续经过数字、引用、因果和交易指令校验；
+- 用户期限、仓位和风险承受能力只影响解释重点，不改变市场事实。
+
+当前尚未建立独立的用户期限、仓位和风险承受能力输入契约；基于这些约束的个性化解释仍属
+后续能力。
 
 ### 8.8 关联规则示例
 

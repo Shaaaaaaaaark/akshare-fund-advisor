@@ -2,15 +2,16 @@
 
 ## 推荐阅读顺序
 
-1. [项目 README](../README.md)：产品定位、当前状态和稳定运行入口。
-2. [HLD](HLD.md)：目标架构、数据分析边界和 LangGraph Agent 关联说明。
-3. [LLD](LLD.md)：当前代码结构、MCP 契约和最小 LangGraph Agent 设计。
-4. [错误处理](ERROR_HANDLING.md)：实体、工具和上游错误语义。
-5. [Web Research MCP](WEB_RESEARCH_MCP.md)：搜索、抓取和 SSRF 边界。
-6. [基金与股票候选筛选任务](tasks/TASK_asset_screening.md)：候选接口审计已完成，生产接入待实施。
-7. [基金与个股数据分析任务](tasks/TASK_fund_stock_data_analysis.md)：P0、单标增强、测试和环境验证已完成。
-8. [LangGraph Agent 任务](tasks/TASK_langgraph_agent.md)：核心固定图、门禁、CLI 和 Docker 闭环已完成。
-9. [组合分析任务](tasks/TASK_portfolio_analysis.md)：后续扩展。
+1. [产品简述](PRODUCT.md)：与 AI 讨论产品方向、功能范围和非目标时只需先看这份文档。
+2. [项目 README](../README.md)：当前状态和稳定运行入口。
+3. [HLD](HLD.md)：目标架构、数据分析边界和 LangGraph Agent 关联说明。
+4. [LLD](LLD.md)：当前代码结构、MCP 契约和最小 LangGraph Agent 设计。
+5. [错误处理](ERROR_HANDLING.md)：实体、工具和上游错误语义。
+6. [Web Research MCP](WEB_RESEARCH_MCP.md)：搜索、抓取和 SSRF 边界。
+7. [基金与股票候选筛选任务](tasks/TASK_asset_screening.md)：候选接口审计已完成，生产接入待实施。
+8. [基金与个股数据分析任务](tasks/TASK_fund_stock_data_analysis.md)：P0、单标增强、测试和环境验证已完成。
+9. [LangGraph Agent 任务](tasks/TASK_langgraph_agent.md)：核心固定图、门禁、CLI 和 Docker 闭环已完成。
+10. [组合分析任务](tasks/TASK_portfolio_analysis.md)：后续扩展。
 
 ## Skill 文档
 

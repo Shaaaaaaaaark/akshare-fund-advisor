@@ -12,8 +12,12 @@ from .state import (
     AgentError,
     AgentStatus,
     AssociationDraft,
+    EvidenceStance,
+    EvidenceSummary,
     FactRef,
     RegisteredTool,
+    ResearchNextStep,
+    ResearchQuestion,
     ToolExecution,
 )
 
@@ -29,6 +33,8 @@ _FORBIDDEN_ASSOCIATION_PATTERNS = (
     re.compile(r"满仓"),
     re.compile(r"必须买"),
     re.compile(r"必须卖"),
+    re.compile(r"建议买入"),
+    re.compile(r"建议卖出"),
     re.compile(r"综合估值"),
     re.compile(r"净值.+(?:低估|高估)"),
 )
@@ -180,6 +186,92 @@ def validate_associations(
             continue
         valid.append(association)
     return valid, warnings
+
+
+def validate_research_synthesis(
+    research_questions: list[ResearchQuestion],
+    evidence_summary: list[EvidenceSummary],
+    next_steps: list[ResearchNextStep],
+    associations: list[AssociationDraft],
+    facts: list[FactRef],
+) -> tuple[
+    list[ResearchQuestion],
+    list[EvidenceSummary],
+    list[ResearchNextStep],
+    list[AssociationDraft],
+    list[str],
+]:
+    known_facts = {fact.fact_id for fact in facts}
+    valid_questions: list[ResearchQuestion] = []
+    valid_question_ids: set[str] = set()
+    warnings: list[str] = []
+
+    for item in research_questions:
+        if item.question_id in valid_question_ids:
+            warnings.append("研究问题标识重复，已移除。")
+            continue
+        if _invalid_generated_text(item.question):
+            warnings.append("研究问题包含数字、因果或交易指令，已移除。")
+            continue
+        valid_questions.append(item)
+        valid_question_ids.add(item.question_id)
+
+    valid_evidence: list[EvidenceSummary] = []
+    for item in evidence_summary:
+        if item.question_id not in valid_question_ids:
+            warnings.append("证据分组引用了不存在的研究问题，已移除。")
+            continue
+        refs = item.evidence_refs
+        if any(ref not in known_facts for ref in refs):
+            warnings.append("证据分组引用了不存在的事实，已移除。")
+            continue
+        if item.stance in {
+            EvidenceStance.SUPPORTING,
+            EvidenceStance.OPPOSING,
+        } and not refs:
+            warnings.append("支持或反对证据缺少事实引用，已移除。")
+            continue
+        if _invalid_generated_text(item.explanation):
+            warnings.append("证据说明包含数字、因果或交易指令，已移除。")
+            continue
+        valid_evidence.append(item)
+
+    valid_next_steps: list[ResearchNextStep] = []
+    for item in next_steps:
+        if (
+            item.question_id is not None
+            and item.question_id not in valid_question_ids
+        ):
+            warnings.append("后续研究步骤引用了不存在的研究问题，已移除。")
+            continue
+        if any(ref not in known_facts for ref in item.evidence_refs):
+            warnings.append("后续研究步骤引用了不存在的事实，已移除。")
+            continue
+        if _invalid_generated_text(item.action) or _invalid_generated_text(
+            item.reason
+        ):
+            warnings.append("后续研究步骤包含数字、因果或交易指令，已移除。")
+            continue
+        valid_next_steps.append(item)
+
+    valid_associations, association_warnings = validate_associations(
+        associations,
+        facts,
+    )
+    return (
+        valid_questions,
+        valid_evidence,
+        valid_next_steps,
+        valid_associations,
+        [*warnings, *association_warnings],
+    )
+
+
+def _invalid_generated_text(value: str) -> bool:
+    return bool(
+        re.search(r"\d", value)
+        or any(pattern.search(value) for pattern in _FORBIDDEN_ASSOCIATION_PATTERNS)
+    )
 
 
 def _audit_ref(records: list[dict[str, Any]]) -> str | None:

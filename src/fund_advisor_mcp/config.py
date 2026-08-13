@@ -123,9 +123,15 @@ class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     use_llm_for_intent: bool = False
+    use_llm_for_research: bool = False
+    # Legacy switch retained during migration to structured research synthesis.
     use_llm_for_associations: bool = False
     maximum_facts: int = Field(default=20, ge=2, le=100)
     maximum_tool_calls: int = Field(default=4, ge=1, le=12)
+
+    @property
+    def research_model_enabled(self) -> bool:
+        return self.use_llm_for_research or self.use_llm_for_associations
 
 
 class AppConfig(BaseModel):

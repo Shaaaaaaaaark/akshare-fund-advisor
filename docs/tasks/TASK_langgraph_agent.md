@@ -36,7 +36,7 @@ START
   -> PLAN_REGISTERED_TOOLS
   -> CALL_MCP
   -> VALIDATE_TOOL_ENVELOPES
-  -> BUILD_ASSOCIATIONS
+  -> BUILD_RESEARCH_SYNTHESIS
   -> VALIDATE_RESPONSE
   -> RENDER_ANSWER
   -> END
@@ -73,6 +73,7 @@ src/fund_advisor_agent/
 ├── nodes.py
 ├── policies.py
 ├── associations.py
+├── research.py
 ├── validator.py
 ├── renderer.py
 ├── model_client.py
@@ -164,15 +165,16 @@ src/fund_advisor_agent/
 - [x] 只从成功且允许使用的字段构造 `FactRef`。
 - [x] Web 结果固定不能构造市场数值 `FactRef`。
 
-### `BUILD_ASSOCIATIONS`
+### `BUILD_RESEARCH_SYNTHESIS`
 
 - [x] 只接收问题、允许的 `FactRef` 和必要的非数值元数据。
-- [x] 只输出 `AssociationDraft`。
-- [x] 模型失败时返回空关联列表，不影响事实报告。
+- [x] 一次输出研究问题、证据分组、后续研究清单和关联说明。
+- [x] 模型失败时返回空研究综合，不影响事实报告。
 
 ### `VALIDATE_RESPONSE`
 
 - [x] 验证所有 `evidence_refs` 存在且可用。
+- [x] 验证研究问题标识、证据立场和后续步骤引用。
 - [x] 验证至少引用两个事实字段。
 - [x] 拦截未授权数字、确定性因果词和交易指令。
 - [x] 拦截 PE/PB 综合分、净值低位等于低估等概念错误。
@@ -180,21 +182,21 @@ src/fund_advisor_agent/
 ### `RENDER_ANSWER`
 
 - [x] 从 `FactRef` 确定性注入数值、单位和日期。
-- [x] 固定输出：事实、关联说明、限制、条件式参考。
+- [x] 固定输出：研究问题、事实、证据整理、关联说明、下一步研究、限制和条件式参考。
 - [x] 错误终止状态使用固定模板，不调用模型润色。
 
 ## 8. 阶段 E：模型协议与 Prompt
 
-- [x] 定义 `AssociationModel` Protocol：
+- [x] 定义 `ResearchModel` Protocol：
 
 ```text
-build_associations(facts, question) -> list[AssociationDraft]
+build_research(facts, question) -> ResearchSynthesis
 ```
 
 - [x] 生产实现只接一个 OpenAI-compatible 模型。
 - [x] 模型请求设置超时和最大输出长度。
 - [x] 使用 Pydantic 结构化输出，不解析自由文本 JSON。
-- [x] 在 `prompts.py` 定义 `ASSOCIATION_PROMPT_VERSION`。
+- [x] 在 `prompts.py` 定义 `RESEARCH_PROMPT_VERSION`。
 - [x] Prompt 只负责语言和结构，不负责真实性、时效或数值校验。
 - [x] 模型输入不包含 API Key、完整配置或无关工具原始响应。
 - [x] 模型输出失败时回退为确定性事实报告。
@@ -211,6 +213,9 @@ fund-advisor-agent ask --question "分析 510300 的风险和估值"
 - [x] JSON 输出包含：
   - `status`
   - `facts`
+  - `research_questions`
+  - `evidence_summary`
+  - `next_steps`
   - `associations`
   - `limitations`
   - `warnings`

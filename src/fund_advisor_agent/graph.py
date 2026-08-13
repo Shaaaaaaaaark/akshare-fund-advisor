@@ -13,13 +13,13 @@ from fund_advisor_mcp.web.client import (
     build_web_research_client,
 )
 
-from .associations import AssociationModel
 from .model_client import (
     IntentClassifier,
-    build_association_model,
     build_intent_classifier,
+    build_research_model,
 )
 from .nodes import AgentNodes
+from .research import ResearchModel
 from .state import AgentResponse, AgentState, AgentStatus
 
 
@@ -28,21 +28,21 @@ def build_agent_graph(
     config: AppConfig | None = None,
     fund_client: FundToolClient | None = None,
     web_client: WebResearchClient | None = None,
-    association_model: AssociationModel | None = None,
+    research_model: ResearchModel | None = None,
     intent_classifier: IntentClassifier | None = None,
 ) -> Any:
     settings = config or get_config()
-    selected_model = association_model
+    selected_model = research_model
     if selected_model is None:
         model_config = settings.model.model_copy(
             update={
                 "enabled": (
                     settings.model.enabled
-                    and settings.agent.use_llm_for_associations
+                    and settings.agent.research_model_enabled
                 )
             }
         )
-        selected_model = build_association_model(model_config)
+        selected_model = build_research_model(model_config)
     selected_intent_classifier = intent_classifier
     if selected_intent_classifier is None:
         selected_intent_classifier = build_intent_classifier(
@@ -65,7 +65,10 @@ def build_agent_graph(
         "VALIDATE_TOOL_ENVELOPES",
         nodes.validate_tool_envelopes,
     )
-    builder.add_node("BUILD_ASSOCIATIONS", nodes.build_associations)
+    builder.add_node(
+        "BUILD_RESEARCH_SYNTHESIS",
+        nodes.build_research_synthesis,
+    )
     builder.add_node("VALIDATE_RESPONSE", nodes.validate_response)
     builder.add_node("RENDER_ANSWER", nodes.render_answer)
 
@@ -84,11 +87,11 @@ def build_agent_graph(
         "VALIDATE_TOOL_ENVELOPES",
         _route_after_tool_validation,
         {
-            "associate": "BUILD_ASSOCIATIONS",
+            "associate": "BUILD_RESEARCH_SYNTHESIS",
             "render": "RENDER_ANSWER",
         },
     )
-    builder.add_edge("BUILD_ASSOCIATIONS", "VALIDATE_RESPONSE")
+    builder.add_edge("BUILD_RESEARCH_SYNTHESIS", "VALIDATE_RESPONSE")
     builder.add_edge("VALIDATE_RESPONSE", "RENDER_ANSWER")
     builder.add_edge("RENDER_ANSWER", END)
     return builder.compile()
@@ -109,6 +112,9 @@ async def run_agent(
     return AgentResponse(
         status=state.status,
         facts=state.facts,
+        research_questions=state.research_questions,
+        evidence_summary=state.evidence_summary,
+        next_steps=state.next_steps,
         associations=state.associations,
         limitations=state.limitations,
         warnings=state.warnings,

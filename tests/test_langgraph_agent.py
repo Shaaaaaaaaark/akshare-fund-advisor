@@ -7,29 +7,35 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from fund_advisor_agent.associations import RuleBasedAssociationModel
 from fund_advisor_agent.graph import build_agent_graph, run_agent
-from fund_advisor_agent.model_client import OpenAIAssociationModel
+from fund_advisor_agent.model_client import OpenAIResearchModel
 from fund_advisor_agent.nodes import AgentNodes
 from fund_advisor_agent.policies import classify_question
+from fund_advisor_agent.research import RuleBasedResearchModel
 from fund_advisor_agent.state import (
     AgentState,
     AgentStatus,
     AssociationDraft,
     Confidence,
+    EvidenceStance,
+    EvidenceSummary,
     FactRef,
     Intent,
     IntentDecision,
     RegisteredTool,
     Relationship,
+    ResearchNextStep,
+    ResearchQuestion,
+    ResearchSynthesis,
     ToolCallSpec,
     ToolExecution,
 )
 from fund_advisor_agent.validator import (
     validate_associations,
+    validate_research_synthesis,
     validate_tool_results,
 )
-from fund_advisor_mcp.config import AppConfig, ModelConfig
+from fund_advisor_mcp.config import AgentConfig, AppConfig, ModelConfig
 from fund_advisor_mcp.fund.schemas import (
     ToolEnvelope,
     ToolError,
@@ -84,41 +90,94 @@ class FakeWebClient:
         return True
 
 
-class FailingAssociationModel:
-    async def build_associations(self, _facts, _question):
+class FailingResearchModel:
+    async def build_research(
+        self,
+        facts: list[FactRef],
+        question: str,
+    ) -> ResearchSynthesis:
+        del facts, question
         raise TimeoutError("model timeout")
 
 
-class InvalidAssociationModel:
-    async def build_associations(self, _facts, _question):
-        return [{"unexpected": "payload"}]
+class InvalidResearchModel:
+    async def build_research(
+        self,
+        facts: list[FactRef],
+        question: str,
+    ) -> Any:
+        del facts, question
+        return {"unexpected": "payload"}
 
 
-class EmptyAssociationModel:
-    async def build_associations(self, _facts, _question):
-        return []
+class EmptyResearchModel:
+    async def build_research(
+        self,
+        facts: list[FactRef],
+        question: str,
+    ) -> ResearchSynthesis:
+        del facts, question
+        return ResearchSynthesis()
 
 
-class FakeAssociationModel:
-    async def build_associations(self, facts, _question):
+class FakeResearchModel:
+    async def build_research(
+        self,
+        facts: list[FactRef],
+        question: str,
+    ) -> ResearchSynthesis:
+        del question
         market_facts = [
             fact for fact in facts if fact.source_kind == "market"
         ]
-        return [
-            AssociationDraft(
-                evidence_refs=[
-                    market_facts[0].fact_id,
-                    market_facts[1].fact_id,
-                ],
-                relationship=Relationship.CONTRAST,
-                explanation="PE 与 PB 应分别观察其历史位置。",
-                confidence=Confidence.HIGH,
-            )
-        ]
+        return ResearchSynthesis(
+            research_questions=[
+                ResearchQuestion(
+                    question_id="rq_primary",
+                    question="估值口径与风险事实是否呈现一致信号？",
+                )
+            ],
+            evidence_summary=[
+                EvidenceSummary(
+                    question_id="rq_primary",
+                    stance=EvidenceStance.SUPPORTING,
+                    evidence_refs=[market_facts[0].fact_id],
+                    explanation="一项已审计事实支持继续核验该问题。",
+                    confidence=Confidence.HIGH,
+                ),
+                EvidenceSummary(
+                    question_id="rq_primary",
+                    stance=EvidenceStance.UNKNOWN,
+                    evidence_refs=[],
+                    explanation="现有事实没有覆盖全部研究维度。",
+                    confidence=Confidence.LOW,
+                ),
+            ],
+            next_steps=[
+                ResearchNextStep(
+                    question_id="rq_primary",
+                    action="核对尚未覆盖的基本面信息。",
+                    reason="当前事实主要覆盖估值与历史位置。",
+                    evidence_refs=[market_facts[0].fact_id],
+                )
+            ],
+            associations=[
+                AssociationDraft(
+                    evidence_refs=[
+                        market_facts[0].fact_id,
+                        market_facts[1].fact_id,
+                    ],
+                    relationship=Relationship.CONTRAST,
+                    explanation="PE 与 PB 应分别观察其历史位置。",
+                    confidence=Confidence.HIGH,
+                )
+            ],
+        )
 
 
 class FakeIntentClassifier:
-    async def classify(self, _question: str) -> IntentDecision:
+    async def classify(self, question: str) -> IntentDecision:
+        del question
         return IntentDecision(
             intent=Intent.FUND_ANALYSIS,
             entities=["000001"],
@@ -266,7 +325,7 @@ async def test_stock_graph_uses_registered_tool_and_audited_facts() -> None:
         config=_config(),
         fund_client=fund,
         web_client=FakeWebClient(),
-        association_model=FakeAssociationModel(),
+        research_model=FakeResearchModel(),
     )
 
     response = await run_agent("分析股票 600519 的 PE 和 PB", graph=graph)
@@ -280,6 +339,9 @@ async def test_stock_graph_uses_registered_tool_and_audited_facts() -> None:
     ]
     assert response.associations
     assert response.associations[0].relationship is Relationship.CONTRAST
+    assert len(response.research_questions) == 1
+    assert len(response.evidence_summary) == 2
+    assert len(response.next_steps) == 1
     audit_by_label = {
         fact.label: fact.audit_ref
         for fact in response.facts
@@ -297,7 +359,15 @@ async def test_stock_graph_uses_registered_tool_and_audited_facts() -> None:
         "errors": response.errors,
         "sections": [
             heading
-            for heading in ("## 事实", "## 关联说明", "## 限制", "## 条件式参考")
+            for heading in (
+                "## 研究问题",
+                "## 事实",
+                "## 证据整理",
+                "## 关联说明",
+                "## 下一步研究",
+                "## 限制",
+                "## 条件式参考",
+            )
             if heading in response.answer
         ],
     } == {
@@ -315,7 +385,15 @@ async def test_stock_graph_uses_registered_tool_and_audited_facts() -> None:
         "association_count": 1,
         "warnings": [],
         "errors": [],
-        "sections": ["## 事实", "## 关联说明", "## 限制", "## 条件式参考"],
+        "sections": [
+            "## 研究问题",
+            "## 事实",
+            "## 证据整理",
+            "## 关联说明",
+            "## 下一步研究",
+            "## 限制",
+            "## 条件式参考",
+        ],
     }
 
 
@@ -352,7 +430,7 @@ async def test_asset_analysis_searches_articles_and_creator_posts() -> None:
         config=_config(),
         fund_client=FakeFundClient(_stock_envelope()),
         web_client=web,
-        association_model=RuleBasedAssociationModel(),
+        research_model=RuleBasedResearchModel(),
     )
 
     response = await run_agent("分析股票 600519", graph=graph)
@@ -392,7 +470,7 @@ async def test_optional_asset_web_failure_keeps_market_analysis() -> None:
         config=_config(),
         fund_client=FakeFundClient(_stock_envelope()),
         web_client=FakeWebClient(_web_error_envelope()),
-        association_model=RuleBasedAssociationModel(),
+        research_model=RuleBasedResearchModel(),
     )
 
     response = await run_agent("分析股票 600519", graph=graph)
@@ -421,7 +499,7 @@ async def test_error_semantics_route_to_distinct_terminal_states(
         config=_config(),
         fund_client=FakeFundClient(_error_envelope(code)),
         web_client=FakeWebClient(),
-        association_model=RuleBasedAssociationModel(),
+        research_model=RuleBasedResearchModel(),
     )
 
     response = await run_agent("分析股票 600519 的 PE", graph=graph)
@@ -436,7 +514,7 @@ async def test_web_numbers_are_not_rendered_as_market_facts() -> None:
         config=_config(),
         fund_client=FakeFundClient(_stock_envelope()),
         web_client=FakeWebClient(),
-        association_model=RuleBasedAssociationModel(),
+        research_model=RuleBasedResearchModel(),
     )
 
     response = await run_agent("搜索网页基金监管政策", graph=graph)
@@ -459,7 +537,7 @@ async def test_missing_pb_is_not_replaced_by_pe() -> None:
         config=_config(),
         fund_client=FakeFundClient(envelope),
         web_client=FakeWebClient(),
-        association_model=RuleBasedAssociationModel(),
+        research_model=RuleBasedResearchModel(),
     )
 
     response = await run_agent("分析股票 600519 的估值", graph=graph)
@@ -474,7 +552,7 @@ async def test_model_failure_falls_back_to_deterministic_fact_report() -> None:
         config=_config(),
         fund_client=FakeFundClient(_stock_envelope()),
         web_client=FakeWebClient(),
-        association_model=FailingAssociationModel(),
+        research_model=FailingResearchModel(),
     )
 
     response = await run_agent("分析股票 600519 的估值", graph=graph)
@@ -492,7 +570,7 @@ async def test_compare_without_two_codes_asks_for_clarification() -> None:
         config=_config(),
         fund_client=fund,
         web_client=FakeWebClient(),
-        association_model=RuleBasedAssociationModel(),
+        research_model=RuleBasedResearchModel(),
     )
 
     response = await run_agent("比较基金 000001", graph=graph)
@@ -535,8 +613,14 @@ def test_ark_model_config_accepts_thinking_and_long_timeout() -> None:
     assert config.extra_body == {"thinking": {"type": "enabled"}}
 
 
+def test_research_model_switch_accepts_new_and_legacy_config() -> None:
+    assert AgentConfig(use_llm_for_research=True).research_model_enabled
+    assert AgentConfig(use_llm_for_associations=True).research_model_enabled
+    assert not AgentConfig().research_model_enabled
+
+
 @pytest.mark.asyncio
-async def test_association_model_forwards_extra_body() -> None:
+async def test_research_model_forwards_extra_body() -> None:
     captured: dict[str, Any] = {}
 
     class FakeCompletions:
@@ -546,13 +630,13 @@ async def test_association_model_forwards_extra_body() -> None:
                 choices=[
                     SimpleNamespace(
                         message=SimpleNamespace(
-                            parsed=SimpleNamespace(associations=[])
+                            parsed=ResearchSynthesis()
                         )
                     )
                 ]
             )
 
-    model = OpenAIAssociationModel.__new__(OpenAIAssociationModel)
+    model = OpenAIResearchModel.__new__(OpenAIResearchModel)
     model._config = ModelConfig(
         enabled=True,
         base_url="https://ark.example/api/v3",
@@ -566,10 +650,11 @@ async def test_association_model_forwards_extra_body() -> None:
         )
     )
 
-    result = await model.build_associations([], "测试结构化输出")
+    result = await model.build_research([], "测试结构化输出")
 
-    assert result == []
+    assert result == ResearchSynthesis()
     assert captured["extra_body"] == {"thinking": {"type": "enabled"}}
+    assert captured["response_format"] is ResearchSynthesis
 
 
 @pytest.mark.parametrize(
@@ -601,6 +686,29 @@ async def test_association_model_forwards_extra_body() -> None:
                 "relationship": Relationship.CONTRAST,
                 "explanation": "两个口径应分别观察。",
                 "confidence": Confidence.HIGH,
+            },
+        ),
+        (
+            ResearchQuestion,
+            {
+                "question_id": "rq_primary",
+                "question": "需要核验哪些风险？",
+            },
+        ),
+        (
+            EvidenceSummary,
+            {
+                "question_id": "rq_primary",
+                "stance": EvidenceStance.UNKNOWN,
+                "explanation": "当前信息不足。",
+                "confidence": Confidence.LOW,
+            },
+        ),
+        (
+            ResearchNextStep,
+            {
+                "action": "核对缺失信息。",
+                "reason": "当前证据覆盖有限。",
             },
         ),
     ],
@@ -675,6 +783,73 @@ def test_response_validator_blocks_causality_trading_and_nav_valuation() -> None
     assert len(warnings) == 3
 
 
+def test_research_synthesis_validator_checks_questions_refs_and_actions() -> None:
+    facts = [
+        FactRef(
+            fact_id="fact_a",
+            tool=RegisteredTool.STOCK_VALUATION,
+            field_path="data.summary.pe_ttm.current",
+            label="PE TTM 当前值",
+            value=10,
+            audit_ref="audit-a",
+        )
+    ]
+    questions = [
+        ResearchQuestion(
+            question_id="rq_primary",
+            question="当前事实反映了哪些估值差异？",
+        ),
+        ResearchQuestion(
+            question_id="rq_invalid",
+            question="未来上涨百分之 20 吗？",
+        ),
+    ]
+    evidence = [
+        EvidenceSummary(
+            question_id="rq_primary",
+            stance=EvidenceStance.SUPPORTING,
+            evidence_refs=["fact_a"],
+            explanation="该事实支持继续核验估值口径。",
+            confidence=Confidence.HIGH,
+        ),
+        EvidenceSummary(
+            question_id="rq_primary",
+            stance=EvidenceStance.OPPOSING,
+            evidence_refs=["fact_missing"],
+            explanation="不存在的事实引用。",
+            confidence=Confidence.LOW,
+        ),
+    ]
+    next_steps = [
+        ResearchNextStep(
+            question_id="rq_primary",
+            action="核对其他估值口径。",
+            reason="当前证据只覆盖一个口径。",
+            evidence_refs=["fact_a"],
+        ),
+        ResearchNextStep(
+            question_id="rq_primary",
+            action="建议买入。",
+            reason="错误的交易指令。",
+        ),
+    ]
+
+    valid_questions, valid_evidence, valid_steps, _, warnings = (
+        validate_research_synthesis(
+            questions,
+            evidence,
+            next_steps,
+            [],
+            facts,
+        )
+    )
+
+    assert [item.question_id for item in valid_questions] == ["rq_primary"]
+    assert len(valid_evidence) == 1
+    assert len(valid_steps) == 1
+    assert len(warnings) == 3
+
+
 def test_market_envelope_without_audit_is_blocked() -> None:
     envelope = _stock_envelope().model_dump(mode="json")
     envelope["data_audit"] = []
@@ -707,7 +882,7 @@ async def test_low_confidence_rule_path_can_use_structured_intent_model() -> Non
     nodes = AgentNodes(
         FakeFundClient(_stock_envelope()),
         FakeWebClient(),
-        RuleBasedAssociationModel(),
+        RuleBasedResearchModel(),
         FakeIntentClassifier(),
         _config(),
     )
@@ -723,7 +898,7 @@ async def test_each_node_returns_only_declared_state_fields() -> None:
     nodes = AgentNodes(
         FakeFundClient(_stock_envelope()),
         FakeWebClient(),
-        RuleBasedAssociationModel(),
+        RuleBasedResearchModel(),
         None,
         _config(),
     )
@@ -734,7 +909,7 @@ async def test_each_node_returns_only_declared_state_fields() -> None:
         nodes.plan_registered_tools,
         nodes.call_mcp,
         nodes.validate_tool_envelopes,
-        nodes.build_associations,
+        nodes.build_research_synthesis,
         nodes.validate_response,
         nodes.render_answer,
     ):
@@ -750,18 +925,18 @@ async def test_each_node_returns_only_declared_state_fields() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("association_model", "expected_status", "warning_fragment"),
+    ("research_model", "expected_status", "warning_fragment"),
     [
         (
-            InvalidAssociationModel(),
+            InvalidResearchModel(),
             AgentStatus.PARTIAL_RESULT,
             "回退为事实报告",
         ),
-        (EmptyAssociationModel(), AgentStatus.COMPLETED, None),
+        (EmptyResearchModel(), AgentStatus.COMPLETED, None),
     ],
 )
 async def test_invalid_or_empty_model_output_falls_back_to_facts(
-    association_model,
+    research_model,
     expected_status: AgentStatus,
     warning_fragment: str | None,
 ) -> None:
@@ -769,7 +944,7 @@ async def test_invalid_or_empty_model_output_falls_back_to_facts(
         config=_config(),
         fund_client=FakeFundClient(_stock_envelope()),
         web_client=FakeWebClient(),
-        association_model=association_model,
+        research_model=research_model,
     )
 
     response = await run_agent("分析股票 600519 的估值", graph=graph)
@@ -786,7 +961,7 @@ def test_graph_is_compiled_without_checkpoint() -> None:
         config=_config(),
         fund_client=FakeFundClient(_stock_envelope()),
         web_client=FakeWebClient(),
-        association_model=RuleBasedAssociationModel(),
+        research_model=RuleBasedResearchModel(),
     )
 
     assert graph.checkpointer is None
@@ -795,7 +970,7 @@ def test_graph_is_compiled_without_checkpoint() -> None:
         "PLAN_REGISTERED_TOOLS",
         "CALL_MCP",
         "VALIDATE_TOOL_ENVELOPES",
-        "BUILD_ASSOCIATIONS",
+        "BUILD_RESEARCH_SYNTHESIS",
         "VALIDATE_RESPONSE",
         "RENDER_ANSWER",
     }.issubset(graph.get_graph().nodes)
@@ -807,7 +982,7 @@ def test_graph_is_compiled_without_checkpoint() -> None:
         "PLAN_REGISTERED_TOOLS": 2,
         "CALL_MCP": 3,
         "VALIDATE_TOOL_ENVELOPES": 4,
-        "BUILD_ASSOCIATIONS": 5,
+        "BUILD_RESEARCH_SYNTHESIS": 5,
         "VALIDATE_RESPONSE": 6,
         "RENDER_ANSWER": 7,
         "__end__": 8,

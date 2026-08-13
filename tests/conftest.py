@@ -150,7 +150,7 @@ def test_config() -> AppConfig:
             "agent": config.agent.model_copy(
                 update={
                     "use_llm_for_intent": False,
-                    "use_llm_for_associations": False,
+                    "use_llm_for_research": False,
                 }
             ),
             "model": config.model.model_copy(update={"enabled": False}),

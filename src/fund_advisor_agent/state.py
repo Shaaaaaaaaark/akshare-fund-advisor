@@ -101,6 +101,19 @@ class Confidence(StrEnum):
     LOW = "low"
 
 
+class EvidenceStance(StrEnum):
+    SUPPORTING = "supporting"
+    OPPOSING = "opposing"
+    UNKNOWN = "unknown"
+
+
+class ResearchQuestion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question_id: str = Field(pattern=r"^rq_[a-z0-9_]{1,40}$")
+    question: str = Field(min_length=1, max_length=300)
+
+
 class AssociationDraft(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -111,9 +124,40 @@ class AssociationDraft(BaseModel):
     confidence: Confidence
 
 
-class AssociationBatch(BaseModel):
+class EvidenceSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    question_id: str
+    stance: EvidenceStance
+    evidence_refs: list[str] = Field(default_factory=list, max_length=10)
+    explanation: str = Field(min_length=1, max_length=500)
+    confidence: Confidence
+
+
+class ResearchNextStep(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question_id: str | None = None
+    action: str = Field(min_length=1, max_length=300)
+    reason: str = Field(min_length=1, max_length=300)
+    evidence_refs: list[str] = Field(default_factory=list, max_length=10)
+
+
+class ResearchSynthesis(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    research_questions: list[ResearchQuestion] = Field(
+        default_factory=list,
+        max_length=3,
+    )
+    evidence_summary: list[EvidenceSummary] = Field(
+        default_factory=list,
+        max_length=9,
+    )
+    next_steps: list[ResearchNextStep] = Field(
+        default_factory=list,
+        max_length=5,
+    )
     associations: list[AssociationDraft] = Field(default_factory=list)
 
 
@@ -135,6 +179,9 @@ class AgentState(BaseModel):
     tool_plan: list[ToolCallSpec] = Field(default_factory=list)
     tool_results: list[ToolExecution] = Field(default_factory=list)
     facts: list[FactRef] = Field(default_factory=list)
+    research_questions: list[ResearchQuestion] = Field(default_factory=list)
+    evidence_summary: list[EvidenceSummary] = Field(default_factory=list)
+    next_steps: list[ResearchNextStep] = Field(default_factory=list)
     associations: list[AssociationDraft] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
@@ -148,6 +195,9 @@ class AgentResponse(BaseModel):
 
     status: AgentStatus
     facts: list[FactRef] = Field(default_factory=list)
+    research_questions: list[ResearchQuestion] = Field(default_factory=list)
+    evidence_summary: list[EvidenceSummary] = Field(default_factory=list)
+    next_steps: list[ResearchNextStep] = Field(default_factory=list)
     associations: list[AssociationDraft] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)

@@ -6,7 +6,15 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .policies import error_message_for_status
-from .state import AgentState, AgentStatus, AssociationDraft, FactRef
+from .state import (
+    AgentState,
+    AgentStatus,
+    AssociationDraft,
+    EvidenceSummary,
+    FactRef,
+    ResearchNextStep,
+    ResearchQuestion,
+)
 
 
 def render_answer(state: AgentState) -> str:
@@ -22,9 +30,20 @@ def render_answer(state: AgentState) -> str:
         return error_message_for_status(state.status, details)
 
     sections = [
+        _render_research_questions(state.research_questions),
         _render_facts(state.facts),
         _render_background_sources(state.facts),
+        _render_evidence_summary(
+            state.evidence_summary,
+            state.research_questions,
+            state.facts,
+        ),
         _render_associations(state.associations, state.facts),
+        _render_next_steps(
+            state.next_steps,
+            state.research_questions,
+            state.facts,
+        ),
         _render_limitations(state.limitations, state.warnings),
         (
             "## 条件式参考\n"
@@ -89,6 +108,45 @@ def _render_background_sources(facts: list[FactRef]) -> str:
     return "\n".join(lines) if len(lines) > 2 else ""
 
 
+def _render_research_questions(items: list[ResearchQuestion]) -> str:
+    if not items:
+        return ""
+    return "\n".join(
+        ["## 研究问题", *(f"- {item.question}" for item in items)]
+    )
+
+
+def _render_evidence_summary(
+    items: list[EvidenceSummary],
+    questions: list[ResearchQuestion],
+    facts: list[FactRef],
+) -> str:
+    if not items:
+        return ""
+    stance_labels = {
+        "supporting": "支持证据",
+        "opposing": "反对证据",
+        "unknown": "数据未知",
+    }
+    question_labels = {
+        item.question_id: item.question for item in questions
+    }
+    fact_labels = {fact.fact_id: fact.label for fact in facts}
+    lines = ["## 证据整理"]
+    for item in items:
+        refs = "、".join(
+            fact_labels.get(fact_id, fact_id)
+            for fact_id in item.evidence_refs
+        )
+        basis = refs or "当前无可引用事实"
+        lines.append(
+            f"- [{stance_labels[item.stance.value]}] {item.explanation} "
+            f"问题：{question_labels[item.question_id]}；"
+            f"依据：{basis}；置信度：{item.confidence.value}。"
+        )
+    return "\n".join(lines)
+
+
 def _render_associations(
     associations: list[AssociationDraft],
     facts: list[FactRef],
@@ -106,6 +164,35 @@ def _render_associations(
             f"- {association.explanation} "
             f"依据：{refs}；关系：{association.relationship.value}；"
             f"置信度：{association.confidence.value}。"
+        )
+    return "\n".join(lines)
+
+
+def _render_next_steps(
+    items: list[ResearchNextStep],
+    questions: list[ResearchQuestion],
+    facts: list[FactRef],
+) -> str:
+    if not items:
+        return ""
+    question_labels = {
+        item.question_id: item.question for item in questions
+    }
+    fact_labels = {fact.fact_id: fact.label for fact in facts}
+    lines = ["## 下一步研究"]
+    for item in items:
+        question = (
+            f"；对应问题：{question_labels[item.question_id]}"
+            if item.question_id
+            else ""
+        )
+        refs = "、".join(
+            fact_labels.get(fact_id, fact_id)
+            for fact_id in item.evidence_refs
+        )
+        basis = f"；依据：{refs}" if refs else ""
+        lines.append(
+            f"- {item.action} 原因：{item.reason}{question}{basis}。"
         )
     return "\n".join(lines)
 

@@ -58,6 +58,8 @@ model:
 
 agent:
   use_llm_for_intent: false
+  use_llm_for_research: false
+  # Legacy compatibility; use use_llm_for_research for new configuration.
   use_llm_for_associations: false
   maximum_facts: 20
   maximum_tool_calls: 4

@@ -26,7 +26,7 @@
 
 - Skill CLI 已实现，是当前稳定运行入口。
 - Fund MCP 和 Web MCP 的命名空间、入口、配置和测试接线已完成。
-- LangGraph Agent 固定图、MCP Client、FactRef、关联说明、门禁和 CLI 已实现。
+- LangGraph Agent 固定图、MCP Client、FactRef、结构化研究综合、门禁和 CLI 已实现。
 - Compose 已收敛为两个 MCP 服务；镜像、容器测试、健康检查、HTTP 工具发现和 Agent
   容器闭环已验证。
 - Ark thinking 模型的 Pydantic 结构化关联输出和门禁闭环已验证。
@@ -87,6 +87,16 @@ LangGraph 只使用 `StateGraph` 和显式条件边。不得恢复 LangChain Age
 动态工具规划、数据库 checkpoint、长期记忆或多 Agent。
 
 ## Agent 关联说明
+
+职责分工：
+
+- 数据工具提供并校验金融事实；
+- Agent 控制固定研究流程、工具调用、错误分支和输出门禁；
+- 模型理解自然语言并解释已验证事实，不决定金融数字、工具权限、图状态或最终放行。
+
+当前模型通过一次结构化调用生成研究问题、支持/反对/未知证据分组、关联说明和下一步
+研究清单。用户期限、仓位和风险承受能力尚未形成独立输入契约，不得写成已实现，也不得
+借模型增强恢复开放式动态规划。
 
 Agent 可以解释多个工具事实如何共同影响研究理解，但必须：
 
