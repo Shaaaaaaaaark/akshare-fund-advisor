@@ -97,11 +97,16 @@ def plan_tools(
         ], AgentStatus.RUNNING, []
 
     if intent is Intent.WEB_RESEARCH:
+        query = (
+            f"{subject} {question}"
+            if entities and subject not in question
+            else question
+        )
         return [
             ToolCallSpec(
                 tool=RegisteredTool.WEB_SEARCH,
                 source="web",
-                arguments={"query": question, "max_results": 5},
+                arguments={"query": query, "max_results": 5},
             )
         ], AgentStatus.RUNNING, []
 

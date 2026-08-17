@@ -25,7 +25,8 @@
 - 不使用 LangChain Memory、数据库 checkpoint 或跨会话记忆；
 - 不使用多 Agent、SubAgent 或自治反思循环；
 - 不引入 RAG、向量库或固定文档知识库；
-- 不实现 FastAPI、Web UI、任务队列或长期任务；
+- 本任务不实现 FastAPI、Web UI、任务队列或长期任务；产品入口由后续
+  [Web 与 CLI 产品任务](TASK_web_cli_product.md) 独立实现；
 - 不实现组合分析、回测、收益预测或自动交易。
 
 ## 3. 固定状态图

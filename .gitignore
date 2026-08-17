@@ -38,3 +38,9 @@ reports/
 dist/
 build/
 *.egg-info/
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo
+web-backend/web/dist/
+/web-backend/web-backend
+*.test

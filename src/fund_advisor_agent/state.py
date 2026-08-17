@@ -174,6 +174,8 @@ class AgentState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     question: str = Field(min_length=1, max_length=4000)
+    context_entities: list[str] = Field(default_factory=list, max_length=5)
+    context_intent: Intent | None = None
     intent: Intent | None = None
     entities: list[str] = Field(default_factory=list)
     tool_plan: list[ToolCallSpec] = Field(default_factory=list)
@@ -194,6 +196,8 @@ class AgentResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: AgentStatus
+    intent: Intent | None = None
+    entities: list[str] = Field(default_factory=list)
     facts: list[FactRef] = Field(default_factory=list)
     research_questions: list[ResearchQuestion] = Field(default_factory=list)
     evidence_summary: list[EvidenceSummary] = Field(default_factory=list)

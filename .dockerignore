@@ -14,3 +14,5 @@ data
 reports
 dist
 build
+web/node_modules
+web/dist

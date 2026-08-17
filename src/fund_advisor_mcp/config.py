@@ -134,6 +134,23 @@ class AgentConfig(BaseModel):
         return self.use_llm_for_research or self.use_llm_for_associations
 
 
+class AppServerConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    host: str = "127.0.0.1"
+    port: int = Field(default=8000, ge=1, le=65535)
+    static_dir: str = "web/dist"
+    session_ttl_seconds: int = Field(default=7200, ge=60, le=86400)
+    max_sessions: int = Field(default=100, ge=1, le=10000)
+    max_turns_per_session: int = Field(default=20, ge=2, le=100)
+    allowed_origins: list[str] = Field(
+        default_factory=lambda: [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ]
+    )
+
+
 class AppConfig(BaseModel):
     # Old local files may still contain removed server/storage sections.
     model_config = ConfigDict(extra="ignore")
@@ -142,6 +159,7 @@ class AppConfig(BaseModel):
     web_research: WebResearchConfig = Field(default_factory=WebResearchConfig)
     model: ModelConfig = Field(default_factory=ModelConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
+    app: AppServerConfig = Field(default_factory=AppServerConfig)
 
 
 def _as_provider_config(value: object) -> WebSearchProviderConfig | None:

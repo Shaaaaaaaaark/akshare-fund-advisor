@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
@@ -20,7 +22,13 @@ from .model_client import (
 )
 from .nodes import AgentNodes
 from .research import ResearchModel
-from .state import AgentResponse, AgentState, AgentStatus
+from .state import AgentResponse, AgentState, AgentStatus, Intent
+
+
+@dataclass(frozen=True)
+class AgentProgress:
+    node: str
+    state: AgentState
 
 
 def build_agent_graph(
@@ -101,16 +109,49 @@ async def run_agent(
     question: str,
     *,
     graph: Any | None = None,
+    context_entities: list[str] | None = None,
+    context_intent: Intent | None = None,
 ) -> AgentResponse:
-    compiled = graph or build_agent_graph()
-    result = await compiled.ainvoke(AgentState(question=question))
-    state = (
-        result
-        if isinstance(result, AgentState)
-        else AgentState.model_validate(result)
+    state = AgentState(
+        question=question,
+        context_entities=context_entities or [],
+        context_intent=context_intent,
     )
+    async for progress in stream_agent(state, graph=graph):
+        state = progress.state
+    return response_from_state(state)
+
+
+async def stream_agent(
+    initial_state: AgentState,
+    *,
+    graph: Any | None = None,
+) -> AsyncIterator[AgentProgress]:
+    compiled = graph or build_agent_graph()
+    state = initial_state
+    async for chunk in compiled.astream(
+        initial_state,
+        stream_mode="updates",
+    ):
+        if not isinstance(chunk, dict):
+            continue
+        for node, update in chunk.items():
+            if not isinstance(update, dict):
+                continue
+            state = AgentState.model_validate(
+                {
+                    **state.model_dump(mode="python"),
+                    **update,
+                }
+            )
+            yield AgentProgress(node=node, state=state)
+
+
+def response_from_state(state: AgentState) -> AgentResponse:
     return AgentResponse(
         status=state.status,
+        intent=state.intent,
+        entities=state.entities,
         facts=state.facts,
         research_questions=state.research_questions,
         evidence_summary=state.evidence_summary,

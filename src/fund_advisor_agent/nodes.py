@@ -19,6 +19,7 @@ from .research import ResearchModel
 from .state import (
     AgentState,
     AgentStatus,
+    Intent,
     RegisteredTool,
     ResearchSynthesis,
     ToolCallSpec,
@@ -66,6 +67,22 @@ class AgentNodes:
                     "意图模型不可用，已保留规则分类结果："
                     f"{type(exc).__name__}"
                 )
+        if intent is Intent.FUND_COMPARE and state.context_entities:
+            entities = list(
+                dict.fromkeys([*state.context_entities, *entities])
+            )
+        elif not entities and state.context_entities:
+            entities = list(state.context_entities)
+            if (
+                intent is Intent.FUND_ANALYSIS
+                and state.context_intent
+                in {
+                    Intent.FUND_ANALYSIS,
+                    Intent.INDEX_VALUATION,
+                    Intent.STOCK_VALUATION,
+                }
+            ):
+                intent = state.context_intent
         return {
             "intent": intent,
             "entities": entities,

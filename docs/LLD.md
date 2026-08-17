@@ -13,14 +13,16 @@
 | 强类型配置 | `src/fund_advisor_mcp/config.py` |
 | Fund MCP Schema / Adapter / Server | `src/fund_advisor_mcp/fund/` |
 | Web MCP Schema / Client / Service / Server | `src/fund_advisor_mcp/web/` |
-| LangGraph 固定状态图、FactRef、门禁和 CLI | `src/fund_advisor_agent/` |
+| LangGraph 固定状态图、FactRef、门禁和调试 CLI | `src/fund_advisor_agent/` |
+| Agent API、临时会话和兼容 CLI | `src/fund_advisor_app/` |
+| React 对话页 | `web/` |
 | Skill 单元测试 | `skills/akshare-fund-advisor/tests/` |
-| MCP、Web 与 LangGraph 图级测试 | `tests/` |
+| App、MCP、Web 与 LangGraph 图级测试 | `tests/` |
 
 ### 1.2 验证状态
 
 - 根目录 Ruff 通过；
-- 89 个 Skill、MCP、Web、候选接口审计和 LangGraph 测试通过；
+- 97 个 Skill、App、MCP、Web、候选接口审计和 LangGraph 测试通过；
 - Fund MCP 九工具与 Web MCP 三工具的 stdio 发现通过；
 - 最近一次真实 AKShare 审计 13/15 通过，`fund_etf_hist_em` 和 `fund_lof_hist_em`
   上游断连被正确记录为 `DATA_SOURCE_ERROR`；
@@ -29,11 +31,13 @@
 - Compose 配置、runtime/test 镜像构建和容器内 Ruff/Pytest 通过；
 - 两个 MCP 服务健康检查和 HTTP 9+3 工具发现通过；
 - 容器内 LangGraph → HTTP MCP → Skill 指数估值闭环通过；
+- Agent API、React 页面和兼容 CLI 的容器闭环通过；
 - OpenAI-compatible Ark thinking 模型的 Pydantic 结构化关联输出和门禁闭环通过。
 
 ### 1.3 当前非目标
 
-当前不实现 FastAPI/Web UI、数据库、长期会话、组合分析和回测。
+当前不实现登录、数据库、持久化/跨会话记忆、组合分析和回测。Web 是唯一继续推进的
+产品界面；已有 CLI 冻结为兼容和开发调试入口，不再增加产品功能。
 
 ## 2. 当前代码结构
 
@@ -54,19 +58,27 @@ akshare-fund-advisor/
 │   │       ├── client.py
 │   │       ├── service.py
 │   │       └── server.py
-│   └── fund_advisor_agent/
-│       ├── state.py
-│       ├── graph.py
-│       ├── nodes.py
-│       ├── clients.py
-│       ├── policies.py
-│       ├── associations.py
-│       ├── research.py
-│       ├── validator.py
-│       ├── renderer.py
-│       ├── model_client.py
-│       ├── prompts.py
+│   ├── fund_advisor_agent/
+│   │   ├── state.py
+│   │   ├── graph.py
+│   │   ├── nodes.py
+│   │   ├── policies.py
+│   │   ├── associations.py
+│   │   ├── research.py
+│   │   ├── validator.py
+│   │   ├── renderer.py
+│   │   ├── model_client.py
+│   │   ├── prompts.py
+│   │   └── cli.py
+│   └── fund_advisor_app/
+│       ├── api.py
+│       ├── service.py
+│       ├── sessions.py
+│       ├── schemas.py
+│       ├── client.py
 │       └── cli.py
+├── web/                          # React + Vite 对话页
+│   └── src/
 ├── skills/akshare-fund-advisor/  # 纯数据层：SKILL.md + scripts + references
 │   ├── scripts/
 │   │   ├── fund_advisor.py
@@ -83,10 +95,12 @@ akshare-fund-advisor/
 依赖方向：
 
 ```text
-LangGraph Agent
-  -> MCP Client
-     -> Fund MCP Adapter -> FundAdvisor
-     -> Web MCP Service
+React Web
+  -> Agent API
+     -> LangGraph Agent
+        -> MCP Client
+           -> Fund MCP Adapter -> FundAdvisor
+           -> Web MCP Service
 
 FundAdvisor 不依赖 Agent、MCP 或模型。
 ```
@@ -292,11 +306,16 @@ PE TTM 与 PB 各自包含：
 
 - 当前值；
 - 历史分位；
-- 均值、中位数、P20、P80；
-- 图表序列；
-- 数据日期和样本量。
+- 均值、中位数、标准差、最高、最低、P20、P80；
+- `reference_lines` 和可用的 `window_statistics`；
+- 真实抽样点 `chart_series`；
+- 数据日期、完整日频样本量和显示点数。
 
 两者不得合成总分。
+
+Web 指数详情必须将 PE TTM 与 PB 渲染为上下排列的同步历史双图，默认十年，并允许切换
+响应中实际存在的 3/5/10/20 年窗口。图表信息组织参考 Wind 深度资料，但数据源仍是
+AKShare；不得使用 Wind 商标或声称是 Wind 数据。
 
 ### 7.2 个股
 
@@ -308,6 +327,9 @@ PE TTM 与 PB 各自包含：
 - 每条序列的数据日期和可用性。
 
 价格、PE、PB 只能并列展示和关联说明，不能互相替代。
+
+Web 个股详情分别渲染价格、PE、PB 三个历史视图。前端只能使用工具返回的
+`chart_series`，不得补点、插值、前向填充或重新计算历史分位。
 
 ## 8. 最小 LangGraph Agent 设计
 
@@ -338,6 +360,8 @@ LangGraph 只负责：
 
 ```text
 question
+context_entities
+context_intent
 intent
 entities
 tool_plan
@@ -365,7 +389,9 @@ completed
 failed
 ```
 
-第一版图编译时不传 checkpointer，不保存长期会话、用户画像或跨请求 Memory。
+图编译时不传 checkpointer，不保存用户画像或跨请求 Memory。`context_entities` 和
+`context_intent` 只能由 Agent API 的有界进程内会话注入，用于当前临时会话的指代消解；
+它们不是市场事实，也不持久化。
 
 ### 8.3 固定状态图
 
@@ -546,13 +572,42 @@ ETF 溢价上升 + 场内价格上涨
 
 ### 8.10 运行入口
 
-第一版只提供 CLI，不增加 FastAPI：
+底层单轮调试入口保留：
 
 ```text
 fund-advisor-agent ask --question "分析 510300 的风险和估值"
 ```
 
-CLI 创建一次图实例，执行单轮 `ainvoke`，输出结构化 JSON 和用户可读文本。
+Web 产品入口：
+
+```text
+fund-advisor-api
+```
+
+已有兼容和调试入口（冻结功能）：
+
+```text
+fund-advisor chat
+fund-advisor ask "分析 510300 的风险和估值"
+```
+
+Agent API 端点：
+
+```text
+GET    /health
+POST   /api/sessions
+GET    /api/sessions/{session_id}
+DELETE /api/sessions/{session_id}
+POST   /api/chat/stream
+```
+
+`POST /api/chat/stream` 返回 `session`、`status`、`result`、`error`、`done` SSE 事件。
+`stream_agent()` 使用 LangGraph `stream_mode="updates"` 暴露已注册节点边界，不流出模型
+内部思维过程。
+
+`InMemorySessionStore` 使用 TTL、最大会话数和最大消息数限制资源。每个会话串行执行请求，
+保存最近消息及上一轮实体/意图；服务重启后全部清空。React 页面消费同源 SSE。已有 CLI
+仍可通过同步 HTTP 客户端消费同一协议，但不再扩展产品能力。
 
 ## 9. 错误处理
 

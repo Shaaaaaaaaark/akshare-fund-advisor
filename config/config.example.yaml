@@ -63,3 +63,14 @@ agent:
   use_llm_for_associations: false
   maximum_facts: 20
   maximum_tool_calls: 4
+
+app:
+  host: 127.0.0.1
+  port: 8000
+  static_dir: web/dist
+  session_ttl_seconds: 7200
+  max_sessions: 100
+  max_turns_per_session: 20
+  allowed_origins:
+    - http://localhost:5173
+    - http://127.0.0.1:5173

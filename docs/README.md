@@ -6,12 +6,16 @@
 2. [项目 README](../README.md)：当前状态和稳定运行入口。
 3. [HLD](HLD.md)：目标架构、数据分析边界和 LangGraph Agent 关联说明。
 4. [LLD](LLD.md)：当前代码结构、MCP 契约和最小 LangGraph Agent 设计。
-5. [错误处理](ERROR_HANDLING.md)：实体、工具和上游错误语义。
-6. [Web Research MCP](WEB_RESEARCH_MCP.md)：搜索、抓取和 SSRF 边界。
-7. [基金与股票候选筛选任务](tasks/TASK_asset_screening.md)：候选接口审计已完成，生产接入待实施。
-8. [基金与个股数据分析任务](tasks/TASK_fund_stock_data_analysis.md)：P0、单标增强、测试和环境验证已完成。
-9. [LangGraph Agent 任务](tasks/TASK_langgraph_agent.md)：核心固定图、门禁、CLI 和 Docker 闭环已完成。
-10. [组合分析任务](tasks/TASK_portfolio_analysis.md)：后续扩展。
+5. [Go/Python 透传契约](GO_PYTHON_CONTRACT.md)：Go 网页后端与 Python Agent/MCP 的语言分工与透传规则。
+6. [错误处理](ERROR_HANDLING.md)：实体、工具和上游错误语义。
+7. [Web Research MCP](WEB_RESEARCH_MCP.md)：搜索、抓取和 SSRF 边界。
+8. [投研数据工作台任务](tasks/TASK_research_dashboard.md)：下一阶段主任务，先交付指数看板，再推进标的详情和页面上下文 Agent。
+9. [基金与股票候选筛选任务](tasks/TASK_asset_screening.md)：候选接口审计已完成，生产接入待实施。
+10. [基金与个股数据分析任务](tasks/TASK_fund_stock_data_analysis.md)：P0、单标增强、测试和环境验证已完成。
+11. [LangGraph Agent 任务](tasks/TASK_langgraph_agent.md)：核心固定图、门禁、CLI 和 Docker 闭环已完成。
+12. [Web 与 CLI 历史任务](tasks/TASK_web_cli_product.md)：已完成基础入口；CLI 后续冻结，
+    产品能力只在 Web 推进。
+13. [组合分析任务](tasks/TASK_portfolio_analysis.md)：后续扩展。
 
 ## Skill 文档
 
