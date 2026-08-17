@@ -1,53 +1,52 @@
-# 项目文档索引
+# 文档索引
 
-## 推荐阅读顺序
+## 仓库文档
 
-1. [产品简述](PRODUCT.md)：与 AI 讨论产品方向、功能范围和非目标时只需先看这份文档。
-2. [项目 README](../README.md)：当前状态和稳定运行入口。
-3. [HLD](HLD.md)：目标架构、数据分析边界和 LangGraph Agent 关联说明。
-4. [LLD](LLD.md)：当前代码结构、MCP 契约和最小 LangGraph Agent 设计。
-5. [Go/Python 透传契约](GO_PYTHON_CONTRACT.md)：Go 网页后端与 Python Agent/MCP 的语言分工与透传规则。
-6. [错误处理](ERROR_HANDLING.md)：实体、工具和上游错误语义。
-7. [Web Research MCP](WEB_RESEARCH_MCP.md)：搜索、抓取和 SSRF 边界。
-8. [投研数据工作台任务](tasks/TASK_research_dashboard.md)：下一阶段主任务，先交付指数看板，再推进标的详情和页面上下文 Agent。
-9. [基金与股票候选筛选任务](tasks/TASK_asset_screening.md)：候选接口审计已完成，生产接入待实施。
-10. [基金与个股数据分析任务](tasks/TASK_fund_stock_data_analysis.md)：P0、单标增强、测试和环境验证已完成。
-11. [LangGraph Agent 任务](tasks/TASK_langgraph_agent.md)：核心固定图、门禁、CLI 和 Docker 闭环已完成。
-12. [Web 与 CLI 历史任务](tasks/TASK_web_cli_product.md)：已完成基础入口；CLI 后续冻结，
-    产品能力只在 Web 推进。
-13. [组合分析任务](tasks/TASK_portfolio_analysis.md)：后续扩展。
+| 文档 | 唯一职责 |
+| --- | --- |
+| [项目 README](../README.md) | 当前状态、快速运行、当前任务入口 |
+| [产品范围](PRODUCT.md) | 做什么、不做什么、产品原则 |
+| [系统架构](HLD.md) | 组件职责、数据流、状态和技术边界 |
+| [Go/Python 透传契约](GO_PYTHON_CONTRACT.md) | 跨语言字段、状态和 SSE 透传规则 |
+| [错误语义](ERROR_HANDLING.md) | 错误码、降级和重试 |
+| [Web Research MCP](WEB_RESEARCH_MCP.md) | 搜索、抓取、文档读取和 SSRF 边界 |
+
+不再维护独立 LLD。当前代码结构写在 HLD，字段级细节以 Pydantic/Go Schema、测试和专用
+契约为准，避免文档复制代码后漂移。
+
+## 活跃开发任务
+
+| 任务 | 状态 | 下一步 |
+| --- | --- | --- |
+| [投研数据工作台](tasks/TASK_research_dashboard.md) | M0 与 M1 API 已完成 | 指数看板和 PE/PB 双图前端 |
+| [数据源交叉校验审计](tasks/TASK_data_source_cross_validation.md) | 待审计 | 审计 Baostock/efinance 覆盖、口径和稳定性 |
+| [候选筛选](tasks/TASK_asset_screening.md) | 接口审计已完成 | 工作台基础页面稳定后实现工具 |
+
+已完成任务不保留独立文档；实现事实由代码、测试、Git 历史和 HLD 状态表承载。当前暂缓的
+组合分析不保留 TASK，重新立项时再按实际需求创建。
 
 ## Skill 文档
 
-1. [Skill 入口](../skills/akshare-fund-advisor/SKILL.md)
-2. [Skill 使用说明](../skills/akshare-fund-advisor/USAGE.md)
-3. [Skill 内部设计](../skills/akshare-fund-advisor/DESIGN.md)
-4. [AKShare 接口映射](../skills/akshare-fund-advisor/references/akshare_api.md)
-5. [专业指标口径](../skills/akshare-fund-advisor/references/professional_metrics.md)
-6. [估值图表契约](../skills/akshare-fund-advisor/references/valuation_chart.md)
-7. [接口审计](../skills/akshare-fund-advisor/references/interface_audit.md)
-8. [财务、行业与基金质量候选接口审计](../skills/akshare-fund-advisor/references/quality_interface_audit.md)
+Skill 目录需要独立拷贝和运行，因此保留自己的文档体系：
 
-## 文档状态规则
-
-| 状态 | 含义 |
+| 文档 | 职责 |
 | --- | --- |
-| 已实现 | 当前代码和测试中存在 |
-| 接线重构中 | 代码已移动，但包入口、import、测试或部署尚未恢复 |
-| 待实现 | 只有设计，不应在 README 中声明可用 |
-| 后续扩展 | 当前明确不做 |
+| [SKILL.md](../skills/akshare-fund-advisor/SKILL.md) | Agent 调用指令和安全规则 |
+| [README.md](../skills/akshare-fund-advisor/README.md) | 独立包入口和快速使用 |
+| [USAGE.md](../skills/akshare-fund-advisor/USAGE.md) | CLI 参数和示例 |
+| [DESIGN.md](../skills/akshare-fund-advisor/DESIGN.md) | Skill 内部数据与计算设计 |
+| [AKShare 接口映射](../skills/akshare-fund-advisor/references/akshare_api.md) | 接口、字段和口径 |
+| [专业指标](../skills/akshare-fund-advisor/references/professional_metrics.md) | 公式和限制 |
+| [估值图表](../skills/akshare-fund-advisor/references/valuation_chart.md) | 图表数据契约 |
+| [接口审计](../skills/akshare-fund-advisor/references/interface_audit.md) | 单标接口审计结果 |
+| [候选接口审计](../skills/akshare-fund-advisor/references/quality_interface_audit.md) | 筛选接口审计结果 |
 
-当文档与代码不一致时：
+## 维护规则
 
-- 运行能力以当前代码、安装入口和测试为准；
-- 金融安全边界采用更严格的一侧；
-- 必须修正文档，不能用“设计如此”掩盖实现缺失。
-
-## 当前事实来源
-
-```text
-审计通过的 AKShare Skill / Fund MCP
-  > 用户指定的官方文档原文
-  > 非数值 Web 背景
-  > 模型常识不得作为市场事实
-```
+- 产品范围只改 `PRODUCT.md`。
+- 架构和组件职责只改 `HLD.md`。
+- 跨语言字段只改 `GO_PYTHON_CONTRACT.md`。
+- 错误码只改 `ERROR_HANDLING.md`。
+- 当前进度和实施步骤只改活跃 TASK。
+- 已完成实现不创建“历史任务总结”文档，使用 Git 记录。
+- 文档与代码冲突时，以代码、测试和更严格的金融安全边界为准，并立即修正文档。

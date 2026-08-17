@@ -10,7 +10,8 @@
 
 当前优先级：
 
-1. 按 `TASK_research_dashboard.md` 推进投研数据工作台，先完成 Dashboard 契约和指数看板；
+1. 按 `TASK_research_dashboard.md` 推进投研数据工作台，当前完成指数看板前端和 PE/PB
+   历史双图；
 2. 按已审计接口推进基金与股票候选筛选，并在工具完成后接入工作台；
 3. 保持 Web、Agent API、MCP、LangGraph、金融门禁和 Ark 结构化模型回归稳定。
 
@@ -76,9 +77,10 @@
 ```text
 React Web
   -> Go 网页后端（BFF）
-     -> Agent API (Python，SSE 代理)
-     -> Fund/Web MCP (Python，Dashboard 取数)
-        -> AKShare Skill
+     |-- Dashboard -> Fund MCP (Python) -> AKShare Skill
+     `-- Agent SSE -> Agent API (Python) -> LangGraph
+                                      |-> Fund MCP -> AKShare Skill
+                                      `-> Web MCP -> 公网内容
 ```
 
 - `skills/akshare-fund-advisor/scripts/fund_advisor.py`：实体解析、AKShare 调用、确定性指标和审计。
@@ -86,8 +88,8 @@ React Web
 - `src/fund_advisor_mcp/web/`：非数值背景 MCP，固定 `numeric_allowed=false`。
 - `src/fund_advisor_agent/`：只做固定图编排、工具路由、关联说明和输出校验。
 - `src/fund_advisor_app/`：Python Agent API、SSE、临时会话和兼容 CLI。
-- Go 网页后端（下一阶段）：Dashboard BFF、静态托管、Agent SSE 代理，只取数聚合，
-  不做任何金融计算或审计改写；边界见 `docs/GO_PYTHON_CONTRACT.md`。
+- Go 网页后端：Dashboard BFF、静态托管、Agent SSE 代理，只取数聚合，不做任何金融
+  计算或审计改写；边界见 `docs/GO_PYTHON_CONTRACT.md`。
 - `web/`：React 界面，不实现业务计算或金融事实生成。
 
 语言分工：Go 只做网页后端（取数、聚合、缓存、限流、静态托管、SSE 代理）；Python 保留
@@ -178,7 +180,8 @@ AKSHARE_FUND_VENV="$PWD/.venv-agent" bash "$SKILL_DIR/scripts/run.sh" audit
 
 ## 文档同步
 
-- 产品方向或架构：`README.md`、`docs/HLD.md`、`docs/LLD.md`
+- 产品方向：`docs/PRODUCT.md`
+- 架构与组件边界：`README.md`、`docs/HLD.md`
 - Go/Python 边界与透传契约：`docs/GO_PYTHON_CONTRACT.md`
 - 错误语义：`docs/ERROR_HANDLING.md`
 - Web MCP：`docs/WEB_RESEARCH_MCP.md`

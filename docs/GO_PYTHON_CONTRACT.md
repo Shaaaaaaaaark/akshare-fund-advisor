@@ -111,13 +111,14 @@ fund_screen/stock_screen 未实现 -> not_implemented
 - Go 不解析研究结论、不注入市场数字、不改写门禁结果。
 - 代理需正确处理 `text/event-stream`、禁用响应缓冲、传播客户端断开。
 - 临时会话状态仍由 Python Agent API 进程内持有；Go 不落库、不持久化会话。
-- 也允许前端直连 Python Agent API；是否经 Go 代理由部署形态决定，但契约一致。
+- 当前部署中前端必须经 Go 代理访问 Python Agent API；Python 服务不暴露宿主端口。
+  本地调试可以直连，但不得成为产品部署路径。
 
 ## 7. Schema 同步规则
 
-Python 的 `ToolEnvelope`、`ToolError`、`FactRef` 和 Dashboard 契约是**唯一事实源**。
-
-- 任一字段变更，必须同步更新 Go 结构体定义与本契约文档。
+- Python Pydantic Schema 是 `ToolEnvelope`、`ToolError` 和 `FactRef` 的事实源。
+- Go `internal/dashboard` 类型是 `DatasetMeta` 和 Dashboard HTTP 包装的事实源。
+- 任一跨语言字段变更，必须同步更新双方类型、测试与本契约文档。
 - Go 结构体对未知字段保持宽容透传（`json.RawMessage` 或保留原始 JSON），避免字段漂移
   导致审计字段丢失。
 - 强类型只用于 Go 需要读取的少数展示字段（名称、代码、状态、`as_of`）。
