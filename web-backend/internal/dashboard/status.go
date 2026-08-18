@@ -3,7 +3,7 @@ package dashboard
 import (
 	"strings"
 
-	"github.com/akshare-fund-advisor/web-backend/internal/mcp"
+	"github.com/akshare-fund-advisor/web-backend/internal/facts"
 )
 
 // mapStatus maps a tool envelope to a display status per
@@ -11,7 +11,7 @@ import (
 // envelope is available (or stale, if the tool itself flags staleness), and any
 // error keeps the original error.code while surfacing as unavailable. The
 // concrete codes are those documented in docs/ERROR_HANDLING.md §4.
-func mapStatus(env *mcp.Envelope) DataStatus {
+func mapStatus(env *facts.Envelope) DataStatus {
 	if env == nil {
 		return StatusUnavailable
 	}

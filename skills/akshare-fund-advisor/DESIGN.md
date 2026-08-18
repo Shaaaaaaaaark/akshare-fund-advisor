@@ -24,8 +24,11 @@ scripts/fund_advisor.py
     |-- 条件式买卖与定投规则
     `-- JSON 输出、审计和警告
 
+scripts/source_validation.py
+    `-- 可选校验 Provider、子进程超时隔离和确定性差异比较
+
 src/fund_advisor_mcp/fund/
-    `-- 通过 Adapter 加载 FundAdvisor，暴露九个市场事实工具
+    `-- 通过 Adapter 加载 FundAdvisor，暴露十个市场事实工具
 
 src/fund_advisor_mcp/web/
     `-- 搜索、网页和指定文档的非数值背景工具
@@ -64,15 +67,19 @@ LangChain Agent、ReAct、数据库 checkpoint、长期 Memory 或多 Agent。
 | --- | --- |
 | `SKILL.md` | 模型调用顺序、回答格式和禁止事项 |
 | `scripts/fund_advisor.py` | CLI、数据访问、校验、指标和策略规则 |
+| `scripts/source_validation.py` | 可选数据源 Provider 和确定性 Comparator |
+| `scripts/audit_source_providers.py` | 多源代表性真实接口审计 |
 | `scripts/run.sh` | 选择 Skill 虚拟环境并启动 CLI |
 | `scripts/setup.sh` | 创建虚拟环境并安装锁定依赖 |
 | `tests/test_fund_advisor.py` | 指标、降级、审计和错误输出回归测试 |
 | `../../src/fund_advisor_mcp/` | Fund/Web MCP 配置、Client、Adapter 与 Server |
-| `../../src/fund_advisor_agent/` | 固定 LangGraph、FactRef、关联门禁和单轮 CLI |
+| `../../src/fund_advisor_agent/` | 固定 LangGraph、FactRef 和关联门禁 |
+| `../../src/fund_advisor_app/` | Agent API、SSE、临时会话和兼容 CLI |
 | `references/akshare_api.md` | 接口、字段和公式契约 |
 | `references/professional_metrics.md` | 专业指标解释 |
 | `references/valuation_chart.md` | 指数估值图数据和渲染契约 |
 | `references/interface_audit.md` | 真实接口审计方法和历史记录 |
+| `references/source_cross_validation.md` | 多源许可、接口、实测结果和接入边界 |
 | `USAGE.md` | 独立安装、命令和排错说明 |
 
 ## 3. 命令模型
@@ -94,7 +101,10 @@ LangChain Agent、ReAct、数据库 checkpoint、长期 Memory 或多 Agent。
 
 ### 4.1 基金数据
 
-基金目录、申赎状态、基本资料、净值、持仓、ETF/LOF 行情和交易日历均来自锁定版本 `akshare==1.18.64`。`requirements.txt` 同时固定当前验证过的 pandas、NumPy、requests 和 curl_cffi 关键运行版本；启动前会校验 Python、AKShare 和 pandas，安装后执行 `pip check`。
+基金目录、申赎状态、基本资料、净值、持仓、ETF/LOF 行情和交易日历均来自锁定版本
+`akshare==1.18.64`。`requirements.txt` 同时锁定默认关闭的 Baostock 校验 Provider 和
+当前验证过的 pandas、NumPy、requests、curl_cffi 关键运行版本；启动前校验版本，安装后
+执行 `pip check`。
 
 场内历史数据按以下顺序处理：
 
@@ -105,6 +115,10 @@ LangChain Agent、ReAct、数据库 checkpoint、长期 Memory 或多 Agent。
 
 场内身份来自基金名称和源状态，不能因可选的申赎状态接口失败而改变历史指标口径。
 
+`etf_dashboard` 复用同一降级顺序，只生成价格、成交额、成交量、日涨跌和回撤五联序列。
+单位换算、区间收益和回撤均在 Skill 内确定性计算；前端只能筛选工具返回的日期点。ETF
+历史份额、净申赎和融资余额没有当前生产接口，不得用成交量或成交额替代。
+
 ### 4.2 指数估值
 
 `valuation` 只调用 AKShare：
@@ -113,6 +127,20 @@ LangChain Agent、ReAct、数据库 checkpoint、长期 Memory 或多 Agent。
 2. 用同一指数调用 `stock_index_pb_lg`。
 3. PE 取 `滚动市盈率`，PB 取 `市净率`，不混用等权或静态字段。
 4. 指数没有公开映射时返回 `INDEX_NOT_SUPPORTED`，不拼接其他指数或数据源。
+
+### 4.3 可选交叉校验
+
+`stock_valuation` 可通过环境变量启用 A 股价格交叉校验。主图继续使用 AKShare 前复权
+价格，Comparator 只比较 AKShare 与校验源的不复权收盘价：
+
+- 日期按内连接，不插值、不前向填充；
+- 相对容忍度 `0.001`，绝对容忍度 `0.01`；
+- 差异和失败只追加 `data_warnings`，不覆盖主源；
+- Provider 在可终止的 `spawn` 子进程运行，总等待预算不超过工具超时的三分之一；
+- efinance 因许可声明冲突和行情稳定性问题只保留审计 Provider。
+
+完整审计和启用方式见
+[`references/source_cross_validation.md`](references/source_cross_validation.md)。
 5. PE 或 PB 单侧失败时，可展示仍通过 Schema、样本量和时效校验的一侧。
 
 ## 5. 数据完整性

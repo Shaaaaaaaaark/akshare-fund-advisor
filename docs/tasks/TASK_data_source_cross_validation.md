@@ -1,11 +1,12 @@
 # TASK：数据源交叉校验审计
 
-> 状态：`待审计`
+> 状态：`首个接入完成（S0-S2、S5）`
 >
-> 启动条件：不阻塞当前 M1 指数看板前端；可作为并行调研任务。
+> 下一步：后续按 S3/S4 分别接入 ETF/基金净值和指数点位生产校验；现有 React
+> 指数和 ETF 页面已经展示工具返回的 warning。
 >
 > 目标产物：确认 Baostock、efinance 等免费数据源是否适合作为 AKShare 主源的交叉校验源，
-> 并定义接入规则。不得在审计完成前把任何新数据源写入生产主路径。
+> 并定义接入规则。首个生产闭环只接入默认关闭的 A 股不复权收盘价校验。
 
 ## 1. 目标
 
@@ -19,8 +20,8 @@
   -> data_audit / data_warnings
 ```
 
-多源校验用于发现风险，不用于自动修正数值。主链路仍以通过审计的 Skill/Fund MCP 为事实
-入口；模型、Go 和前端不得判断哪个源“更正确”。
+多源校验用于发现风险，不用于自动修正数值。数据面板以 Data API/Skill 为事实入口；
+Agent 以 Skill/Fund MCP 为事实入口；模型、Go 和前端不得判断哪个源“更正确”。
 
 ## 2. 非目标
 
@@ -115,21 +116,21 @@ skills/akshare-fund-advisor/references/
 skills/akshare-fund-advisor/scripts/
 ```
 
-- [ ] 确认 Baostock、efinance 的安装方式、许可证、版本锁定方式。
-- [ ] 记录每个候选接口的函数签名、参数、返回字段、日期字段和更新频率。
-- [ ] 对代表性标的做真实调用：
+- [x] 确认 Baostock、efinance 的安装方式、许可证、版本锁定方式。
+- [x] 记录每个候选接口的函数签名、参数、返回字段、日期字段和更新频率。
+- [x] 对代表性标的做真实调用：
   - A 股：`600519`、`000001`、`300750`；
   - ETF：`510300`、`159915`；
   - 场外基金：`000001`、`110022`；
   - 指数：沪深 300、中证 500、创业板 50。
-- [ ] 记录失败、限流、字段漂移、日期覆盖和缺失场景。
-- [ ] 生成 `references/source_cross_validation.md` 审计报告。
+- [x] 记录失败、限流、字段漂移、日期覆盖和缺失场景。
+- [x] 生成 `references/source_cross_validation.md` 审计报告。
 
 ### S1：Provider 边界设计
 
-- [ ] 在 Skill 层定义数据源 Provider 边界，不暴露给 MCP/Agent/Go 选择。
-- [ ] 主源 Provider 与校验 Provider 分离。
-- [ ] Provider 输出必须包含：
+- [x] 在 Skill 层定义数据源 Provider 边界，不暴露给 MCP/Agent/Go 选择。
+- [x] 主源 Provider 与校验 Provider 分离。
+- [x] Provider 输出必须包含：
   - `source_name`
   - `interface`
   - `parameters`
@@ -137,16 +138,16 @@ skills/akshare-fund-advisor/scripts/
   - `as_of`
   - `metric_basis`
   - 原始 DataFrame 指纹
-- [ ] 不改变现有公开 CLI/MCP 输出，除非同步更新 Schema、测试和文档。
+- [x] 不改变现有公开 CLI/MCP 输出，除非同步更新 Schema、测试和文档。
 
 ### S2：A 股价格校验
 
-- [ ] 选取一个小范围函数，对 A 股日线价格做 AKShare vs Baostock/efinance 对齐。
-- [ ] 明确复权口径：前复权、后复权或不复权不能混比。
-- [ ] 日期按交易日交集比较，不做前向填充。
-- [ ] 容忍阈值由代码常量定义，不能由模型生成。
-- [ ] 差异进入 `data_warnings`，主源值不被覆盖。
-- [ ] 增加固定夹具单元测试和至少一次真实接口冒烟。
+- [x] 选取一个小范围函数，对 A 股日线价格做 AKShare vs Baostock/efinance 对齐。
+- [x] 明确复权口径：前复权、后复权或不复权不能混比。
+- [x] 日期按交易日交集比较，不做前向填充。
+- [x] 容忍阈值由代码常量定义，不能由模型生成。
+- [x] 差异进入 `data_warnings`，主源值不被覆盖。
+- [x] 增加固定夹具单元测试和至少一次真实接口冒烟。
 
 ### S3：ETF 与基金净值校验
 
@@ -157,7 +158,7 @@ skills/akshare-fund-advisor/scripts/
 
 ### S4：指数点位与估值口径审计
 
-- [ ] 审计各源指数代码、指数名称和日期映射。
+- [x] 审计可用校验源的指数代码、指数名称和日期映射。
 - [ ] 指数点位可同口径比较时再纳入差异检测。
 - [ ] PE/PB 必须区分：
   - TTM vs 静态；
@@ -168,10 +169,11 @@ skills/akshare-fund-advisor/scripts/
 
 ### S5：MCP 与 Agent 展示
 
-- [ ] Fund MCP 只透传 Skill 产生的多源 audit/warning，不做比较。
-- [ ] Agent FactRef 仍只绑定主源事实字段；校验源只能作为 warning/限制。
-- [ ] 响应中可以说明“校验源存在差异/不可用”，不能声明某源一定正确。
-- [ ] Go BFF 和 React 只展示 warning，不参与源选择或修正。
+- [x] Fund MCP 只透传 Skill 产生的多源 audit/warning，不做比较。
+- [x] Agent FactRef 仍只绑定主源事实字段；校验源只能作为 warning/限制。
+- [x] 响应中可以说明“校验源存在差异/不可用”，不能声明某源一定正确。
+- [x] Go BFF 原样透传 warning，不参与源选择或修正。
+- [x] React 在指数列表/详情和 ETF 详情展示工具 warning。
 
 ## 7. 接入原则
 
@@ -186,22 +188,23 @@ skills/akshare-fund-advisor/scripts/
 
 ### 审计完成
 
-- [ ] `source_cross_validation.md` 记录候选源覆盖范围、字段、口径、失败和许可证。
-- [ ] 至少完成 A 股价格、ETF 价格、基金净值、指数点位四类代表性调用。
-- [ ] 明确哪些字段可比、哪些不可比、哪些暂不接入。
+- [x] `source_cross_validation.md` 记录候选源覆盖范围、字段、口径、失败和许可证。
+- [x] 至少完成 A 股价格、ETF 价格、基金净值、指数点位四类代表性调用。
+- [x] 明确哪些字段可比、哪些不可比、哪些暂不接入。
 
 ### 首个代码接入完成
 
-- [ ] 只在 Skill 层新增 Provider/Comparator。
-- [ ] 主源事实值不被校验源覆盖。
-- [ ] 差异通过 `data_warnings` 输出，审计通过 `data_audit` 输出。
-- [ ] 固定夹具测试覆盖一致、缺失、过期、字段漂移和超阈值差异。
-- [ ] Docker Python 测试通过。
-- [ ] 真实接口冒烟通过，失败时错误语义可区分。
+- [x] 只在 Skill 层新增 Provider/Comparator。
+- [x] 主源事实值不被校验源覆盖。
+- [x] 差异通过 `data_warnings` 输出，审计通过 `data_audit` 输出。
+- [x] 固定夹具测试覆盖一致、缺失、过期、字段漂移和超阈值差异。
+- [x] Docker Python 测试通过。
+- [x] 真实接口冒烟通过，失败时错误语义可区分。
 
 ### 全链路验收
 
-- [ ] MCP `ToolEnvelope` 保留多源 audit/warning。
-- [ ] Agent 不把校验源 warning 写成市场事实。
-- [ ] Go/React 只展示 warning，不修正或重算数字。
-- [ ] 文档同步 `ERROR_HANDLING.md`、Skill references 和本任务状态。
+- [x] MCP `ToolEnvelope` 保留多源 audit/warning。
+- [x] Agent 不把校验源 warning 写成市场事实。
+- [x] Go BFF 透传 warning，不修正或重算数字。
+- [x] React 在已接入的指数和 ETF 页面展示 warning。
+- [x] 文档同步 `ERROR_HANDLING.md`、Skill references 和本任务状态。

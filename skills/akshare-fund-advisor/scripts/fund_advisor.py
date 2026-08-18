@@ -3,7 +3,7 @@
 
 import argparse
 import hashlib
-import io
+import importlib
 import json
 import math
 import os
@@ -12,8 +12,9 @@ import signal
 import sys
 import threading
 import warnings
-from contextlib import contextmanager, redirect_stderr
+from contextlib import contextmanager
 from datetime import date, datetime, time, timedelta
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from zoneinfo import ZoneInfo
 
@@ -26,6 +27,10 @@ AKSHARE_DOC = "https://akshare.akfamily.xyz/"
 DEFAULT_TIMEOUT_SECONDS = int(os.environ.get("AKSHARE_FUND_TIMEOUT", "45"))
 SUPPORTED_AKSHARE_VERSION = "1.18.64"
 ETF_PREMIUM_PAUSE_THRESHOLD_PCT = 5.0
+SOURCE_VALIDATION_ENV = "AKSHARE_FUND_SOURCE_VALIDATION"
+SOURCE_VALIDATION_TIMEOUT_ENV = "AKSHARE_FUND_SOURCE_VALIDATION_TIMEOUT"
+SOURCE_VALIDATION_RELATIVE_TOLERANCE = 0.001
+SOURCE_VALIDATION_ABSOLUTE_TOLERANCE = 0.01
 INTERFACE_CONTRACTS = {
     "fund_name_em": {
         "基金代码",
@@ -89,6 +94,7 @@ INTERFACE_CONTRACTS = {
         "low",
         "close",
         "volume",
+        "amount",
     },
     "fund_individual_detail_hold_xq": {"资产类型", "仓位占比"},
     "fund_individual_basic_info_xq": {"item", "value"},
@@ -222,6 +228,18 @@ INDEX_ALIASES = {
 }
 
 
+def load_source_validation_module() -> Any:
+    """Load the sibling provider module when this script is imported by path."""
+
+    scripts_dir = str(Path(__file__).resolve().parent)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    return importlib.import_module("source_validation")
+
+
+source_validation = load_source_validation_module()
+
+
 class AdvisorError(Exception):
     def __init__(
         self,
@@ -261,6 +279,68 @@ def deadline(seconds: int) -> Iterable[None]:
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, previous_handler)
+
+
+def configured_source_validators(value: Optional[str] = None) -> Tuple[str, ...]:
+    raw = os.environ.get(SOURCE_VALIDATION_ENV, "") if value is None else value
+    names = tuple(
+        dict.fromkeys(
+            item.strip().lower()
+            for item in raw.split(",")
+            if item.strip()
+        )
+    )
+    supported = {"baostock", "efinance"}
+    unknown = sorted(set(names) - supported)
+    if unknown:
+        raise AdvisorError(
+            "INVALID_ARGUMENT",
+            "数据源交叉校验配置包含未注册 Provider",
+            {
+                "environment": SOURCE_VALIDATION_ENV,
+                "unknown": unknown,
+                "supported": sorted(supported),
+            },
+        )
+    return names
+
+
+def configured_source_validation_timeout(
+    tool_timeout_seconds: int,
+    value: Optional[str] = None,
+) -> int:
+    max_budget = max(1, tool_timeout_seconds // 3)
+    raw = (
+        os.environ.get(SOURCE_VALIDATION_TIMEOUT_ENV, "")
+        if value is None
+        else value
+    )
+    if not raw.strip():
+        return min(10, max_budget)
+    try:
+        timeout_seconds = int(raw)
+    except ValueError as exc:
+        raise AdvisorError(
+            "INVALID_ARGUMENT",
+            "数据源交叉校验超时必须是整数秒",
+            {
+                "environment": SOURCE_VALIDATION_TIMEOUT_ENV,
+                "value": raw,
+            },
+        ) from exc
+    if not 1 <= timeout_seconds <= max_budget:
+        raise AdvisorError(
+            "INVALID_ARGUMENT",
+            "数据源交叉校验超时必须位于工具超时预算的三分之一以内",
+            {
+                "environment": SOURCE_VALIDATION_TIMEOUT_ENV,
+                "value": timeout_seconds,
+                "minimum": 1,
+                "maximum": max_budget,
+                "tool_timeout_seconds": tool_timeout_seconds,
+            },
+        )
+    return timeout_seconds
 
 
 def normalize_code(value: Any) -> str:
@@ -902,6 +982,135 @@ def calculate_metrics(
     }
 
 
+def build_etf_dashboard_frame(
+    frame: pd.DataFrame,
+    *,
+    date_column: str,
+    close_column: str,
+    turnover_column: str,
+    volume_column: str,
+    years: int,
+) -> pd.DataFrame:
+    price = prepare_series(frame, date_column, close_column, years)
+    if len(price) < 2:
+        raise AdvisorError(
+            "INSUFFICIENT_HISTORY",
+            "ETF 历史数据不足，无法生成研究看板",
+            {"observations": len(price)},
+        )
+
+    result = price.rename(columns={"value": "close"}).copy()
+    metric_quality: Dict[str, Any] = {}
+    for output_column, source_column in (
+        ("turnover_cny", turnover_column),
+        ("volume_units", volume_column),
+    ):
+        metric = prepare_series(
+            frame,
+            date_column,
+            source_column,
+            years,
+            positive_only=False,
+        )
+        metric_quality[output_column] = {
+            "observations": len(metric),
+            **metric.attrs.get("data_quality", {}),
+        }
+        result = result.merge(
+            metric.rename(columns={"value": output_column}),
+            on="date",
+            how="left",
+            validate="one_to_one",
+        )
+
+    result["turnover_yi_cny"] = result["turnover_cny"] / 100_000_000
+    result["volume_yi_units"] = result["volume_units"] / 100_000_000
+    result["daily_change_pct"] = (
+        result["close"].pct_change(fill_method=None) * 100
+    )
+    running_peak = result["close"].cummax()
+    result["drawdown_pct"] = (result["close"] / running_peak - 1) * 100
+    result.attrs["data_quality"] = {
+        **price.attrs.get("data_quality", {}),
+        "metric_quality": metric_quality,
+        "join": "left_join_on_audited_trading_date",
+        "interpolation": "none",
+        "forward_fill": "none",
+    }
+    return result
+
+
+def build_etf_dashboard_chart(
+    frame: pd.DataFrame,
+    *,
+    value_column: str,
+    metric: str,
+    unit: str,
+    chart_type: str,
+    max_points: int,
+) -> Dict[str, Any]:
+    series = frame[["date", value_column]].copy()
+    series.columns = ["date", "value"]
+    series = series.dropna().reset_index(drop=True)
+    chart_series = sample_chart_series(series, max_points)
+    return {
+        "metric": metric,
+        "unit": unit,
+        "chart_type": chart_type,
+        "actual_start_date": (
+            series["date"].iloc[0].date() if not series.empty else None
+        ),
+        "latest_date": (
+            series["date"].iloc[-1].date() if not series.empty else None
+        ),
+        "source_observations": len(series),
+        "displayed_points": len(chart_series),
+        "chart_series": chart_series,
+    }
+
+
+def etf_dashboard_range_summaries(
+    frame: pd.DataFrame,
+) -> List[Dict[str, Any]]:
+    summaries: List[Dict[str, Any]] = []
+    for key, label, observations in (
+        ("one_week", "近一周", 5),
+        ("one_month", "近一月", 20),
+        ("three_months", "近三月", 60),
+    ):
+        window = frame.tail(observations).copy()
+        if len(window) < 2:
+            continue
+        prices = window["close"].astype(float)
+        window_drawdown = prices / prices.cummax() - 1
+        turnover = window["turnover_yi_cny"]
+        volume = window["volume_yi_units"]
+        summaries.append(
+            {
+                "key": key,
+                "label": label,
+                "observations": len(window),
+                "actual_start_date": window["date"].iloc[0].date(),
+                "latest_date": window["date"].iloc[-1].date(),
+                "price_return_pct": rounded(
+                    (prices.iloc[-1] / prices.iloc[0] - 1) * 100
+                ),
+                "turnover_yi_cny": rounded(
+                    turnover.sum() if turnover.notna().all() else None,
+                    4,
+                ),
+                "volume_yi_units": rounded(
+                    volume.sum() if volume.notna().all() else None,
+                    4,
+                ),
+                "maximum_drawdown_pct": rounded(
+                    window_drawdown.min() * 100
+                ),
+            }
+        )
+    return summaries
+
+
 def calculate_yield_metrics(
     frame: pd.DataFrame,
     date_column: str,
@@ -1018,6 +1227,12 @@ class FundAdvisor:
         if self.now.tzinfo is None:
             self.now = self.now.replace(tzinfo=SHANGHAI)
         self.timeout_seconds = timeout_seconds
+        self.source_validation_sources = configured_source_validators()
+        self.source_validation_timeout_seconds = (
+            configured_source_validation_timeout(timeout_seconds)
+            if self.source_validation_sources
+            else 0
+        )
         self.sources: List[Dict[str, Any]] = []
         self.data_warnings: List[Dict[str, Any]] = []
         self.data_audit: List[Dict[str, Any]] = []
@@ -1063,6 +1278,219 @@ class FundAdvisor:
         if warning not in self.data_warnings:
             self.data_warnings.append(warning)
 
+    def _append_data_warning(self, warning: Dict[str, Any]) -> None:
+        if warning not in self.data_warnings:
+            self.data_warnings.append(warning)
+
+    def _record_source_validation_failure(
+        self,
+        *,
+        source_name: str,
+        interface: str,
+        parameters: Dict[str, Any],
+        exc: Exception,
+    ) -> None:
+        code = getattr(exc, "code", "SOURCE_UNAVAILABLE")
+        details = getattr(exc, "details", {})
+        self.data_audit.append(
+            {
+                "provider": source_name,
+                "interface": interface,
+                "parameters": json_value(parameters),
+                "validation": "failed",
+                "role": "cross_validation",
+                "error": {
+                    "code": code,
+                    "message": str(exc),
+                    "details": json_value(details),
+                },
+            }
+        )
+        self._append_data_warning(
+            {
+                "code": code,
+                "interface": interface,
+                "check_source": source_name,
+                "message": str(exc),
+                "details": json_value(details),
+                "effect": "校验源未用于修正主源事实，主源结果保持不变。",
+            }
+        )
+
+    def _cross_validate_stock_price(
+        self,
+        stock: Dict[str, str],
+        start_date: str,
+        end_date: str,
+    ) -> None:
+        configured = getattr(self, "source_validation_sources", ())
+        if not configured:
+            return
+
+        audit_start = len(self.data_audit)
+        primary_raw = self._call(
+            "stock_zh_a_daily",
+            "新浪财经-A股未复权历史行情（交叉校验主源）",
+            self.ak.stock_zh_a_daily,
+            symbol=stock["sina_symbol"],
+            start_date=start_date,
+            end_date=end_date,
+            adjust="",
+            optional=True,
+            documentation_url=INDEX_DOC,
+        )
+        if primary_raw is None:
+            return
+        for audit in self.data_audit[audit_start:]:
+            if audit.get("validation") == "passed":
+                audit["role"] = "cross_validation_primary"
+                audit["metric_basis"] = "none_daily_close"
+
+        def optional_column(name: str) -> pd.Series:
+            if name in primary_raw.columns:
+                return primary_raw[name]
+            return pd.Series([None] * len(primary_raw), index=primary_raw.index)
+
+        primary = pd.DataFrame(
+            {
+                "date": primary_raw["date"],
+                "code": stock["code"],
+                "close": primary_raw["close"],
+                "volume": optional_column("volume"),
+                "amount": optional_column("amount"),
+                "adjustment": "none",
+            }
+        )
+        provider_classes = {
+            "baostock": source_validation.BaostockProvider,
+            "efinance": source_validation.EFinanceProvider,
+        }
+        total_timeout = getattr(
+            self,
+            "source_validation_timeout_seconds",
+            min(10, max(1, self.timeout_seconds // 3)),
+        )
+        provider_timeout = total_timeout / len(configured)
+        start_iso = datetime.strptime(start_date, "%Y%m%d").date().isoformat()
+        end_iso = datetime.strptime(end_date, "%Y%m%d").date().isoformat()
+
+        for provider_name in configured:
+            provider = provider_classes[provider_name](
+                timeout_seconds=provider_timeout
+            )
+            parameters = {
+                "code": stock["code"],
+                "start_date": start_iso,
+                "end_date": end_iso,
+                "adjustment": "none",
+            }
+            try:
+                provider_result = provider.fetch_stock_daily(**parameters)
+            except Exception as exc:
+                interface = getattr(
+                    provider,
+                    "interface",
+                    getattr(provider, "stock_interface", provider_name),
+                )
+                self._record_source_validation_failure(
+                    source_name=getattr(provider, "name", provider_name),
+                    interface=interface,
+                    parameters=parameters,
+                    exc=exc,
+                )
+                continue
+
+            self._add_source(
+                provider_result.interface,
+                provider_result.upstream,
+                provider_result.documentation_url,
+                provider=provider_result.source_name,
+                provider_version=provider_result.provider_version,
+            )
+            self.data_audit.append(
+                {
+                    "provider": provider_result.source_name,
+                    "provider_version": provider_result.provider_version,
+                    "interface": provider_result.interface,
+                    "parameters": json_value(provider_result.parameters),
+                    "row_count": len(provider_result.frame),
+                    "columns": [
+                        str(column) for column in provider_result.frame.columns
+                    ],
+                    "required_columns": [
+                        "date",
+                        "code",
+                        "close",
+                        "volume",
+                        "amount",
+                        "adjustment",
+                    ],
+                    "as_of": provider_result.as_of,
+                    "frame_sha256": provider_result.frame_sha256,
+                    "validation": "passed",
+                    "role": "cross_validation_source",
+                    "metric_basis": provider_result.metric_basis,
+                    "timeout_seconds": provider_timeout,
+                    "skill_transform_at_ingestion": (
+                        "字段重命名、日期与数值类型规范化；未插值或前向填充"
+                    ),
+                    "received_from_provider": (
+                        f"{provider_result.source_name} DataFrame"
+                    ),
+                }
+            )
+            try:
+                comparison, warnings_list, summary = (
+                    source_validation.compare_daily_close(
+                        primary,
+                        provider_result.frame,
+                        entity=stock["code"],
+                        primary_source="AKShare.stock_zh_a_daily",
+                        check_source=provider_result.interface,
+                        metric_basis="none_daily_close",
+                        relative_tolerance=(
+                            SOURCE_VALIDATION_RELATIVE_TOLERANCE
+                        ),
+                        absolute_tolerance=(
+                            SOURCE_VALIDATION_ABSOLUTE_TOLERANCE
+                        ),
+                    )
+                )
+            except Exception as exc:
+                self._record_source_validation_failure(
+                    source_name=provider_result.source_name,
+                    interface="source_compare_daily_close",
+                    parameters=parameters,
+                    exc=exc,
+                )
+                continue
+
+            comparison_audit: Dict[str, Any] = {
+                "provider": "deterministic_comparator",
+                "interface": "source_compare_daily_close",
+                "parameters": {
+                    "entity": stock["code"],
+                    "primary_source": "AKShare.stock_zh_a_daily",
+                    "check_source": provider_result.interface,
+                    "metric_basis": "none_daily_close",
+                },
+                "row_count": len(comparison),
+                "columns": [str(column) for column in comparison.columns],
+                "validation": (
+                    "passed" if summary.get("comparable") else "not_comparable"
+                ),
+                "role": "cross_validation_comparison",
+                "comparison_summary": json_value(summary),
+                "skill_transform_at_ingestion": (
+                    "按日期内连接并计算差值；未插值、前向填充、平均或覆盖"
+                ),
+            }
+            if not comparison.empty:
+                comparison_audit["frame_sha256"] = frame_fingerprint(comparison)
+            self.data_audit.append(comparison_audit)
+            for warning in warnings_list:
+                self._append_data_warning(warning)
+
     def _call(
         self,
         interface: str,
@@ -1080,9 +1508,8 @@ class FundAdvisor:
             "kwargs": json_value(kwargs),
         }
         try:
-            with io.StringIO() as stderr_buffer:
-                with redirect_stderr(stderr_buffer), deadline(self.timeout_seconds):
-                    frame = function(*args, **kwargs)
+            with deadline(self.timeout_seconds):
+                frame = function(*args, **kwargs)
             if not isinstance(frame, pd.DataFrame):
                 raise AdvisorError(
                     "DATA_CONTRACT_ERROR",
@@ -2017,6 +2444,7 @@ class FundAdvisor:
             optional=True,
             documentation_url=INDEX_DOC,
         )
+        self._cross_validate_stock_price(stock, start_date, end_date)
 
         pe = (
             build_valuation_chart_metric(
@@ -3119,6 +3547,219 @@ class FundAdvisor:
                 "pe_ttm_percentile": "底层指数当前滚动PE在所选历史窗口的位置。",
                 "pb_percentile": "底层指数当前PB历史位置，与PE分开解释。",
                 "premium_rate_pct": "ETF场内价格相对IOPV的偏离，正数为溢价。",
+            },
+        }
+
+    def etf_dashboard(
+        self,
+        query: str,
+        years: int = 3,
+        max_points: int = 600,
+    ) -> Dict[str, Any]:
+        fund = self.resolve(query)
+        if "ETF" not in str(fund.get("name") or "").upper():
+            raise AdvisorError(
+                "UNSUPPORTED_FUND_TYPE",
+                "ETF 研究看板只支持名称已确认的 ETF",
+                {
+                    "fund_code": fund.get("code"),
+                    "fund_name": fund.get("name"),
+                },
+            )
+
+        start_date = (
+            self.now.date() - timedelta(days=years * 366)
+        ).strftime("%Y%m%d")
+        end_date = self.now.date().strftime("%Y%m%d")
+        history = self._call(
+            "fund_etf_hist_em",
+            "东方财富-ETF 历史行情",
+            self.ak.fund_etf_hist_em,
+            symbol=fund["code"],
+            period="daily",
+            start_date=start_date,
+            end_date=end_date,
+            adjust="qfq",
+            optional=True,
+        )
+        if history is not None and not history.empty:
+            metric_basis = "exchange_qfq_daily"
+            source_interface = "fund_etf_hist_em"
+            dashboard_frame = build_etf_dashboard_frame(
+                history,
+                date_column="日期",
+                close_column="收盘",
+                turnover_column="成交额",
+                volume_column="成交量",
+                years=years,
+            )
+            basis_note = (
+                "价格使用东方财富 ETF 前复权日收盘价；成交额和成交量直接来自同一审计日线。"
+            )
+        else:
+            market_prefix = (
+                "sh" if fund["code"].startswith(("5", "6")) else "sz"
+            )
+            source_interface = "fund_etf_hist_sina"
+            history = self._call(
+                source_interface,
+                "新浪财经-ETF 日行情",
+                self.ak.fund_etf_hist_sina,
+                symbol=f"{market_prefix}{fund['code']}",
+            )
+            metric_basis = "exchange_unadjusted_daily_sina"
+            dashboard_frame = build_etf_dashboard_frame(
+                history,
+                date_column="date",
+                close_column="close",
+                turnover_column="amount",
+                volume_column="volume",
+                years=years,
+            )
+            basis_note = (
+                "东方财富 ETF 历史接口失败；使用新浪未复权日行情，"
+                "价格口径与前复权序列不可直接混用。"
+            )
+
+        latest_date = dashboard_frame["date"].iloc[-1]
+        latest_age_days = date_age_days(latest_date, self.now.date())
+        if (
+            latest_age_days is None
+            or latest_age_days < 0
+            or latest_age_days > 10
+        ):
+            raise AdvisorError(
+                "STALE_OR_INVALID_DATA",
+                "ETF 看板历史序列最新日期异常或数据已过期",
+                {
+                    "latest_date": json_value(latest_date),
+                    "latest_age_days": latest_age_days,
+                    "metric_basis": metric_basis,
+                },
+            )
+
+        latest = dashboard_frame.iloc[-1]
+        charts = {
+            "price": build_etf_dashboard_chart(
+                dashboard_frame,
+                value_column="close",
+                metric="price",
+                unit="元",
+                chart_type="line",
+                max_points=max_points,
+            ),
+            "turnover": build_etf_dashboard_chart(
+                dashboard_frame,
+                value_column="turnover_yi_cny",
+                metric="turnover",
+                unit="亿元",
+                chart_type="bar",
+                max_points=max_points,
+            ),
+            "volume": build_etf_dashboard_chart(
+                dashboard_frame,
+                value_column="volume_yi_units",
+                metric="volume",
+                unit="亿份",
+                chart_type="bar",
+                max_points=max_points,
+            ),
+            "daily_change": build_etf_dashboard_chart(
+                dashboard_frame,
+                value_column="daily_change_pct",
+                metric="daily_change",
+                unit="%",
+                chart_type="bar",
+                max_points=max_points,
+            ),
+            "drawdown": build_etf_dashboard_chart(
+                dashboard_frame,
+                value_column="drawdown_pct",
+                metric="drawdown",
+                unit="%",
+                chart_type="line",
+                max_points=max_points,
+            ),
+        }
+        recent_rows = [
+            {
+                "date": row.date.date(),
+                "close": rounded(row.close, 4),
+                "daily_change_pct": rounded(row.daily_change_pct),
+                "turnover_yi_cny": rounded(row.turnover_yi_cny, 4),
+                "volume_yi_units": rounded(row.volume_yi_units, 4),
+                "drawdown_pct": rounded(row.drawdown_pct),
+            }
+            for row in dashboard_frame.tail(20).itertuples()
+        ]
+        spot = self._etf_spot(fund)
+        return {
+            "ok": True,
+            "action": "etf_dashboard",
+            "identity": fund,
+            "lookback": {
+                "requested_years": years,
+                "actual_start_date": dashboard_frame["date"].iloc[0].date(),
+                "latest_date": latest_date.date(),
+                "latest_age_days": latest_age_days,
+                "source_observations": len(dashboard_frame),
+                "chart_max_points": max_points,
+                "sampling": (
+                    "保留首尾与各指标极值，并从真实观测中等距抽样；不插值、不补点"
+                ),
+            },
+            "metric_basis": metric_basis,
+            "basis_note": basis_note,
+            "summary": {
+                "latest_date": latest_date.date(),
+                "latest_close": rounded(latest["close"], 4),
+                "latest_turnover_yi_cny": rounded(
+                    latest["turnover_yi_cny"],
+                    4,
+                ),
+                "latest_volume_yi_units": rounded(
+                    latest["volume_yi_units"],
+                    4,
+                ),
+                "latest_change_pct": rounded(
+                    latest["daily_change_pct"]
+                ),
+                "current_drawdown_pct": rounded(
+                    latest["drawdown_pct"]
+                ),
+            },
+            "market_snapshot": spot,
+            "range_summaries": etf_dashboard_range_summaries(
+                dashboard_frame
+            ),
+            "charts": charts,
+            "recent_rows": recent_rows,
+            "data_quality": dashboard_frame.attrs.get("data_quality", {}),
+            "missing_or_not_reliably_available": [
+                "ETF 历史总份额与日度份额变化",
+                "净申购赎回金额",
+                "ETF 与成分股融资余额",
+                "汇金、证金及关联主体实时持仓",
+            ],
+            "derived_formulas": {
+                "daily_change_pct": (
+                    "(当日收盘价 / 前一交易日收盘价 - 1) * 100"
+                ),
+                "drawdown_pct": (
+                    "(当日收盘价 / 观察窗口内截至当日运行峰值 - 1) * 100"
+                ),
+                "turnover_yi_cny": "成交额 / 100000000",
+                "volume_yi_units": "成交量 / 100000000",
+                "range_price_return_pct": (
+                    "(窗口末收盘价 / 窗口首收盘价 - 1) * 100"
+                ),
+            },
+            "data_integrity": {
+                "ai_generated_market_data": False,
+                "source_interface": source_interface,
+                "interpolation": "none",
+                "forward_fill": "none",
+                "missing_value_policy": "保留缺失，不替换为零",
             },
         }
 

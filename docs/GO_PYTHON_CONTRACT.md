@@ -1,12 +1,13 @@
-# Go 网页后端与 Python Agent 透传契约
+# Go 网页后端与 Python Data/Agent 透传契约
 
-> 状态：`M0 骨架已实现，契约持续适用`
+> 状态：`当前实现已落地并通过五服务黑盒验证`
 >
 > 适用范围：Go Web 后端（Dashboard BFF + 静态托管 + Agent SSE 代理）与 Python
-> Agent API / MCP / Skill 之间的边界。
+> Data API / Agent API / MCP / Skill 之间的边界。
 >
-> 实现位置：`web-backend/`（`internal/mcp` 透传 Client、`internal/dashboard` 取数与
-> 状态映射、`internal/proxy` SSE 代理、`internal/static` 静态托管）。
+> 实现位置：`web-backend/`（`internal/dataapi` REST Client、`internal/facts` 审计
+> Envelope、`internal/dashboard` 取数与状态映射、`internal/proxy` SSE 代理、
+> `internal/static` 静态托管）。
 >
 > 上位约束：[AGENTS.md](../AGENTS.md)、[HLD.md](HLD.md)、[ERROR_HANDLING.md](ERROR_HANDLING.md)。
 
@@ -15,17 +16,22 @@
 ```text
 React 前端
   -> Go 网页后端（BFF）
-       - 静态资源托管、路由、TLS
-       - Dashboard 取数：并发聚合、缓存、限流
+       - 静态资源托管和 SPA 路由
+       - Dashboard 取数：REST 调用、有界并发和超时
        - Agent SSE 反向代理
        |
-       +-- 数据路径：Go 作为 MCP Client -> Python Fund MCP -> AKShare Skill
+       +-- 数据路径：Go 作为 REST Client -> Python Data API -> AKShare Skill
        `-- Agent 路径：透传 -> Python Agent API -> LangGraph -> MCP -> Skill
 ```
 
-Go 负责：编排取数、聚合、缓存、限流、静态托管、SSE 代理。
-Python 负责：AKShare Skill、Fund/Web MCP、LangGraph Agent、结构化研究综合、所有金融
-计算与门禁。
+Go 负责：调用 Data API、编排取数、有界并发聚合、超时、静态托管和 SSE 代理。
+Python 负责：Data API、AKShare Skill、Fund/Web MCP、LangGraph Agent、结构化研究综合、
+所有金融计算与门禁。
+
+Go 不直接导入 AKShare，也不得按 AKShare 上游 HTTP 接口重写一套数据实现。
+
+当前 Go BFF **没有**实现结果缓存、请求去重、业务限流或 TLS 终止。若后续基于测量证据
+增加这些基础设施，只能作用于传输和完整响应，不得进入金融数值计算或审计改写路径。
 
 ## 2. 不可移植清单（必须留在 Python）
 
@@ -33,7 +39,7 @@ Python 负责：AKShare Skill、Fund/Web MCP、LangGraph Agent、结构化研究
 
 - AKShare Skill 的实体解析、确定性指标（收益、波动、回撤、历史分位、PE/PB 分位、
   ETF 溢价）和 `frame_sha256` 审计。
-- Fund MCP / Web MCP 的参数契约、缓存、超时和 `ToolEnvelope` 生成。
+- Data API / Fund MCP / Web MCP 的参数契约、缓存、超时和 `ToolEnvelope` 生成。
 - LangGraph 固定图、研究综合和响应门禁。
 
 Go 中不得出现任何净值、价格、PE、PB、收益率、回撤、分位、限额或交易状态的重新计算、
@@ -41,8 +47,9 @@ Go 中不得出现任何净值、价格、PE、PB、收益率、回撤、分位�
 
 ## 3. Go 允许做的事
 
-- 作为 MCP Client 调用已注册工具，按页面需要并发聚合多个 `ToolEnvelope`。
-- 施加有界并发、请求去重、短 TTL 缓存、超时和限流。
+- 作为 Data API REST Client 调用已注册数据操作，按页面需要并发聚合多个
+  `ToolEnvelope`。
+- 施加有界并发和请求超时。
 - 组织 Dashboard 响应结构（分组、排序视图、字段选择）。
 - 托管 React 构建产物；把 `/api/chat/stream` 等 Agent 请求反向代理到 Python Agent API。
 
@@ -76,6 +83,16 @@ Go 侧规则：
 - 不得剥离 `data_audit` 或 `frame_sha256`；这是前端可反查审计的依据。
 - Go 不解析 `data` 内部业务数字用于再计算；只在需要选字段时做只读读取。
 
+Data API 当前为 Dashboard 提供：
+
+```text
+GET /v1/funds/search
+GET /v1/etfs/{fund}
+GET /v1/indices/{index}
+```
+
+这些是普通 REST 资源，不是 MCP `tools/call`。Agent 的 Fund MCP 仍独立提供工具协议。
+
 ## 5. Dashboard 响应包装
 
 Go 在 envelope 之上添加展示层元数据，但不改原始事实：
@@ -83,7 +100,7 @@ Go 在 envelope 之上添加展示层元数据，但不改原始事实：
 ```text
 DatasetMeta
   as_of          # 取自工具事实字段的数据日期，不是 Go 生成的当前时间
-  queried_at     # 透传自 ToolEnvelope.queried_at
+  queried_at     # 有信封时透传 ToolEnvelope.queried_at；纯传输失败时记录请求失败时间
   status         # available | partial | stale | unavailable | not_implemented
   source_tools   # 参与本数据块的工具名
   audit_refs     # 对应 data_audit 中的 frame_sha256
@@ -94,14 +111,16 @@ DatasetMeta
 状态映射（与 [ERROR_HANDLING.md](ERROR_HANDLING.md) 一致，Go 不新增语义）：
 
 ```text
-工具 ok 且新鲜        -> available
-可选工具失败/部分成功 -> partial
-STALE_DATA           -> stale
+单个工具 ok（即使带 warning） -> available，warning 另行展示
+STALE_DATA                  -> stale
 NOT_FOUND/UNSUPPORTED/UPSTREAM_ERROR/AMBIGUOUS -> unavailable（保留原始 error.code）
-fund_screen/stock_screen 未实现 -> not_implemented
+列表部分行成功、部分行失败   -> 页面汇总 partial
+未来未实现的数据块           -> not_implemented
 ```
 
 - `as_of` 必须来自工具返回的数据日期字段，Go 不得用服务器当前时间冒充数据时效。
+- 纯 HTTP/传输失败没有 `ToolEnvelope` 时，Go 可以在 `queried_at` 记录本次失败发生时间；
+  `as_of` 必须保持空，且不得生成任何市场事实。
 - 上游失败一律 `unavailable` 并保留原始错误码，不得回退成空列表或“不存在”。
 
 ## 6. Agent SSE 代理契约
@@ -128,20 +147,23 @@ fund_screen/stock_screen 未实现 -> not_implemented
 
 ```text
 React 静态产物  ->  Go Web 后端容器（对外唯一 HTTP 入口）
-                      ├─ MCP Client -> fund-advisor-mcp（容器网络内）
-                      ├─ MCP Client -> web-research-mcp（容器网络内，可选）
+                      ├─ REST Client -> data-api（容器网络内）
                       └─ SSE 代理   -> agent-api（Python，容器网络内）
+                                               ├─ fund-advisor-mcp
+                                               └─ web-research-mcp
 ```
 
-- Go 服务对外暴露端口；Python Agent API 与两个 MCP 仅在容器网络内可达。
+- Go 服务对外暴露端口；Python Data API、Agent API 与两个 MCP 仅在容器网络内可达。
 - `config/config.local.yaml` 仍只读挂载给 Python 服务，密钥不进入镜像、不下发给前端。
-- 具体 Dockerfile 阶段与 compose 服务接线在实现阶段落地，本文件只定义边界与契约。
+- Dockerfile 已分为 Python `runtime`/`test`、React `web-build`、Go `go-build` 和最终
+  `web-backend` 阶段；Compose 已接线上述五个运行服务。
 
 ## 9. 验收要点
 
 - Go 返回的任一市场数值都能反查到对应 `ToolEnvelope` 字段与 `frame_sha256`。
+- Data API 停止不会改变 Agent 的 MCP/Skill 设计；MCP 停止不会让数据面板改走模型。
 - Go 侧无任何金融计算、综合评分或补点逻辑。
-- 上游失败、过期、未实现在 Go 响应中分别为 `unavailable`/`stale`/`not_implemented`，
-  错误码与 Python 一致。
+- 已接入端点的上游失败和过期分别映射为 `unavailable` / `stale`，错误码与 Python
+  一致；未来显式暴露未实现数据块时才使用预留的 `not_implemented`。
 - SSE 事件顺序、门禁结论与直连 Python Agent API 完全一致。
 - Python 契约变更后，Go 结构体与本文档同步更新，审计字段无丢失。

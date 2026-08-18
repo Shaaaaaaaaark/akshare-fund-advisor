@@ -25,7 +25,7 @@ React Web
 Go Web Backend (BFF)                     # 对外唯一 HTTP 入口
   |-- 静态托管 React
   |-- Dashboard API
-  |     `-> Fund MCP (Python)
+  |     `-> Data API (Python REST)
   |           `-> AKShare Skill
   |
   `-- Agent SSE 反向代理
@@ -35,13 +35,14 @@ Go Web Backend (BFF)                     # 对外唯一 HTTP 入口
                     `-> Web MCP  -> 公网搜索/页面/文档
 ```
 
-Compose 当前包含四个服务：
+Compose 当前包含五个服务：
 
 | 服务 | 语言 | 对外端口 | 职责 |
 | --- | --- | --- | --- |
 | `web-backend` | Go | 是 | BFF、静态托管、Dashboard 取数、SSE 代理 |
+| `data-api` | Python | 否 | 数据面板 REST、确定性数据调用和审计透传 |
 | `agent-api` | Python | 否 | Agent HTTP/SSE、临时会话 |
-| `fund-advisor-mcp` | Python | 否 | 九个市场事实工具 |
+| `fund-advisor-mcp` | Python | 否 | 十个市场事实工具 |
 | `web-research-mcp` | Python | 否 | 三个非数值背景工具 |
 
 ## 3. 两条读取链路
@@ -49,23 +50,26 @@ Compose 当前包含四个服务：
 ### 3.1 数据工作台链路
 
 ```text
-React -> Go Dashboard API -> Fund MCP -> Skill
+React -> Go Dashboard API -> Data API -> Skill
 ```
 
-- 不调用模型。
+- 不调用模型、LangGraph 或 MCP 协议。
 - Go 只做有界并发、聚合、状态映射和展示字段选择。
 - 市场数字、审计字段和错误码来自 `ToolEnvelope`。
 - Go 不重算、四舍五入、插值、补点或合成金融数值。
+- 当前 Go BFF 不包含结果缓存、请求去重、业务限流或 TLS 终止。
 
 当前已实现：
 
 ```text
 GET /api/dashboard/indices
 GET /api/dashboard/indices/{index}
+GET /api/dashboard/funds/search
+GET /api/dashboard/funds/{fund}
 ```
 
-研究动态页接入后，Go 可按同一受控模式调用 Web MCP；当前 Dashboard 尚未建立这条直连
-链路。
+研究动态页尚未实现；若后续接入，必须先定义独立的非数值 REST 契约，Dashboard 不能
+直接调用 Agent MCP，也不能把网页数字升级为市场事实。
 
 ### 3.2 Agent 研究链路
 
@@ -112,14 +116,21 @@ CLASSIFY
 
 负责：
 
-- 强类型输入 Schema 和九个工具注册；
+- 强类型输入 Schema 和十个工具注册；
 - 超时、进程内 TTL 缓存和传输；
 - 把 Skill 结果封装为 `ToolEnvelope`；
 - 保留 `data`、`sources`、`data_audit`、warnings 和错误。
 
 不得改写 Skill 的市场数值。
 
-### 4.3 Web Research MCP
+### 4.3 Data API
+
+位置：`src/fund_advisor_data_api/`
+
+负责为数据面板提供普通 REST 接口，调用同一审计数据核心并返回 `ToolEnvelope`。它不包含
+模型、会话、LangGraph 或 MCP 协议，服务停止不影响 Agent 自身的 MCP 链路，反之亦然。
+
+### 4.4 Web Research MCP
 
 位置：`src/fund_advisor_mcp/web/`
 
@@ -127,7 +138,7 @@ CLASSIFY
 `numeric_allowed=false`，不能确认实体或覆盖市场事实。安全细节见
 [WEB_RESEARCH_MCP.md](WEB_RESEARCH_MCP.md)。
 
-### 4.4 LangGraph Agent
+### 4.5 LangGraph Agent
 
 位置：`src/fund_advisor_agent/`
 
@@ -140,21 +151,22 @@ CLASSIFY
 - 让模型修改图状态、错误语义或工具权限；
 - 让模型生成或修复金融数字。
 
-### 4.5 Agent API
+### 4.6 Agent API
 
 位置：`src/fund_advisor_app/`
 
-负责 HTTP/SSE、临时会话和兼容 CLI。会话只保存最近消息、上一轮实体和意图；服务重启
-后可清空，不是市场事实来源。
+只负责 HTTP/SSE、临时会话和兼容 CLI，不托管 React 静态文件。会话只保存最近消息、
+上一轮实体和意图；服务重启后可清空，不是市场事实来源。
 
-### 4.6 Go 网页后端
+### 4.7 Go 网页后端
 
 位置：`web-backend/`
 
-负责 Dashboard 取数、短生命周期聚合、静态托管和 Agent SSE 代理。跨语言字段和透传规则
-见 [GO_PYTHON_CONTRACT.md](GO_PYTHON_CONTRACT.md)。
+负责调用 Data API、Dashboard 短生命周期聚合、静态托管和 Agent SSE 代理。Go 不直接
+实现 AKShare 接口或任何金融计算。跨语言字段和透传规则见
+[GO_PYTHON_CONTRACT.md](GO_PYTHON_CONTRACT.md)。
 
-### 4.7 React Web
+### 4.8 React Web
 
 位置：`web/`
 
@@ -166,7 +178,7 @@ CLASSIFY
 市场事实优先级：
 
 ```text
-审计通过的 Skill / Fund MCP
+审计通过的 Data API / Skill / Fund MCP
   > 用户给定的官方文档原文
   > Web MCP 非数值背景
   > 模型常识不得作为市场事实
@@ -203,15 +215,17 @@ Agent 最终放行至少满足：
 - PE/PB 单侧缺失时只展示可用侧，不使用零值。
 - 列表排序只作用于同口径且状态可用的数据。
 - “参考 Wind”只表示信息组织，不表示 Wind 数据源或品牌界面。
+- ETF 详情提供右侧研究 Agent 抽屉；它只预填当前 ETF 问题并通过 Agent API 重新查询，
+  不把页面展示值直接注入 Agent 市场事实。
 
 ## 7. 状态与存储
 
-当前只有两类进程内易失状态：
+当前服务端只有两类进程内易失状态：
 
 | 状态 | 所在服务 | 用途 |
 | --- | --- | --- |
 | `InMemorySessionStore` | Agent API | 最近消息、上一轮实体和意图 |
-| `MemoryEnvelopeCache` | Fund MCP | 工具结果 TTL 缓存 |
+| `MemoryEnvelopeCache` | Data API / Fund MCP | 两个进程各自通过同一 Adapter 实现维护完整信封 TTL 缓存 |
 
 当前不引入 PostgreSQL、Redis、消息队列、数据库 checkpoint 或跨会话长期记忆。
 
@@ -226,15 +240,17 @@ Agent 最终放行至少满足：
 
 | 能力 | 状态 |
 | --- | --- |
-| Skill、Fund/Web MCP、LangGraph、Agent API | 已实现 |
-| React 对话页与兼容 CLI | 已实现，CLI 冻结 |
-| Go BFF M0、指数 Dashboard API | 已实现 |
-| 指数看板和 PE/PB 历史双图前端 | 当前下一批 |
-| 基金/股票详情、研究动态、总览 | 待实现 |
-| 页面上下文 Agent | 待实现 |
+| Skill、Data API、Fund/Web MCP、LangGraph、Agent API | 已实现 |
+| React 数据面板/Agent 一级分类、指数工作台、ETF 五联图终端与 Agent 页 | 已实现 |
+| Go BFF 指数、基金搜索和 ETF Dashboard API | 已实现 |
+| 指数看板和 PE/PB 历史双图前端 | 已实现 |
+| ETF 搜索、高密度详情终端和右侧 Agent 抽屉 | 已实现 |
+| 主动基金产品档案和非 ETF 详情 | 当前下一批 |
+| 股票详情、研究动态、完整总览 API | 待实现 |
+| 通用 `PageContext` 契约 | 待实现；ETF 抽屉仅预填当前代码，不等同于该契约 |
 | `fund_screen` / `stock_screen` | 接口审计完成，工具待实现 |
 
-不在 HLD 维护逐项开发清单；交付状态只在两个活跃 TASK 中更新。
+不在 HLD 维护逐项开发清单；交付状态在 `docs/tasks/` 的三个活跃 TASK 中更新。
 
 ## 9. 验证边界
 
@@ -242,8 +258,8 @@ Agent 最终放行至少满足：
 
 - Python Ruff 和全量 Pytest；
 - Go `gofmt`、`go vet` 和单元测试；
-- 四个 Compose 服务健康；
+- 五个 Compose 服务健康；
 - Fund/Web MCP 工具发现；
-- Go 到 MCP 的 Dashboard 取数；
+- Go 到 Data API 的 Dashboard 取数；
 - Go 到 Agent API 的 SSE 透传；
 - 浏览器页面、移动视口和控制台错误。

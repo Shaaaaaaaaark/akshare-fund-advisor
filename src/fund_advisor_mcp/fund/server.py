@@ -1,4 +1,4 @@
-"""MCP stdio server exposing the nine audited Fund Advisor tools."""
+"""MCP server exposing the audited Fund Advisor tools."""
 
 from __future__ import annotations
 
@@ -51,6 +51,22 @@ def fund_status(fund: str) -> dict[str, Any]:
 def fund_analyze(fund: str, years: int = 3) -> dict[str, Any]:
     """Analyze a uniquely identified fund using audited AKShare facts."""
     return _dump(get_adapter().fund_analyze(fund=fund, years=years))
+
+
+@mcp.tool()
+def etf_dashboard(
+    fund: str,
+    years: int = 3,
+    max_points: int = 600,
+) -> dict[str, Any]:
+    """Return audited ETF price, turnover, volume, change and drawdown series."""
+    return _dump(
+        get_adapter().etf_dashboard(
+            fund=fund,
+            years=years,
+            max_points=max_points,
+        )
+    )
 
 
 @mcp.tool()

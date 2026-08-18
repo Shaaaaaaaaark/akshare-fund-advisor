@@ -1,4 +1,11 @@
-import type { StreamEvent, StreamEventName } from "./types";
+import type {
+  ETFDetailResponse,
+  FundSearchResponse,
+  IndexDetailResponse,
+  IndicesResponse,
+  StreamEvent,
+  StreamEventName,
+} from "./types";
 
 const EVENT_NAMES = new Set<StreamEventName>([
   "session",
@@ -13,6 +20,63 @@ interface StreamChatOptions {
   sessionId: string | null;
   signal?: AbortSignal;
   onEvent: (event: StreamEvent) => void;
+}
+
+export async function fetchIndices(
+  signal?: AbortSignal,
+): Promise<IndicesResponse> {
+  const response = await fetch("/api/dashboard/indices", { signal });
+  if (!response.ok) {
+    throw new Error(await responseError(response));
+  }
+  return (await response.json()) as IndicesResponse;
+}
+
+export async function fetchIndexDetail(
+  index: string,
+  signal?: AbortSignal,
+): Promise<IndexDetailResponse> {
+  const query = new URLSearchParams({
+    years: "10",
+    max_points: "600",
+  });
+  const response = await fetch(
+    `/api/dashboard/indices/${encodeURIComponent(index)}?${query}`,
+    { signal },
+  );
+  if (!response.ok) {
+    throw new Error(await responseError(response));
+  }
+  return (await response.json()) as IndexDetailResponse;
+}
+
+export async function searchFunds(
+  query: string,
+  signal?: AbortSignal,
+): Promise<FundSearchResponse> {
+  const params = new URLSearchParams({ query, limit: "20" });
+  const response = await fetch(`/api/dashboard/funds/search?${params}`, {
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(await responseError(response));
+  }
+  return (await response.json()) as FundSearchResponse;
+}
+
+export async function fetchETFDetail(
+  fund: string,
+  signal?: AbortSignal,
+): Promise<ETFDetailResponse> {
+  const params = new URLSearchParams({ years: "3", max_points: "600" });
+  const response = await fetch(
+    `/api/dashboard/funds/${encodeURIComponent(fund)}?${params}`,
+    { signal },
+  );
+  if (!response.ok) {
+    throw new Error(await responseError(response));
+  }
+  return (await response.json()) as ETFDetailResponse;
 }
 
 export async function streamChat({

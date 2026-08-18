@@ -14,6 +14,7 @@ if not (sys.version_info >= (3, 9) and sys.version_info < (3, 13)):
     raise SystemExit(1)
 expected = {
     "akshare": "1.18.64",
+    "baostock": "0.9.3",
     "pandas": "2.3.3",
     "numpy": "2.0.2",
     "requests": "2.32.5",

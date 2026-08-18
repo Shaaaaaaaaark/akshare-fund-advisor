@@ -14,6 +14,7 @@ class ToolName(StrEnum):
     FUND_SEARCH = "fund_search"
     FUND_STATUS = "fund_status"
     FUND_ANALYZE = "fund_analyze"
+    ETF_DASHBOARD = "etf_dashboard"
     FUND_PROFILE = "fund_profile"
     FUND_RATING = "fund_rating"
     INDEX_VALUATION = "index_valuation"
@@ -62,6 +63,10 @@ class FundInput(BaseModel):
 
 class AnalyzeInput(FundInput):
     years: Literal[1, 3, 5] = 3
+
+
+class ETFDashboardInput(AnalyzeInput):
+    max_points: int = Field(default=600, ge=50, le=3000)
 
 
 class ValuationInput(BaseModel):

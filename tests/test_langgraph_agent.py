@@ -870,6 +870,61 @@ def test_market_envelope_without_audit_is_blocked() -> None:
     assert errors[0].code == "MISSING_DATA_AUDIT"
 
 
+def test_cross_validation_warning_is_not_promoted_to_market_fact() -> None:
+    envelope = _stock_envelope().model_dump(mode="json")
+    envelope["data_audit"].extend(
+        [
+            {
+                "interface": "stock_zh_a_daily",
+                "validation": "passed",
+                "frame_sha256": "unadjusted-primary-hash",
+                "role": "cross_validation_primary",
+                "parameters": {"kwargs": {"adjust": ""}},
+            },
+            {
+                "interface": "baostock.query_history_k_data_plus",
+                "validation": "passed",
+                "frame_sha256": "check-source-hash",
+                "role": "cross_validation_source",
+            },
+            {
+                "interface": "source_compare_daily_close",
+                "validation": "passed",
+                "frame_sha256": "comparison-hash",
+                "role": "cross_validation_comparison",
+            },
+        ]
+    )
+    envelope["data_warnings"] = [
+        {
+            "code": "SOURCE_DISAGREE",
+            "field": "close",
+            "effect": "主源事实不变。",
+        }
+    ]
+
+    status, facts, limitations, warnings, errors = validate_tool_results(
+        [
+            ToolExecution(
+                tool=RegisteredTool.STOCK_VALUATION,
+                source="fund",
+                arguments={"stock": "600519"},
+                envelope=envelope,
+            )
+        ],
+        maximum_facts=20,
+    )
+
+    audit_by_label = {fact.label: fact.audit_ref for fact in facts}
+    assert status is AgentStatus.PARTIAL_RESULT
+    assert limitations
+    assert warnings == ["SOURCE_DISAGREE"]
+    assert errors == []
+    assert audit_by_label["前复权价格"] == "price-audit"
+    assert "check-source-hash" not in audit_by_label.values()
+    assert "comparison-hash" not in audit_by_label.values()
+
+
 def test_intent_policy_rejects_prediction_request() -> None:
     intent, _ = classify_question("预测涨跌并自动下单")
     assert intent is Intent.UNSUPPORTED

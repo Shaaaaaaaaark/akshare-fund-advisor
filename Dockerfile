@@ -42,7 +42,6 @@ RUN python -m pip install --upgrade pip \
     && python -m pip install -r requirements.txt
 
 COPY . .
-COPY --from=web-build /web/dist ./web/dist
 RUN python -m pip install --no-deps .
 
 RUN groupadd --system finagent \
@@ -63,13 +62,13 @@ CMD ["sh", "-c", "python -m ruff check --no-cache . && python -m pytest -q -p no
 
 FROM base AS runtime
 
-EXPOSE 8000 8001 8002
+EXPOSE 8000 8001 8002 8003
 
 CMD ["fund-advisor-mcp"]
 
 
-# Go web backend (BFF): serves the React app, aggregates Dashboard data via the
-# Fund MCP, and reverse-proxies Agent SSE. No Python, no financial computation.
+# Go web backend (BFF): serves the React app, reads Dashboard data through the
+# standalone Data API, and reverse-proxies Agent SSE. No financial computation.
 FROM alpine:3.20 AS web-backend
 
 WORKDIR /app

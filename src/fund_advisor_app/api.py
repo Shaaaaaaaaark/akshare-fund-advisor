@@ -5,17 +5,16 @@ from __future__ import annotations
 import argparse
 import json
 from collections.abc import AsyncIterator, Sequence
-from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
 
 from fund_advisor_mcp.config import AppConfig, get_config
 
 from .schemas import ChatRequest, SessionView, StreamEvent
 from .service import AgentChatService
+from .sessions import SessionCapacityError
 
 
 def create_app(
@@ -46,7 +45,13 @@ def create_app(
 
     @application.post("/api/sessions", response_model=SessionView)
     async def create_session() -> SessionView:
-        return await chat_service.create_session()
+        try:
+            return await chat_service.create_session()
+        except SessionCapacityError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="临时会话已满，请稍后重试",
+            ) from exc
 
     @application.get(
         "/api/sessions/{session_id}",
@@ -75,6 +80,17 @@ def create_app(
                     session_id=request.session_id,
                 ):
                     yield _encode_sse(item)
+            except SessionCapacityError:
+                yield _encode_sse(
+                    StreamEvent(
+                        event="error",
+                        data={
+                            "code": "SESSION_CAPACITY_EXCEEDED",
+                            "message": "临时会话已满，请稍后重试",
+                        },
+                    )
+                )
+                yield _encode_sse(StreamEvent(event="done", data={}))
             except Exception as exc:
                 yield _encode_sse(
                     StreamEvent(
@@ -97,23 +113,14 @@ def create_app(
             },
         )
 
-    static_dir = _static_directory(settings)
-    if static_dir.is_dir():
-        application.mount(
-            "/",
-            StaticFiles(directory=static_dir, html=True),
-            name="web",
+    @application.get("/")
+    async def api_root() -> JSONResponse:
+        return JSONResponse(
+            {
+                "name": "Fund Advisor Agent API",
+                "docs": "/api/docs",
+            }
         )
-    else:
-        @application.get("/")
-        async def api_root() -> JSONResponse:
-            return JSONResponse(
-                {
-                    "name": "Fund Advisor Agent API",
-                    "web": "not_built",
-                    "docs": "/api/docs",
-                }
-            )
 
     return application
 
@@ -127,13 +134,6 @@ def _encode_sse(item: StreamEvent) -> str:
     return f"event: {item.event}\ndata: {payload}\n\n"
 
 
-def _static_directory(config: AppConfig) -> Path:
-    configured = Path(config.app.static_dir).expanduser()
-    if configured.is_absolute():
-        return configured
-    return (Path.cwd() / configured).resolve()
-
-
 app = create_app()
 
 
@@ -141,7 +141,7 @@ def build_parser() -> argparse.ArgumentParser:
     settings = get_config()
     parser = argparse.ArgumentParser(
         prog="fund-advisor-api",
-        description="Serve the Fund Advisor Agent API and web client",
+        description="Serve the Fund Advisor Agent API",
     )
     parser.add_argument("--host", default=settings.app.host)
     parser.add_argument("--port", type=int, default=settings.app.port)

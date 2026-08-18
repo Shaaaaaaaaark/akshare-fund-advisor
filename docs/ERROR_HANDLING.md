@@ -10,6 +10,14 @@
 ## 2. 错误传播
 
 ```text
+数据面板：
+AKShare 上游异常
+  -> Skill AdvisorError
+  -> Data API ToolEnvelope.error
+  -> Go DatasetMeta.status + 原始 ToolError
+  -> React 状态、warning 和错误提示
+
+Agent：
 AKShare / Web 上游异常
   -> Skill AdvisorError / WebResearchError
   -> MCP ToolError
@@ -28,6 +36,14 @@ error.details
 ```
 
 已经产生的 `sources`、`data_audit` 和 `data_warnings` 应尽可能保留，便于排查。
+
+Data API 与 Fund MCP 复用同一 Adapter 和 `ToolEnvelope` Schema。Go 只把信封映射为
+`available / stale / unavailable` 等展示状态，并把原始错误继续返回；不得根据 HTTP
+失败自行推断 `NOT_FOUND` 或改写 Python 错误码。
+
+若 Go 到 Data API 的 HTTP 调用在收到 `ToolEnvelope` 前失败，Go 只能返回
+`status=unavailable` 和本次请求时间，不得伪造 Python `ToolError`。参数格式和取值范围
+在 Go/Data API HTTP 边界直接返回 4xx，不进入市场事实错误语义。
 
 ## 3. 实体语义
 
@@ -55,6 +71,7 @@ error.details
 | `STOCK_MARKET_UNSUPPORTED` | 当前不支持对应市场 | 否 |
 | `STATUS_NOT_FOUND` | 状态接口未收录已解析基金 | 否，表达为当前无法确认 |
 | `UNSUPPORTED_EXCHANGE_FUND` | 无法确认 ETF/LOF 类型 | 否 |
+| `UNSUPPORTED_FUND_TYPE` | 专用 ETF 看板收到非 ETF 标的 | 否 |
 
 ### 4.2 数据源和契约
 
@@ -81,6 +98,23 @@ error.details
 
 `data_warnings` 可以记录上述数据类错误而不让整个工具失败。例如 PE 可用、PB 过期时，
 工具仍可成功，但 PB 的 `STALE_OR_INVALID_DATA` 必须保留。
+
+### 4.3 交叉校验 warning
+
+校验源是可选风险检测，不拥有市场事实覆盖权。以下 code 只进入 `data_warnings` 和对应的
+失败/比较审计，不改变可用主源结果的 `ok`：
+
+| warning code | 含义 |
+| --- | --- |
+| `SOURCE_UNAVAILABLE` | 校验源未安装、超时、网络失败、未覆盖或共同日期不足 |
+| `SOURCE_STALE` | 校验源最新日期相对主源超过允许滞后 |
+| `SOURCE_SCHEMA_CHANGED` | 校验源返回类型、字段或同日唯一性不符合契约 |
+| `SOURCE_BASIS_MISMATCH` | 复权、净值、估值或日期口径不可比，未执行数值比较 |
+| `SOURCE_DISAGREE` | 同口径数值超过代码定义的绝对或相对容忍度 |
+
+校验源调用在独立子进程中执行并受单独预算限制。超时必须终止子进程并返回
+`SOURCE_UNAVAILABLE`；不得让校验源超时覆盖主源成功结果。Agent 只把这些 code 解释为
+限制，FactRef 仍绑定主源审计指纹。
 
 ## 5. Web Research 错误码
 
@@ -147,6 +181,14 @@ error.details
 
 状态由 `VALIDATE_TOOL_ENVELOPES` 节点产生，模型不能修改。关联说明不得弱化错误。例如
 基金持仓接口失败后，不得根据基金名称猜测其行业或重仓股。
+
+Agent 传输层还可能出现：
+
+| 错误码 | 产生位置 | 行为 |
+| --- | --- | --- |
+| `MCP_CLIENT_ERROR` | Agent 调用 Fund/Web MCP 的客户端边界 | 作为可重试失败信封进入固定错误分支，不生成市场事实 |
+| `SESSION_CAPACITY_EXCEEDED` | 临时会话容量已满且所有会话都在处理中 | 不淘汰活跃会话；新建会话返回 503，流式请求返回 `error` 后 `done` |
+| `AGENT_API_ERROR` | Agent API SSE 最外层异常保护 | 发送 `error` 后发送 `done`，不暴露异常正文 |
 
 ## 8. 重试
 

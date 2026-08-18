@@ -2,7 +2,7 @@
 
 > 状态：`接口审计已完成，排队中`
 >
-> 启动条件：投研工作台 M1 指数页面稳定。
+> 启动条件：已满足（投研工作台 M1 指数页面稳定）；当前仍排在主动基金详情之后。
 >
 > 审计依据：
 > [quality_interface_audit.md](../../skills/akshare-fund-advisor/references/quality_interface_audit.md)
@@ -115,7 +115,7 @@ tests/
 
 - [ ] 新增 `STOCK_SCREEN`、`FUND_SCREEN` ToolName 和输入 Schema。
 - [ ] Adapter 只封装 Skill 输出，不重算数值。
-- [ ] Fund MCP 工具数从 9 调整为 11，并同步工具发现测试。
+- [ ] Fund MCP 工具数从 10 调整为 12，并同步工具发现测试。
 - [ ] 新增两个 Agent Intent 和代码白名单。
 - [ ] 复用现有固定图，不增加动态规划或 ReAct。
 - [ ] FactRef 精确绑定规则字段、日期和审计哈希。

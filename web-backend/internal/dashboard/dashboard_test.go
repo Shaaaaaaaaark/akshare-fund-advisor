@@ -4,33 +4,33 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/akshare-fund-advisor/web-backend/internal/mcp"
+	"github.com/akshare-fund-advisor/web-backend/internal/facts"
 )
 
 func TestMapStatus(t *testing.T) {
 	cases := []struct {
 		name string
-		env  *mcp.Envelope
+		env  *facts.Envelope
 		want DataStatus
 	}{
-		{"ok", &mcp.Envelope{OK: true}, StatusAvailable},
+		{"ok", &facts.Envelope{OK: true}, StatusAvailable},
 		{"nil", nil, StatusUnavailable},
 		{
 			"not_found",
-			&mcp.Envelope{OK: false, Error: &mcp.ToolError{Code: "INDEX_NOT_SUPPORTED"}},
+			&facts.Envelope{OK: false, Error: &facts.ToolError{Code: "INDEX_NOT_SUPPORTED"}},
 			StatusUnavailable,
 		},
 		{
 			"upstream",
-			&mcp.Envelope{OK: false, Error: &mcp.ToolError{Code: "DATA_SOURCE_ERROR"}},
+			&facts.Envelope{OK: false, Error: &facts.ToolError{Code: "DATA_SOURCE_ERROR"}},
 			StatusUnavailable,
 		},
 		{
 			"stale",
-			&mcp.Envelope{OK: false, Error: &mcp.ToolError{Code: "STALE_OR_INVALID_DATA"}},
+			&facts.Envelope{OK: false, Error: &facts.ToolError{Code: "STALE_OR_INVALID_DATA"}},
 			StatusStale,
 		},
-		{"error_missing", &mcp.Envelope{OK: false}, StatusUnavailable},
+		{"error_missing", &facts.Envelope{OK: false}, StatusUnavailable},
 	}
 	for _, tc := range cases {
 		if got := mapStatus(tc.env); got != tc.want {
@@ -120,5 +120,53 @@ func TestFillFromDataMissingMetric(t *testing.T) {
 	}
 	if row.LatestPoint != nil {
 		t.Errorf("latest_point should stay nil when index_points absent, got %+v", *row.LatestPoint)
+	}
+}
+
+func TestFillFromDataUsesPBDateWhenPEIsMissing(t *testing.T) {
+	data := json.RawMessage(`{
+		"summary":{"pe_ttm":null,"pb":{"current":1.43,"percentile":75.27,"level":"upper_middle"}},
+		"charts":{"pe_ttm":null,"pb":{"latest_date":"2026-08-15"}}
+	}`)
+	var row IndexRow
+	fillFromData(&row, nil, data)
+
+	if row.PETTM != nil {
+		t.Fatalf("pe_ttm should remain nil, got %+v", row.PETTM)
+	}
+	if row.PB == nil || row.PB.Current == nil || *row.PB.Current != 1.43 {
+		t.Fatalf("pb not copied verbatim: %+v", row.PB)
+	}
+	if row.Meta.AsOf != "2026-08-15" {
+		t.Fatalf("as_of = %q, want PB latest_date", row.Meta.AsOf)
+	}
+}
+
+func TestETFEnvelopeMetaPassesAuditWarningAndError(t *testing.T) {
+	env := &facts.Envelope{
+		OK:           false,
+		QueriedAt:    "2026-08-18T01:00:00+08:00",
+		DataAudit:    json.RawMessage(`[{"frame_sha256":"etf-hash"}]`),
+		DataWarnings: json.RawMessage(`[{"code":"SOURCE_UNAVAILABLE"}]`),
+		Error: &facts.ToolError{
+			Code:      "UPSTREAM_TIMEOUT",
+			Message:   "timeout",
+			Retryable: true,
+		},
+	}
+
+	meta := envelopeMeta(env, etfDashboardTool, "2026-08-17")
+
+	if meta.AsOf != "2026-08-17" || meta.Status != StatusUnavailable {
+		t.Fatalf("unexpected meta: %+v", meta)
+	}
+	if len(meta.AuditRefs) != 1 || meta.AuditRefs[0] != "etf-hash" {
+		t.Fatalf("audit refs not preserved: %+v", meta.AuditRefs)
+	}
+	if string(meta.Warnings) != `[{"code":"SOURCE_UNAVAILABLE"}]` {
+		t.Fatalf("warnings changed: %s", meta.Warnings)
+	}
+	if !json.Valid(meta.Error) {
+		t.Fatalf("error is not valid JSON: %s", meta.Error)
 	}
 }

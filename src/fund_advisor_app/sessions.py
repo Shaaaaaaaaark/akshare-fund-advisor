@@ -13,6 +13,10 @@ from fund_advisor_agent.state import AgentResponse, Intent
 from .schemas import ConversationTurn, SessionView
 
 
+class SessionCapacityError(RuntimeError):
+    """Raised when every retained session is actively processing a request."""
+
+
 @dataclass
 class SessionRecord:
     session_id: str
@@ -41,8 +45,7 @@ class InMemorySessionStore:
     async def create(self) -> SessionRecord:
         async with self._lock:
             self._prune_expired()
-            while len(self._sessions) >= self._max_sessions:
-                self._sessions.popitem(last=False)
+            self._make_room()
             now = _now()
             record = SessionRecord(
                 session_id=uuid4().hex,
@@ -65,8 +68,7 @@ class InMemorySessionStore:
                     created_at=now,
                     updated_at=now,
                 )
-                while len(self._sessions) >= self._max_sessions:
-                    self._sessions.popitem(last=False)
+                self._make_room()
                 self._sessions[record.session_id] = record
                 return record
             record.updated_at = _now()
@@ -128,10 +130,26 @@ class InMemorySessionStore:
         expired = [
             session_id
             for session_id, record in self._sessions.items()
-            if record.updated_at < cutoff
+            if record.updated_at < cutoff and not record.lock.locked()
         ]
         for session_id in expired:
             self._sessions.pop(session_id, None)
+
+    def _make_room(self) -> None:
+        while len(self._sessions) >= self._max_sessions:
+            idle_session_id = next(
+                (
+                    session_id
+                    for session_id, record in self._sessions.items()
+                    if not record.lock.locked()
+                ),
+                None,
+            )
+            if idle_session_id is None:
+                raise SessionCapacityError(
+                    "临时会话已满，且所有会话都在处理中"
+                )
+            self._sessions.pop(idle_session_id)
 
 
 def _now() -> datetime:

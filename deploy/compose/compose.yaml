@@ -17,15 +17,16 @@ services:
     depends_on:
       agent-api:
         condition: service_healthy
-      fund-advisor-mcp:
+      data-api:
         condition: service_healthy
     environment:
       WEB_BACKEND_ADDR: ":8080"
-      FUND_MCP_URL: http://fund-advisor-mcp:8001/mcp
+      DATA_API_URL: http://data-api:8003
       AGENT_API_URL: http://agent-api:8000
       DASHBOARD_INDEX_UNIVERSE: "沪深300,中证500,中证1000,上证50,创业板50,中证800"
       DASHBOARD_INDEX_YEARS: "10"
       DASHBOARD_CONCURRENCY: "2"
+      DATA_API_TIMEOUT_SECONDS: "90"
     healthcheck:
       test:
         [
@@ -42,6 +43,32 @@ services:
       start_period: 5s
     ports:
       - "${FUND_ADVISOR_PORT:-8080}:8080"
+
+  data-api:
+    image: fund-advisor-app:local
+    build: *app-build
+    init: true
+    restart: unless-stopped
+    command:
+      ["fund-advisor-data-api", "--host", "0.0.0.0", "--port", "8003"]
+    environment:
+      FINAGENT_SKILL_DIR: /app/skills/akshare-fund-advisor
+    volumes:
+      - ../../config:/app/config:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/health', timeout=2)",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    expose:
+      - "8003"
 
   agent-api:
     image: fund-advisor-app:local
@@ -61,7 +88,6 @@ services:
       FINAGENT__WEB_RESEARCH__SERVER_URL: http://web-research-mcp:8002/mcp
       FINAGENT__APP__HOST: 0.0.0.0
       FINAGENT__APP__PORT: 8000
-      FINAGENT__APP__STATIC_DIR: /app/web/dist
       FINAGENT_SKILL_DIR: /app/skills/akshare-fund-advisor
     volumes:
       - ../../config:/app/config:ro

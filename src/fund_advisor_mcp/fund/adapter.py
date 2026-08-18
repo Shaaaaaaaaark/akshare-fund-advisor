@@ -18,6 +18,7 @@ from .schemas import (
     AnalyzeInput,
     AuditInput,
     CompareInput,
+    ETFDashboardInput,
     FundInput,
     SearchInput,
     StockValuationInput,
@@ -56,6 +57,10 @@ class FundAdvisorToolAdapter:
         self._semaphore = threading.BoundedSemaphore(self._config.mcp.concurrency)
         self._cache = cache or build_envelope_cache(self._config)
         self._advisor_factory = advisor_factory or self._default_advisor_factory
+        self._executor = ThreadPoolExecutor(
+            max_workers=self._config.mcp.concurrency,
+            thread_name_prefix="fund-advisor-tool",
+        )
 
     def _default_advisor_factory(self) -> Any:
         module = load_skill_module()
@@ -77,6 +82,7 @@ class FundAdvisorToolAdapter:
             ToolName.FUND_SEARCH: 6 * 60 * 60,
             ToolName.FUND_STATUS: 5 * 60,
             ToolName.FUND_ANALYZE: 30 * 60,
+            ToolName.ETF_DASHBOARD: 30 * 60,
             ToolName.FUND_PROFILE: 6 * 60 * 60,
             ToolName.FUND_RATING: 12 * 60 * 60,
             ToolName.INDEX_VALUATION: 30 * 60,
@@ -101,10 +107,9 @@ class FundAdvisorToolAdapter:
 
         advisor: Any | None = None
         try:
-            with self._semaphore:
-                advisor = self._advisor_factory()
-                data = self._invoke_with_timeout(call, advisor)
-                common = advisor.common_output()
+            advisor = self._advisor_factory()
+            data = self._invoke_with_timeout(call, advisor)
+            common = advisor.common_output()
             envelope = ToolEnvelope(
                 tool=tool,
                 ok=bool(data.get("ok", True)),
@@ -168,8 +173,11 @@ class FundAdvisorToolAdapter:
         call: Callable[[Any], dict[str, Any]],
         advisor: Any,
     ) -> dict[str, Any]:
-        executor = ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(call, advisor)
+        def invoke() -> dict[str, Any]:
+            with self._semaphore:
+                return call(advisor)
+
+        future = self._executor.submit(invoke)
         try:
             return future.result(timeout=self._config.mcp.timeout_seconds)
         except FutureTimeoutError as exc:
@@ -177,8 +185,6 @@ class FundAdvisorToolAdapter:
             raise ToolExecutionTimeout(
                 f"Fund Advisor 超过 {self._config.mcp.timeout_seconds} 秒未完成"
             ) from exc
-        finally:
-            executor.shutdown(wait=False, cancel_futures=True)
 
     def fund_search(self, **kwargs: Any) -> ToolEnvelope:
         request = SearchInput.model_validate(kwargs)
@@ -205,6 +211,19 @@ class FundAdvisorToolAdapter:
             ToolName.FUND_ANALYZE,
             arguments,
             lambda advisor: advisor.analyze(request.fund, request.years),
+        )
+
+    def etf_dashboard(self, **kwargs: Any) -> ToolEnvelope:
+        request = ETFDashboardInput.model_validate(kwargs)
+        arguments = request.model_dump()
+        return self._execute(
+            ToolName.ETF_DASHBOARD,
+            arguments,
+            lambda advisor: advisor.etf_dashboard(
+                request.fund,
+                request.years,
+                request.max_points,
+            ),
         )
 
     def index_valuation(self, **kwargs: Any) -> ToolEnvelope:

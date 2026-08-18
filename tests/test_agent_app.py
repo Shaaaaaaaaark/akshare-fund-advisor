@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from io import StringIO
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -18,7 +17,10 @@ from fund_advisor_app.cli import _chat
 from fund_advisor_app.client import AgentApiClient, _parse_sse
 from fund_advisor_app.schemas import ChatRequest, SessionView, StreamEvent
 from fund_advisor_app.service import AgentChatService
-from fund_advisor_app.sessions import InMemorySessionStore
+from fund_advisor_app.sessions import (
+    InMemorySessionStore,
+    SessionCapacityError,
+)
 from fund_advisor_mcp.config import AppConfig
 
 
@@ -126,11 +128,25 @@ class StubCliClient:
         self.deleted.append(session_id)
 
 
-def _config(static_dir: Path | None = None) -> AppConfig:
+class CapacityChatService(StubChatService):
+    async def create_session(self) -> SessionView:
+        raise SessionCapacityError
+
+    async def stream(
+        self,
+        *,
+        message: str,
+        session_id: str | None,
+    ) -> AsyncIterator[StreamEvent]:
+        del message, session_id
+        raise SessionCapacityError
+        yield StreamEvent(event="done", data={})
+
+
+def _config() -> AppConfig:
     config = AppConfig()
     app = config.app.model_copy(
         update={
-            "static_dir": str(static_dir or "missing-web-dist"),
             "session_ttl_seconds": 60,
             "max_sessions": 4,
             "max_turns_per_session": 4,
@@ -197,6 +213,25 @@ async def test_session_store_is_bounded_and_keeps_latest_context() -> None:
 
 
 @pytest.mark.asyncio
+async def test_session_store_does_not_evict_active_session() -> None:
+    store = InMemorySessionStore(
+        ttl_seconds=60,
+        max_sessions=1,
+        max_turns_per_session=2,
+    )
+    active = await store.create()
+    await active.lock.acquire()
+    try:
+        with pytest.raises(SessionCapacityError):
+            await store.create()
+        assert await store.get(active.session_id) is active
+    finally:
+        active.lock.release()
+
+    assert await store.delete(active.session_id) is True
+
+
+@pytest.mark.asyncio
 async def test_chat_service_streams_progress_and_reuses_context() -> None:
     graph = FakeGraph()
     service = AgentChatService(config=_config(), graph=graph)
@@ -256,10 +291,10 @@ async def test_chat_service_does_not_report_tool_query_without_plan() -> None:
     assert "正在生成回答" in statuses
 
 
-def test_api_exposes_sessions_sse_and_validation(tmp_path: Path) -> None:
+def test_api_exposes_sessions_sse_and_validation() -> None:
     service = StubChatService()
     app = create_app(
-        config=_config(tmp_path / "not-built"),
+        config=_config(),
         service=service,  # type: ignore[arg-type]
     )
 
@@ -270,6 +305,7 @@ def test_api_exposes_sessions_sse_and_validation(tmp_path: Path) -> None:
             "/api/chat/stream",
             json={"message": "  分析 000001  ", "session_id": None},
         )
+        root = client.get("/")
         blank = client.post(
             "/api/chat/stream",
             json={"message": "   ", "session_id": None},
@@ -280,8 +316,31 @@ def test_api_exposes_sessions_sse_and_validation(tmp_path: Path) -> None:
     assert response.headers["content-type"].startswith("text/event-stream")
     assert "event: status" in response.text
     assert '"answer":"测试回答"' in response.text
+    assert root.json() == {
+        "name": "Fund Advisor Agent API",
+        "docs": "/api/docs",
+    }
     assert service.messages == ["分析 000001"]
     assert blank.status_code == 422
+
+
+def test_api_reports_session_capacity_without_dropping_active_context() -> None:
+    app = create_app(
+        config=_config(),
+        service=CapacityChatService(),  # type: ignore[arg-type]
+    )
+
+    with TestClient(app) as client:
+        session = client.post("/api/sessions")
+        stream = client.post(
+            "/api/chat/stream",
+            json={"message": "分析 000001", "session_id": None},
+        )
+
+    assert session.status_code == 503
+    assert session.json()["detail"] == "临时会话已满，请稍后重试"
+    assert "SESSION_CAPACITY_EXCEEDED" in stream.text
+    assert "event: done" in stream.text
 
 
 def test_sse_parser_handles_multiple_events() -> None:

@@ -3,18 +3,18 @@
     Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
     "PingFang SC", "Microsoft YaHei", sans-serif;
   color: #232927;
-  background: #f7f7f4;
+  background: #f5f6f8;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --ink: #232927;
-  --muted: #69716d;
-  --line: #dedfda;
-  --canvas: #f7f7f4;
+  --ink: #202733;
+  --muted: #6b7280;
+  --line: #d9dee6;
+  --canvas: #f5f6f8;
   --panel: #ffffff;
   --sidebar: #1d2220;
   --sidebar-soft: #2a302d;
-  --accent: #176b54;
-  --accent-soft: #e6f1ec;
+  --accent: #2563eb;
+  --accent-soft: #e8eefc;
   --warm: #b96c35;
 }
 
@@ -106,7 +106,7 @@ svg {
 .brand-name {
   font-size: 14px;
   font-weight: 650;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
 }
 
 .brand-caption {
@@ -146,7 +146,7 @@ svg {
   color: #818b86;
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -301,7 +301,7 @@ svg {
   color: #4e5d57;
   font-size: 10px;
   font-weight: 650;
-  letter-spacing: 0.03em;
+  letter-spacing: 0;
   background: #eeefeb;
   border: 1px solid #dcddd8;
   border-radius: 999px;
@@ -350,7 +350,7 @@ svg {
   color: var(--accent);
   font-size: 10px;
   font-weight: 750;
-  letter-spacing: 0.18em;
+  letter-spacing: 0;
 }
 
 .welcome h1 {
@@ -359,7 +359,7 @@ svg {
   font-family: Georgia, "Songti SC", serif;
   font-size: clamp(30px, 4vw, 42px);
   font-weight: 600;
-  letter-spacing: -0.035em;
+  letter-spacing: 0;
 }
 
 .welcome-copy {
@@ -585,7 +585,7 @@ svg {
   color: #166049;
   font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
   background: var(--accent-soft);
   border: 1px solid #c8ded4;
   border-radius: 999px;

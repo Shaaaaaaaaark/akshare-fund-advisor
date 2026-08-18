@@ -139,7 +139,6 @@ class AppServerConfig(BaseModel):
 
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
-    static_dir: str = "web/dist"
     session_ttl_seconds: int = Field(default=7200, ge=60, le=86400)
     max_sessions: int = Field(default=100, ge=1, le=10000)
     max_turns_per_session: int = Field(default=20, ge=2, le=100)

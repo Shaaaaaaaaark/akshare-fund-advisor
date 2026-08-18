@@ -12,7 +12,11 @@
 - **单一可信数据源**：指数估值只调用 AKShare `stock_index_pe_lg` 和 `stock_index_pb_lg`，并保留上游来源与审计记录。
 - **条件式策略**：基础定投、减量、等待、暂停追价等规则输出，标记为 `rule_based_policy_not_market_data`，不输出机械金额倍数。
 - **确定性指标**：收益、波动、最大回撤、修复时间、历史分位、ETF 溢价等按固定公式计算。
+- **ETF 数据终端**：MCP `etf_dashboard` 提供价格、成交额、成交量、涨跌幅和回撤五联
+  真实序列；缺失的份额、净申赎和融资数据不做近似。
 - **稳定分析契约**：产品、表现、估值、交易和数据质量分组均带口径、源日期、审计引用和 warning。
+- **可选交叉校验**：A 股不复权收盘价可用 Baostock/efinance 做差异检测；校验源不能覆盖
+  AKShare 主值。
 - **受控比较**：合并可用评级与资产配置，只在类型、份额、口径和基准一致时生成排序视图。
 
 ## 环境要求
@@ -25,6 +29,7 @@
 
 ```text
 akshare==1.18.64
+baostock==0.9.3
 pandas==2.3.3
 numpy==2.0.2
 requests==2.32.5
@@ -121,12 +126,21 @@ bash "$SKILL_DIR/scripts/run.sh" audit
 3. 指标自身日期与 `latest_age_days` 合格
 4. `data_warnings` 未声明该数据不可用于结论
 
+A 股价格交叉校验默认关闭。启用 Baostock：
+
+```bash
+export AKSHARE_FUND_SOURCE_VALIDATION=baostock
+export AKSHARE_FUND_SOURCE_VALIDATION_TIMEOUT=10
+```
+
+主图仍使用 AKShare 前复权价格；校验另取双方不复权日线，按共同日期比较且不补点。
+
 ## Agent 集成边界
 
 本 Skill 是金融 Agent 的事实与确定性计算层；仓库内同时提供最小 LangGraph Agent：
 
 - **Skill 内**：基金/指数解析、AKShare 查询、Schema 与时效校验、`frame_sha256` 审计、确定性指标和有限规则输出。
-- **MCP 层**：九个市场事实工具、三个 Web 背景工具，以及 Schema、超时、进程内缓存、调用日志和进程隔离。
+- **MCP 层**：十个市场事实工具、三个 Web 背景工具，以及 Schema、超时、进程内缓存、调用日志和进程隔离。
 - **Web MCP**：搜索公开研究、财经媒体和博主/社区链接，按需读取网页和用户给定文档，只提供 `numeric_allowed=false` 的背景。
 - **LangGraph Agent 层**：固定状态图、工具白名单、FactRef、单标文章/博主双查询、事实字段关联说明和输出校验。
 
@@ -138,11 +152,11 @@ LangGraph Agent 可以关联解释基金产品、历史风险、指数估值和�
 域名和标题规则生成，不代表博主身份或内容真实性已经核验；搜索失败时保留已审计的市场
 分析并标记部分结果。
 
-Agent 单轮入口：
+兼容 CLI 通过 Agent API 执行单轮研究：
 
 ```bash
-fund-advisor-agent ask \
-  --question "沪深300指数估值" \
+fund-advisor --api-url http://127.0.0.1:8000 ask \
+  "沪深300指数估值" \
   --output text
 ```
 
@@ -159,6 +173,8 @@ skills/akshare-fund-advisor/   # 纯数据层，可独立拷贝
 ├── scripts/
 │   ├── fund_advisor.py      # CLI、数据访问、校验、指标与策略规则
 │   ├── audit_quality_interfaces.py # 候选筛选接口 discovery audit
+│   ├── audit_source_providers.py # 多源代表性真实接口审计
+│   ├── source_validation.py # 可选 Provider 和确定性 Comparator
 │   ├── run.sh               # 选择虚拟环境并启动 CLI
 │   └── setup.sh             # 创建虚拟环境并安装锁定依赖
 ├── tests/
@@ -168,7 +184,8 @@ skills/akshare-fund-advisor/   # 纯数据层，可独立拷贝
     ├── professional_metrics.md  # 专业指标解释
     ├── valuation_chart.md   # 指数估值图数据与渲染契约
     ├── interface_audit.md   # 生产接口审计方法与历史记录
-    └── quality_interface_audit.md # 财务、行业和基金质量候选接口审计
+    ├── quality_interface_audit.md # 财务、行业和基金质量候选接口审计
+    └── source_cross_validation.md # 多源许可、接口、实测和接入边界
 ```
 
 MCP 与 LangGraph Agent 源码位于仓库级源码根（不随 skill 拷贝）：
@@ -176,7 +193,8 @@ MCP 与 LangGraph Agent 源码位于仓库级源码根（不随 skill 拷贝）�
 ```text
 src/
 ├── fund_advisor_mcp/        # config、fund/ 市场事实 MCP、web/ 背景 MCP
-└── fund_advisor_agent/      # LangGraph 固定状态图、FactRef、门禁与 CLI
+├── fund_advisor_agent/      # LangGraph 固定状态图、FactRef 与门禁
+└── fund_advisor_app/        # Agent API、SSE、临时会话和兼容 CLI
 ```
 
 ## 开发验证
@@ -211,6 +229,7 @@ sh -n "$SKILL_DIR/scripts/setup.sh"
 - 估值图契约：[references/valuation_chart.md](references/valuation_chart.md)
 - 接口审计：[references/interface_audit.md](references/interface_audit.md)
 - 候选接口审计：[references/quality_interface_audit.md](references/quality_interface_audit.md)
+- 多源交叉校验：[references/source_cross_validation.md](references/source_cross_validation.md)
 
 ## 免责声明
 

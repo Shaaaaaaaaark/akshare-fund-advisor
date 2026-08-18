@@ -55,7 +55,7 @@ func (s *Service) IndexDetail(ctx context.Context, index string, years, maxPoint
 	if env.OK {
 		var view summaryView
 		if json.Unmarshal(env.Data, &view) == nil {
-			meta.AsOf = view.Charts.PETTM.LatestDate
+			meta.AsOf = view.asOf()
 		}
 	}
 

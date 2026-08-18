@@ -1,6 +1,6 @@
 // Package dashboard builds the data-workbench HTTP responses.
 //
-// It wraps MCP ToolEnvelopes with presentation-layer metadata (DatasetMeta)
+// It wraps audited ToolEnvelopes with presentation-layer metadata (DatasetMeta)
 // without touching the underlying facts. Per docs/GO_PYTHON_CONTRACT.md, this
 // layer performs no financial computation: it maps tool errors to a display
 // status, selects a few scalar fields for list rows, and passes the raw

@@ -105,6 +105,25 @@ def exchange_history_frame(end_date=None, periods=260):
     )
 
 
+def sina_etf_history_frame(end_date=None, periods=260):
+    dates = pd.bdate_range(
+        end=end_date or datetime.now(fund_advisor.SHANGHAI).date(),
+        periods=periods,
+    )
+    values = [3.0 + index / 1000 for index in range(periods)]
+    return pd.DataFrame(
+        {
+            "date": dates,
+            "open": values,
+            "high": values,
+            "low": values,
+            "close": values,
+            "volume": [100_000_000 + index for index in range(periods)],
+            "amount": [300_000_000 + index for index in range(periods)],
+        }
+    )
+
+
 class StatusInterpretationTest(unittest.TestCase):
     def test_deadline_is_safe_in_worker_thread(self):
         def run():
@@ -748,6 +767,88 @@ class ProfileAndRatingTest(unittest.TestCase):
         with self.assertRaises(fund_advisor.AdvisorError) as ctx:
             advisor.rating("000001")
         self.assertEqual(ctx.exception.code, "FUND_RATING_NOT_FOUND")
+
+
+class ETFDashboardTest(unittest.TestCase):
+    @staticmethod
+    def _fund():
+        return {
+            "code": "510300",
+            "name": "沪深300ETF华泰柏瑞",
+            "type": "指数型-股票",
+            "pinyin_abbr": "HS300ETFHTBR",
+        }
+
+    def test_etf_dashboard_builds_five_audited_series(self):
+        history = exchange_history_frame(periods=80)
+        ak = SimpleNamespace(
+            __version__="1.18.64",
+            fund_etf_hist_em=lambda **_kwargs: history,
+        )
+        advisor = make_advisor(ak=ak)
+        advisor.resolve = lambda _query: self._fund()
+        advisor._etf_spot = lambda _fund: None
+
+        result = advisor.etf_dashboard("510300", years=1, max_points=50)
+
+        self.assertEqual(result["metric_basis"], "exchange_qfq_daily")
+        self.assertEqual(
+            set(result["charts"]),
+            {"price", "turnover", "volume", "daily_change", "drawdown"},
+        )
+        self.assertEqual(result["charts"]["price"]["source_observations"], 80)
+        self.assertLessEqual(result["charts"]["price"]["displayed_points"], 50)
+        self.assertEqual(result["summary"]["latest_turnover_yi_cny"], 0.0)
+        self.assertEqual(result["summary"]["latest_volume_yi_units"], 0.0)
+        self.assertEqual(len(result["recent_rows"]), 20)
+        self.assertEqual(len(result["range_summaries"]), 3)
+        self.assertEqual(result["data_quality"]["interpolation"], "none")
+        self.assertEqual(result["data_quality"]["forward_fill"], "none")
+        self.assertTrue(
+            any(
+                item["interface"] == "fund_etf_hist_em"
+                and item["validation"] == "passed"
+                for item in advisor.data_audit
+            )
+        )
+
+    def test_etf_dashboard_falls_back_to_sina_without_filling(self):
+        history = sina_etf_history_frame(periods=80)
+
+        def fail_eastmoney(**_kwargs):
+            raise ConnectionError("upstream disconnected")
+
+        ak = SimpleNamespace(
+            __version__="1.18.64",
+            fund_etf_hist_em=fail_eastmoney,
+            fund_etf_hist_sina=lambda **_kwargs: history,
+        )
+        advisor = make_advisor(ak=ak)
+        advisor.resolve = lambda _query: self._fund()
+        advisor._etf_spot = lambda _fund: None
+
+        result = advisor.etf_dashboard("510300", years=1, max_points=50)
+
+        self.assertEqual(
+            result["metric_basis"],
+            "exchange_unadjusted_daily_sina",
+        )
+        self.assertEqual(
+            result["data_integrity"]["source_interface"],
+            "fund_etf_hist_sina",
+        )
+        self.assertTrue(
+            any(
+                item["interface"] == "fund_etf_hist_em"
+                for item in advisor.data_warnings
+            )
+        )
+        self.assertTrue(
+            all(
+                point[1] is not None
+                for point in result["charts"]["price"]["chart_series"]
+            )
+        )
 
 
 class AnalysisContractTest(unittest.TestCase):

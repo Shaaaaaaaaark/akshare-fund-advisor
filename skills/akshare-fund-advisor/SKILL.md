@@ -107,6 +107,8 @@ bash "$SKILL_DIR/scripts/run.sh" audit
 ```
 
 除非用户明确指定观察周期，否则基金分析使用 3 年、指数估值图使用 10 年。独立使用说明见 [USAGE.md](USAGE.md)，系统设计见 [DESIGN.md](DESIGN.md)；指标定义与专业解释必须阅读 [references/professional_metrics.md](references/professional_metrics.md)；详细接口映射见 [references/akshare_api.md](references/akshare_api.md)；指数图表必须继续阅读并遵循 [references/valuation_chart.md](references/valuation_chart.md)；接口审计方法与历史记录见 [references/interface_audit.md](references/interface_audit.md)。
+Baostock/efinance 交叉校验的许可、口径、实测结果和生产边界见
+[references/source_cross_validation.md](references/source_cross_validation.md)。
 
 ### 3. AKShare 指数估值图
 
@@ -185,8 +187,12 @@ bash "$SKILL_DIR/scripts/run.sh" audit
 - 禁止模型在图表采样点之间补造数据；图表只能连接脚本返回的真实采样点。
 - AKShare 版本必须为脚本锁定并验证的 `1.18.64`；版本不匹配时停止查询，而不是尝试兼容。
 - 指数图表必须先判空 `charts.pe_ttm` 和 `charts.pb`，只使用非 `null` 指标的 `chart_series` 和 `reference_lines`；不得以零值代替缺失侧。
+- ETF 网页终端只能使用 MCP `etf_dashboard.charts` 返回的价格、成交额、成交量、涨跌幅
+  和回撤点；份额变化、净申赎和融资余额缺失时不得由成交量、成交额或外部网页数字替代。
 - `queried_at` 是查询时间，不一定是净值日期；优先引用各字段自己的 `date`。
 - `data_warnings` 非空时，要在答案中显式披露。
+- `SOURCE_*` warning 只表示校验源不可用、过期、口径不一致或数值有差异；不得把校验源
+  写成新的主事实，也不得据此覆盖、平均或修正 AKShare 主源数值。
 - 单位净值、累计净值和场内价格口径不同；跨基金比较前先检查 `metric_basis`。
 - `dca_plan` 是透明规则模板，不是历史最优参数，也不承诺降低亏损。
 - 禁止把 PE 与 PB 分位平均成“综合估值”；二者经济含义不同，必须分别解释。

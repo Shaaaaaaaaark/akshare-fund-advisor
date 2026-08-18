@@ -6,7 +6,9 @@
 - Python 3.9 到 3.12。
 - 可访问 AKShare 对应公开上游。
 
-Skill 固定使用 `akshare==1.18.64`，并锁定当前验证过的 pandas、NumPy、requests 和 curl_cffi 关键运行版本。脚本检测到 Python 不在 3.9 到 3.12、关键包版本不符或依赖无法导入时会停止运行，避免字段错位或残缺环境直接崩溃。
+Skill 固定使用 `akshare==1.18.64` 和 `baostock==0.9.3`，并锁定当前验证过的 pandas、
+NumPy、requests 和 curl_cffi 关键运行版本。脚本检测到 Python 不在 3.9 到 3.12、
+关键包版本不符或依赖无法导入时会停止运行，避免字段错位或残缺环境直接崩溃。
 
 ## 2. 安装
 
@@ -211,6 +213,20 @@ AKSHARE_FUND_VENV="$PWD/.venv-agent" \
 
 可用分组为 `stock_financial`、`industry`、`fund_quality` 和 `all`。该脚本只输出接口
 Schema、日期、缺失、质量检查和内容哈希；不会筛选资产或改变 MCP 工具数。
+
+多源代表性接口使用独立审计脚本：
+
+```bash
+"$SKILL_DIR/.venv/bin/python" \
+  "$SKILL_DIR/scripts/audit_source_providers.py" \
+  --providers baostock \
+  --days 30 \
+  --timeout-seconds 10
+```
+
+A 股交叉校验默认关闭。生产启用时设置
+`AKSHARE_FUND_SOURCE_VALIDATION=baostock`；校验源只产生 audit/warning，不覆盖主值。
+efinance 只用于一次性审计环境，不在默认依赖中。
 
 ## 11. 通用审计字段
 

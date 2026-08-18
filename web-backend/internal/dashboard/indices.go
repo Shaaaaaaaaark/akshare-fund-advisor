@@ -7,23 +7,31 @@ import (
 	"sync"
 	"time"
 
-	"github.com/akshare-fund-advisor/web-backend/internal/mcp"
+	"github.com/akshare-fund-advisor/web-backend/internal/facts"
 )
 
-// indexValuationTool is the single MCP tool this board consumes.
+// indexValuationTool is the audited data operation this board consumes.
 const indexValuationTool = "index_valuation"
 
-// Service builds dashboard responses from a Fund MCP client. It holds no
+type ToolCaller interface {
+	CallTool(
+		ctx context.Context,
+		tool string,
+		arguments map[string]any,
+	) (json.RawMessage, *facts.Envelope, error)
+}
+
+// Service builds dashboard responses from the standalone Data API. It holds no
 // mutable market state; every request reads live from the tool.
 type Service struct {
-	fund        *mcp.Client
+	fund        ToolCaller
 	universe    []string
 	years       int
 	concurrency int
 }
 
-// NewService wires the board to a Fund MCP client and its configured universe.
-func NewService(fund *mcp.Client, universe []string, years, concurrency int) *Service {
+// NewService wires the board to an audited data caller and configured universe.
+func NewService(fund ToolCaller, universe []string, years, concurrency int) *Service {
 	if concurrency < 1 {
 		concurrency = 1
 	}
@@ -137,10 +145,16 @@ type summaryView struct {
 		PETTM struct {
 			LatestDate string `json:"latest_date"`
 		} `json:"pe_ttm"`
+		PB struct {
+			LatestDate string `json:"latest_date"`
+		} `json:"pb"`
 		IndexPoints struct {
 			Current *float64 `json:"current"`
 		} `json:"index_points"`
 	} `json:"charts"`
+	Lookback struct {
+		LatestDate string `json:"latest_date"`
+	} `json:"lookback"`
 }
 
 // fillFromData copies scalar display fields out of the envelope's data object.
@@ -157,7 +171,20 @@ func fillFromData(row *IndexRow, _ json.RawMessage, data json.RawMessage) {
 	row.PB = view.Summary.PB
 	row.LatestPoint = view.Charts.IndexPoints.Current
 	// as_of is the tool's own latest data date, never the server clock.
-	row.Meta.AsOf = view.Charts.PETTM.LatestDate
+	row.Meta.AsOf = view.asOf()
+}
+
+func (view summaryView) asOf() string {
+	for _, value := range []string{
+		view.Charts.PETTM.LatestDate,
+		view.Charts.PB.LatestDate,
+		view.Lookback.LatestDate,
+	} {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // frameHashes extracts frame_sha256 values from data_audit for auditability.

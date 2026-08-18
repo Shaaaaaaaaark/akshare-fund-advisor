@@ -10,8 +10,8 @@
 
 当前优先级：
 
-1. 按 `TASK_research_dashboard.md` 推进投研数据工作台，当前完成指数看板前端和 PE/PB
-   历史双图；
+1. 按 `TASK_research_dashboard.md` 推进投研数据工作台，指数看板前端和 PE/PB 历史双图
+   已完成，ETF 搜索和五联图终端已接入，当前补基金产品档案与非 ETF 详情；
 2. 按已审计接口推进基金与股票候选筛选，并在工具完成后接入工作台；
 3. 保持 Web、Agent API、MCP、LangGraph、金融门禁和 Ark 结构化模型回归稳定。
 
@@ -26,13 +26,17 @@
 
 - Skill CLI 已实现，是当前稳定运行入口。
 - Fund MCP 和 Web MCP 的命名空间、入口、配置和测试接线已完成。
-- LangGraph Agent 固定图、MCP Client、FactRef、结构化研究综合、门禁和 CLI 已实现。
+- 独立 Data API 已实现，数据面板不经过 Agent、LangGraph 或 MCP 协议取数。
+- LangGraph Agent 固定图、MCP Client、FactRef、结构化研究综合和门禁已实现。
 - FastAPI Agent API、SSE、有界临时会话、React 对话页和共用 API 的兼容 CLI 已实现。
-- Compose 包含 Go 网页后端、Agent API 和两个 MCP 共四个服务；对外仅暴露 Go 网页后端。
-- Go 网页后端（BFF）已实现 M0 骨架：指数看板取数（`/api/dashboard/indices` 及指数详情）、
-  ToolEnvelope 原样透传、Agent SSE 反向代理、React 静态托管，作为对外唯一 HTTP 入口。
-- 投研数据工作台前端页面、基金目录和指数看板 Web 页尚未实现。
-- 产品方向已收敛为 Web；网页后端用 Go（BFF），Agent/MCP/Skill 保留 Python。
+- Compose 包含 Go 网页后端、Data API、Agent API 和两个 MCP 共五个服务；对外仅暴露
+  Go 网页后端。
+- Go 网页后端（BFF）已实现指数看板、基金搜索和 ETF 详情取数、ToolEnvelope 原样透传、
+  Agent SSE 反向代理、React 静态托管，作为对外唯一 HTTP 入口。
+- 指数看板、指数详情、PE/PB 历史双图、ETF 五联图终端、ETF Agent 抽屉和独立 Agent
+  页已实现；主动基金产品档案、股票详情和完整总览尚未实现。
+- 产品方向已收敛为 Web；网页后端用 Go（BFF），Data API、Agent、MCP、Skill 保留
+  Python。
 - 已有 CLI 只保留兼容和调试，不继续增加产品功能。
 - Ark thinking 模型的 Pydantic 结构化关联输出和门禁闭环已验证。
 - 基金和股票单标分析已接入研究/媒体文章与博主/社区公开链接的可选 Web 搜索。
@@ -44,7 +48,7 @@
 
 优先级从高到低：
 
-1. 通过 Schema、时效和 `frame_sha256` 审计的 AKShare Skill / Fund MCP；
+1. 通过 Schema、时效和 `frame_sha256` 审计的 Data API / AKShare Skill / Fund MCP；
 2. 用户给定的官方文档原文；
 3. Web MCP 提供的非数值背景；
 4. 模型常识不得作为市场事实。
@@ -77,13 +81,14 @@
 ```text
 React Web
   -> Go 网页后端（BFF）
-     |-- Dashboard -> Fund MCP (Python) -> AKShare Skill
+     |-- 数据面板 -> Data API (Python) -> AKShare Skill
      `-- Agent SSE -> Agent API (Python) -> LangGraph
                                       |-> Fund MCP -> AKShare Skill
                                       `-> Web MCP -> 公网内容
 ```
 
 - `skills/akshare-fund-advisor/scripts/fund_advisor.py`：实体解析、AKShare 调用、确定性指标和审计。
+- `src/fund_advisor_data_api/`：数据面板专用 REST API，不包含模型、会话或 MCP 协议。
 - `src/fund_advisor_mcp/fund/`：市场事实 MCP，不改写 Skill 数值。
 - `src/fund_advisor_mcp/web/`：非数值背景 MCP，固定 `numeric_allowed=false`。
 - `src/fund_advisor_agent/`：只做固定图编排、工具路由、关联说明和输出校验。
@@ -92,13 +97,15 @@ React Web
   计算或审计改写；边界见 `docs/GO_PYTHON_CONTRACT.md`。
 - `web/`：React 界面，不实现业务计算或金融事实生成。
 
-语言分工：Go 只做网页后端（取数、聚合、缓存、限流、静态托管、SSE 代理）；Python 保留
-Agent、MCP、Skill 和全部金融计算与审计。Go 不得重算、改写、四舍五入、插值或合成任何
-净值、价格、PE、PB、收益率、回撤、分位、限额或交易状态，必须原样透传 `ToolEnvelope`
-的 `data_audit`、`frame_sha256`、warnings 和错误码。
+语言分工：Go 只做网页后端（调用 Data API、有界并发聚合、超时、静态托管、SSE
+代理）；Python 保留 Data API、Agent、MCP、Skill 和全部金融计算与审计。当前 Go BFF
+未实现结果缓存、请求去重或业务限流。Go 不得直接实现 AKShare 接口，不得重算、改写、
+四舍五入、插值或合成任何净值、价格、PE、PB、收益率、回撤、分位、限额或交易状态，
+必须原样透传 `ToolEnvelope` 的 `data_audit`、`frame_sha256`、warnings 和错误码。
 
-源码层级顺依赖方向：仓库级 `src/` 存放 Agent 与 MCP，`skills/akshare-fund-advisor/`
-回归纯数据层（SKILL.md + scripts + references），可独立拷贝。
+源码层级顺依赖方向：仓库级 `src/` 存放 Data API、Agent 与 MCP，
+`skills/akshare-fund-advisor/` 回归纯数据层（SKILL.md + scripts + references），可独立
+拷贝。
 
 LangGraph 只使用 `StateGraph` 和显式条件边。不得恢复 LangChain Agent、开放式 ReAct、
 动态工具规划、数据库 checkpoint、长期记忆或多 Agent。
@@ -166,8 +173,8 @@ docker run --rm -v "$PWD/web-backend":/src -w /src golang:1.22-alpine \
   sh -c "gofmt -l . && go vet ./... && go test ./..."
 ```
 
-Docker 相关改动仍须重新运行 Compose 测试、四个服务健康检查、HTTP 工具发现和
-Web/API 闭环，并验证 Go 网页后端 healthy 与 Go→Python 取数/SSE 连通。
+Docker 相关改动仍须重新运行 Compose 测试、五个服务健康检查、Data API 健康与
+Fund/Web MCP 工具发现和 Web/API 闭环，并验证 Go→Data API 取数与 Go→Agent SSE 连通。
 
 本地 `.venv-agent` 只是可选调试环境，未纳入版本控制，需先按 README 创建后才能使用：
 

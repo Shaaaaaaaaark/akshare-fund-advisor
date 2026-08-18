@@ -22,7 +22,7 @@
 | 开放式基金历史 | `fund_open_fund_info_em()` | 普通基金优先使用累计净值，货币基金使用七日年化收益率 |
 | ETF 实时行情 | `fund_etf_spot_em()` | 读取价格、IOPV、成交额、买一和卖一，并自行统一溢价方向 |
 | ETF 历史行情 | `fund_etf_hist_em()` | ETF 专用东财接口，使用前复权日收盘价 |
-| ETF 历史备用 | `fund_etf_hist_sina()` | 东财接口失败时使用新浪未复权日行情，并单独标注口径 |
+| ETF 历史备用 | `fund_etf_hist_sina()` | 东财接口失败时使用新浪未复权日行情和成交量额，并单独标注口径 |
 | LOF 历史行情 | `fund_lof_hist_em()` | LOF 必须使用专用接口，不能误用 ETF 接口 |
 | 宽基指数 PE | `stock_index_pe_lg()` | 对能可靠匹配的宽基指数计算滚动市盈率历史分位 |
 | 宽基指数 PB | `stock_index_pb_lg()` | 对能可靠匹配的宽基指数计算市净率历史分位 |
@@ -166,6 +166,20 @@ premium_rate_pct = (latest_price - iopv) / iopv * 100
 | `reference_lines` | 均值、中位数、±1σ、20/80 分位 | 所有统计均使用完整日频样本 |
 
 普通场外基金优先使用累计净值，场内基金优先使用前复权收盘价。两种口径不同，比较时必须检查 `metric_basis`。
+
+### `etf_dashboard` 输出
+
+MCP 专用 ETF 看板工具只使用上述 ETF 历史接口和可选实时行情：
+
+- `charts.price`：审计日线收盘价；
+- `charts.turnover`：源成交额确定性换算为亿元；
+- `charts.volume`：源成交量确定性换算为亿份；
+- `charts.daily_change`：相邻真实收盘价确定性计算，不跨缺失点补值；
+- `charts.drawdown`：观察窗口内截至当日运行峰值回撤；
+- `range_summaries`：最近 5/20/60 个真实交易观测；
+- `recent_rows`：工具返回的最近 20 个真实交易日。
+
+该接口不输出历史总份额、净申赎或融资余额，调用方不得用成交量或成交额替代。
 
 不生成定投收益回测：累计净值不是可成交价格，前复权收盘价也不是投资者每期真实成交记录。定投部分只输出明确标记为策略规则的动作区间。
 
