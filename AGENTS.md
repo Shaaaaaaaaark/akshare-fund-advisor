@@ -10,10 +10,11 @@
 
 当前优先级：
 
-1. 按 `TASK_research_dashboard.md` 推进投研数据工作台，指数看板前端和 PE/PB 历史双图
-   已完成，ETF 搜索和五联图终端已接入，当前补基金产品档案与非 ETF 详情；
-2. 按已审计接口推进基金与股票候选筛选，并在工具完成后接入工作台；
-3. 保持 Web、Agent API、MCP、LangGraph、金融门禁和 Ark 结构化模型回归稳定。
+1. 稳定 Java 21 + Spring Boot WebFlux BFF，保持 HTTP/JSON/SSE 黑盒契约不变；
+2. 保持投研数据工作台 MVP 稳定：指数、ETF、主动基金产品档案、股票单标价格/PE/PB
+   和 Agent 均已可运行，细节增强按 `docs/ROADMAP.md` 排队；
+3. 按已审计接口推进基金与股票候选筛选，并保持 Web、Agent API、MCP、LangGraph、
+   金融门禁和 Ark 结构化模型回归稳定。
 
 当前不优先：
 
@@ -24,20 +25,20 @@
 
 ## 实现状态
 
-- Skill CLI 已实现，是当前稳定运行入口。
+- Agent Skill 包装和内部调试脚本已实现；目标架构中 Skill 只服务 Agent，不承担数据
+  来源层定位。
 - Fund MCP 和 Web MCP 的命名空间、入口、配置和测试接线已完成。
 - 独立 Data API 已实现，数据面板不经过 Agent、LangGraph 或 MCP 协议取数。
 - LangGraph Agent 固定图、MCP Client、FactRef、结构化研究综合和门禁已实现。
-- FastAPI Agent API、SSE、有界临时会话、React 对话页和共用 API 的兼容 CLI 已实现。
-- Compose 包含 Go 网页后端、Data API、Agent API 和两个 MCP 共五个服务；对外仅暴露
-  Go 网页后端。
-- Go 网页后端（BFF）已实现指数看板、基金搜索和 ETF 详情取数、ToolEnvelope 原样透传、
-  Agent SSE 反向代理、React 静态托管，作为对外唯一 HTTP 入口。
-- 指数看板、指数详情、PE/PB 历史双图、ETF 五联图终端、ETF Agent 抽屉和独立 Agent
-  页已实现；主动基金产品档案、股票详情和完整总览尚未实现。
-- 产品方向已收敛为 Web；网页后端用 Go（BFF），Data API、Agent、MCP、Skill 保留
-  Python。
-- 已有 CLI 只保留兼容和调试，不继续增加产品功能。
+- FastAPI Agent API、SSE、有界临时会话和 React 对话页已实现。
+- Compose 包含 Java 网页后端、Data API、Agent API 和两个 MCP 共五个服务；对外仅暴露
+  Java 网页后端。
+- Java BFF 已实现指数、基金搜索、ETF、主动基金四块聚合和股票单标取数、
+  ToolEnvelope 原样透传、Agent SSE 反向代理、React 静态托管和 `/health`。
+- 跨模块总览、指数看板、指数详情、PE/PB 历史双图、ETF 五联图终端、主动基金产品
+  档案、股票单标价格/PE/PB、ETF Agent 抽屉和独立 Agent 页已实现；研究动态尚未实现。
+- 产品方向已收敛为 Web；目标网页后端用 Java 21 + Spring Boot WebFlux，Data API、
+  Agent、MCP 和 Agent Skill 保留 Python。
 - Ark thinking 模型的 Pydantic 结构化关联输出和门禁闭环已验证。
 - 基金和股票单标分析已接入研究/媒体文章与博主/社区公开链接的可选 Web 搜索。
 - 财务、行业和基金质量候选接口审计已完成；`stock_screen`、`fund_screen` 尚未实现。
@@ -48,7 +49,7 @@
 
 优先级从高到低：
 
-1. 通过 Schema、时效和 `frame_sha256` 审计的 Data API / AKShare Skill / Fund MCP；
+1. 通过 Schema、时效和 `frame_sha256` 审计的 Data API / Fund MCP；
 2. 用户给定的官方文档原文；
 3. Web MCP 提供的非数值背景；
 4. 模型常识不得作为市场事实。
@@ -76,43 +77,50 @@
 
 ## 架构边界
 
-当前依赖方向：
+目标依赖方向：
 
 ```text
 React Web
-  -> Go 网页后端（BFF）
-     |-- 数据面板 -> Data API (Python) -> AKShare Skill
+  -> Java 网页后端（BFF）
+     |-- 数据面板 -> Data API (Python) -> data_core -> providers(AKShare/...)
      `-- Agent SSE -> Agent API (Python) -> LangGraph
-                                      |-> Fund MCP -> AKShare Skill
+                                      |-> Fund MCP -> data_core
                                       `-> Web MCP -> 公网内容
 ```
 
-- `skills/akshare-fund-advisor/scripts/fund_advisor.py`：实体解析、AKShare 调用、确定性指标和审计。
+- `src/fund_advisor_data_core/`：目标数据核心，负责数据源 provider、审计、Schema 和确定性指标。
+- `skills/akshare-fund-advisor/scripts/fund_advisor.py`：Agent Skill 内部脚本；当前 legacy
+  实现仍承载部分数据调用，后续应逐步迁移到 `data_core`。
 - `src/fund_advisor_data_api/`：数据面板专用 REST API，不包含模型、会话或 MCP 协议。
-- `src/fund_advisor_mcp/fund/`：市场事实 MCP，不改写 Skill 数值。
+- `src/fund_advisor_mcp/fund/`：市场事实 MCP，不改写 data_core 数值；必要时可包装
+  Agent Skill 能力，但不把 Skill 定位为数据来源层。
 - `src/fund_advisor_mcp/web/`：非数值背景 MCP，固定 `numeric_allowed=false`。
 - `src/fund_advisor_agent/`：只做固定图编排、工具路由、关联说明和输出校验。
-- `src/fund_advisor_app/`：Python Agent API、SSE、临时会话和兼容 CLI。
-- Go 网页后端：Dashboard BFF、静态托管、Agent SSE 代理，只取数聚合，不做任何金融
-  计算或审计改写；边界见 `docs/GO_PYTHON_CONTRACT.md`。
+- `src/fund_advisor_app/`：Python Agent API、SSE 和临时会话。
+- Java 网页后端：Dashboard BFF、静态托管、Agent SSE 代理，只取数聚合，不做任何
+  金融计算或审计改写；边界见 `docs/ARCHITECTURE.md`。
 - `web/`：React 界面，不实现业务计算或金融事实生成。
 
-语言分工：Go 只做网页后端（调用 Data API、有界并发聚合、超时、静态托管、SSE
-代理）；Python 保留 Data API、Agent、MCP、Skill 和全部金融计算与审计。当前 Go BFF
-未实现结果缓存、请求去重或业务限流。Go 不得直接实现 AKShare 接口，不得重算、改写、
-四舍五入、插值或合成任何净值、价格、PE、PB、收益率、回撤、分位、限额或交易状态，
-必须原样透传 `ToolEnvelope` 的 `data_audit`、`frame_sha256`、warnings 和错误码。
+语言分工：Java 只做网页后端（调用 Data API、有界并发聚合、超时、静态托管、SSE
+代理）；Python 保留 Data API、Agent、MCP、Agent Skill 和全部金融计算与审计。Java BFF
+不得直接实现 AKShare 接口，不得重算、改写、四舍五入、插值或合成任何净值、价格、
+PE、PB、收益率、回撤、分位、限额或交易状态，必须原样透传 `ToolEnvelope` 的
+`data_audit`、`frame_sha256`、warnings 和错误码。
 
-源码层级顺依赖方向：仓库级 `src/` 存放 Data API、Agent 与 MCP，
-`skills/akshare-fund-advisor/` 回归纯数据层（SKILL.md + scripts + references），可独立
-拷贝。
+Java BFF 固定使用 Java 21、Spring Boot WebFlux、Maven、WebClient、Jackson、
+Bean Validation、Actuator 和 JUnit 5。当前不引入 Spring Cloud Gateway、Feign、Lombok、
+数据库、Redis 或 MQ。所有 Data API 调用共享全局并发门禁，Agent SSE 必须逐块转发，
+不得缓冲完整响应。
+
+源码层级顺依赖方向：仓库级 `src/` 存放 Data API、data_core、Agent 与 MCP，
+`skills/akshare-fund-advisor/` 只保留 Agent Skill 包装、内部脚本与说明，可独立拷贝。
 
 LangGraph 只使用 `StateGraph` 和显式条件边。不得恢复 LangChain Agent、开放式 ReAct、
 动态工具规划、数据库 checkpoint、长期记忆或多 Agent。
 
-Web 必须通过 Agent API 调用研究能力，不复制图编排或金融计算。已有 CLI 仍共用 Agent
-API，但不得继续扩展产品能力。会话只允许保存进程内的最近消息、上一轮实体和意图；
-不得把对话历史升级为市场事实，不得引入数据库或跨会话记忆。
+Web 必须通过 Agent API 调用研究能力，不复制图编排或金融计算。会话只允许保存进程内
+的最近消息、上一轮实体和意图；不得把对话历史升级为市场事实，不得引入数据库或跨会话
+记忆。
 
 ## Agent 关联说明
 
@@ -166,15 +174,16 @@ docker compose -f deploy/compose/compose.yaml --profile test build test
 docker compose -f deploy/compose/compose.yaml run --rm test
 ```
 
-Go 网页后端改动须在容器内执行 `go vet` 和 Go 单元测试：
+Java BFF 迁移完成后须在容器内执行 Maven 验证：
 
 ```bash
-docker run --rm -v "$PWD/web-backend":/src -w /src golang:1.22-alpine \
-  sh -c "gofmt -l . && go vet ./... && go test ./..."
+docker run --rm -v "$PWD/web-backend":/workspace -w /workspace \
+  eclipse-temurin:21-jdk ./mvnw verify
 ```
 
 Docker 相关改动仍须重新运行 Compose 测试、五个服务健康检查、Data API 健康与
-Fund/Web MCP 工具发现和 Web/API 闭环，并验证 Go→Data API 取数与 Go→Agent SSE 连通。
+Fund/Web MCP 工具发现和 Web/API 闭环，并验证 Java→Data API 取数与 Java→Agent SSE
+连通。
 
 本地 `.venv-agent` 只是可选调试环境，未纳入版本控制，需先按 README 创建后才能使用：
 
@@ -187,10 +196,7 @@ AKSHARE_FUND_VENV="$PWD/.venv-agent" bash "$SKILL_DIR/scripts/run.sh" audit
 
 ## 文档同步
 
-- 产品方向：`docs/PRODUCT.md`
-- 架构与组件边界：`README.md`、`docs/HLD.md`
-- Go/Python 边界与透传契约：`docs/GO_PYTHON_CONTRACT.md`
-- 错误语义：`docs/ERROR_HANDLING.md`
-- Web MCP：`docs/WEB_RESEARCH_MCP.md`
+- 项目入口和运行方式：`README.md`
+- 架构、契约、错误与安全边界：`docs/ARCHITECTURE.md`
+- 实现状态和优先级：`docs/ROADMAP.md`
 - Skill 接口和指标：Skill 目录及 `references/`
-- 实施优先级：`docs/tasks/`

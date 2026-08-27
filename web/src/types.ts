@@ -206,6 +206,67 @@ export interface IndexDetailResponse {
   envelope?: ToolEnvelope<IndexValuationData>;
 }
 
+export interface StockValuationData {
+  ok: boolean;
+  action: string;
+  stock: {
+    code: string;
+    name: string;
+    qualified_code: string;
+  };
+  actual_source: {
+    provider: string;
+    interfaces: string[];
+    available_series: string[];
+    price_adjustment: string;
+  };
+  lookback: {
+    requested_years: number;
+    actual_start_date: string | null;
+    latest_date: string | null;
+    statistics_frequency: string;
+    chart_max_points: number;
+  };
+  summary: {
+    pe_ttm: MetricSummary;
+    pb: MetricSummary;
+    stock_price: {
+      current: number | null;
+      unit: string;
+      adjustment: string;
+    };
+    combined_percentile: null;
+    combined_percentile_policy: string;
+  };
+  charts: {
+    pe_ttm: ChartMetric | null;
+    pb: ChartMetric | null;
+    stock_price: ChartMetric | null;
+  };
+  data_quality: {
+    pe_ttm_available: boolean;
+    pb_available: boolean;
+    price_available: boolean;
+    available_series: string[];
+    missing_series: string[];
+    latest_date: string | null;
+    warnings: Array<Record<string, unknown> | string>;
+  };
+  limitations: string[];
+  data_integrity: {
+    ai_generated_market_data: boolean;
+    interpolation: string;
+    forward_fill: string;
+    raw_series_origin: string;
+  };
+}
+
+export interface StockDetailResponse {
+  stock: string;
+  meta: DatasetMeta;
+  envelope?: ToolEnvelope<StockValuationData>;
+}
+
 export interface FundIdentity {
   code: string;
   name: string;
@@ -227,6 +288,135 @@ export interface FundSearchResponse {
   query: string;
   meta: DatasetMeta;
   envelope?: ToolEnvelope<FundSearchData>;
+}
+
+export interface FundAnalysisData {
+  ok: boolean;
+  action: string;
+  fund: FundIdentity;
+  lookback_years: number;
+  metric_basis: string;
+  basis_note: string;
+  fund_profile?: {
+    full_name?: string | null;
+    investment_type?: string | null;
+    manager?: string | null;
+    inception_date?: string | null;
+    share_scale?: string | null;
+    management_fee?: string | null;
+    custodian_fee?: string | null;
+    benchmark?: string | null;
+    fund_company?: string | null;
+  } | null;
+  metrics?: {
+    latest_date?: string | null;
+    latest_value?: number | null;
+    observations?: number | null;
+    actual_start_date?: string | null;
+    returns_pct?: Record<string, number | null>;
+    current_drawdown_pct?: number | null;
+    max_drawdown_pct?: number | null;
+    annualized_volatility_pct?: number | null;
+    positive_day_ratio_pct?: number | null;
+    history_position_percentile?: number | null;
+    history_position_level?: string | null;
+    trend?: string | null;
+    holding_experience?: {
+      annualized_return_pct?: number | null;
+      downside_volatility_pct?: number | null;
+      calmar_ratio?: number | null;
+      longest_underwater_days?: number | null;
+    } | null;
+  } | null;
+  portfolio_snapshot?: {
+    asset_allocation?: {
+      report_date?: string | null;
+      items?: Array<{
+        asset_type: string;
+        weight_pct: number | null;
+      }>;
+      note?: string | null;
+    } | null;
+  } | null;
+  metric_coverage?: {
+    available?: string[];
+    missing_or_not_reliably_available?: string[];
+    rule?: string;
+  } | null;
+}
+
+export interface FundProfileData {
+  ok: boolean;
+  action: string;
+  fund: FundIdentity;
+  basic_info: Record<string, string | number | null>;
+  fee_rules: Array<{
+    fee_type: string | null;
+    condition: string | null;
+    fee: number | null;
+  }>;
+  asset_allocation: Array<{
+    asset_type: string | null;
+    weight_pct: number | null;
+  }>;
+  notes?: string | null;
+}
+
+export interface FundRatingData {
+  ok: boolean;
+  action: string;
+  fund: FundIdentity;
+  fund_type?: string | null;
+  fund_company?: string | null;
+  ratings: {
+    shanghai_securities?: number | null;
+    merchants_securities?: number | null;
+    jian_jin_xin?: number | null;
+    morningstar?: number | null;
+    five_star_count?: number | null;
+  };
+  notes?: string | null;
+}
+
+export interface FundStatusData {
+  ok: boolean;
+  action: string;
+  fund: FundIdentity;
+  availability: {
+    confirmed: boolean;
+    mode?: string | null;
+    source_report_date?: string | null;
+    latest_nav_or_income?: number | null;
+    off_exchange?: {
+      subscription_status?: string | null;
+      redemption_status?: string | null;
+      can_submit_subscription?: boolean | null;
+      can_submit_redemption?: boolean | null;
+      next_open_date?: string | null;
+      minimum_purchase_cny?: number | null;
+      daily_limit_cny?: number | null;
+      purchase_fee_pct?: number | null;
+      note?: string | null;
+    } | null;
+    exchange?: Record<string, unknown> | null;
+    message?: string | null;
+  };
+}
+
+export interface FundProductSection<T> {
+  meta: DatasetMeta;
+  envelope?: ToolEnvelope<T>;
+}
+
+export interface FundProductResponse {
+  fund: string;
+  status: DataStatus;
+  sections: {
+    analysis: FundProductSection<FundAnalysisData>;
+    profile: FundProductSection<FundProfileData>;
+    rating: FundProductSection<FundRatingData>;
+    trading_status: FundProductSection<FundStatusData>;
+  };
 }
 
 export interface ETFDashboardChart {
@@ -324,4 +514,25 @@ export interface ETFDetailResponse {
   fund: string;
   meta: DatasetMeta;
   envelope?: ToolEnvelope<ETFDashboardData>;
+}
+
+export interface OverviewCapability {
+  status: DataStatus;
+  message: string;
+}
+
+export interface FundOverviewResponse {
+  fund: string;
+  meta: DatasetMeta;
+  envelope?: ToolEnvelope<FundAnalysisData>;
+}
+
+export interface OverviewResponse {
+  status: DataStatus;
+  index: IndexDetailResponse;
+  etf: ETFDetailResponse;
+  fund: FundOverviewResponse;
+  stock: StockDetailResponse;
+  fund_screening: OverviewCapability;
+  stock_screening: OverviewCapability;
 }

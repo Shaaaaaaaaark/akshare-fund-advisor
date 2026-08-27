@@ -21,6 +21,7 @@
 .etf-spot-strip,
 .etf-range-strip,
 .etf-date-range,
+.etf-time-navigator,
 .etf-chart-section,
 .etf-warning-list,
 .etf-trend-section,
@@ -51,7 +52,7 @@
 
 .etf-trust-line {
   color: #6b7280;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .etf-trust-line i {
@@ -67,7 +68,7 @@
   height: 24px;
   place-items: center;
   color: #ffffff;
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 800;
   background: #2563eb;
   border-radius: 5px;
@@ -82,7 +83,7 @@
   gap: 6px;
   padding: 0 10px;
   color: #4f5968;
-  font-size: 10px;
+  font-size: 12px;
   background: #ffffff;
   border: 1px solid #d9dee6;
   border-radius: 6px;
@@ -112,7 +113,7 @@
 .etf-brand-line {
   margin: 0 0 2px;
   color: #6b7280;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 650;
 }
 
@@ -135,7 +136,7 @@
   max-width: 980px;
   margin: 2px 0 0;
   color: #6b7280;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -146,7 +147,7 @@
   gap: 7px;
   padding: 0 12px;
   color: #ffffff;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   text-decoration: none;
   background: #2563eb;
@@ -213,7 +214,7 @@
   height: 34px;
   padding: 0 12px;
   color: #ffffff;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
   background: #2563eb;
   border: 1px solid #2563eb;
@@ -244,7 +245,7 @@
 }
 
 .etf-active-code span {
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .etf-active-code strong {
@@ -255,7 +256,7 @@
 .etf-search-error {
   grid-column: 1 / -1;
   color: #a33f3f;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .etf-search-results {
@@ -295,12 +296,12 @@
 
 .etf-search-results strong {
   color: #2563eb;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .etf-search-results span {
   overflow: hidden;
-  font-size: 10px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -308,14 +309,14 @@
 .etf-search-results small {
   grid-column: 1 / -1;
   color: #858e9c;
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .etf-search-results>span {
   grid-column: 1 / -1;
   padding: 16px;
   color: #737c8a;
-  font-size: 10px;
+  font-size: 12px;
   text-align: center;
 }
 
@@ -342,7 +343,7 @@
 
 .etf-metric-grid span {
   color: #6b7280;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .etf-metric-grid strong {
@@ -379,12 +380,12 @@
 .etf-spot-strip span,
 .etf-spot-strip small {
   color: #6b7280;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .etf-spot-strip b {
   color: #303846;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .etf-range-strip {
@@ -431,13 +432,13 @@
   flex-direction: column;
   gap: 2px;
   color: #7a8391;
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .etf-range-strip b {
   overflow: hidden;
   color: #303846;
-  font-size: 9px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -471,7 +472,7 @@
 
 .etf-date-range label span {
   color: #6b7280;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .etf-date-range input {
@@ -480,7 +481,7 @@
   padding: 0 10px;
   color: #303846;
   font: inherit;
-  font-size: 10px;
+  font-size: 12px;
   background: #ffffff;
   border: 1px solid #d9dee6;
   border-radius: 6px;
@@ -518,12 +519,12 @@
 }
 
 .etf-chart-section>header strong {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .etf-chart-section>header span {
   color: #7b8492;
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .etf-linked-charts {
@@ -544,11 +545,11 @@
 }
 
 .etf-warning-list strong {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .etf-warning-list span {
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.5;
 }
 
@@ -572,7 +573,7 @@
 
 .etf-trend-section>header>span {
   color: #7d8694;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .etf-trend-table-wrap {
@@ -606,7 +607,7 @@
   gap: 6px;
   padding: 0 13px;
   color: inherit;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   background: transparent;
   border: 0;
@@ -626,7 +627,7 @@
   height: 42px;
   padding: 8px 13px;
   color: #303846;
-  font-size: 10px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   border-bottom: 1px solid #edf0f4;
 }
@@ -660,12 +661,12 @@
 
 .etf-data-boundary strong {
   color: #46505f;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .etf-data-boundary span,
 .etf-data-boundary code {
-  font-size: 8px;
+  font-size: 11px;
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
@@ -706,7 +707,7 @@
 .etf-loading strong,
 .etf-error-state span {
   color: #717a88;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .etf-error-state strong {
@@ -934,7 +935,7 @@
 }
 
 .workbench-page.etf-dashboard-page {
-  padding: 22px 16px 36px;
+  padding: 22px 8px 36px 9px;
 }
 
 .etf-reference-header,
@@ -959,7 +960,7 @@
 .etf-global-controls {
   position: fixed;
   top: 14px;
-  right: 16px;
+  right: 31px;
   z-index: 50;
   display: flex;
   max-width: calc(100vw - 32px);
@@ -970,9 +971,33 @@
 
 .etf-global-controls .etf-agent-link,
 .etf-global-controls .etf-utility-button {
-  min-height: 36px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0 10px;
   box-shadow: 0 10px 22px rgb(31 41 55 / 12%);
+  text-decoration: none;
   white-space: nowrap;
+}
+
+.etf-global-controls>:nth-child(1) {
+  width: 95px;
+  min-width: 95px;
+}
+
+.etf-global-controls>:nth-child(2) {
+  width: 96px;
+  min-width: 96px;
+}
+
+.etf-global-controls>:nth-child(3) {
+  width: 82px;
+  min-width: 82px;
+}
+
+.etf-global-controls>:nth-child(4),
+.etf-global-controls>:nth-child(5) {
+  width: 54px;
+  min-width: 54px;
 }
 
 .etf-global-controls .etf-utility-button:disabled {
@@ -985,8 +1010,112 @@
 }
 
 .etf-reference-header {
-  padding-right: 520px;
+  position: relative;
+  padding-right: 0;
   margin-bottom: 14px;
+}
+
+.etf-hot-polls {
+  display: flex;
+  width: 412px;
+  max-width: calc(100vw - 610px);
+  min-height: 28px;
+  margin-bottom: 8px;
+  overflow-x: auto;
+  color: #991b1b;
+  background: linear-gradient(90deg, #fef2f2, #fff7ed);
+  border: 1px solid rgb(220 38 38 / 18%);
+  border-radius: 999px;
+  box-shadow: 0 4px 12px rgb(153 27 27 / 6%);
+  scrollbar-width: none;
+}
+
+.etf-hot-polls::-webkit-scrollbar,
+.etf-source-ticker>div::-webkit-scrollbar {
+  display: none;
+}
+
+.etf-hot-poll-line {
+  display: flex;
+  min-width: max-content;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 7px 2px 6px;
+  white-space: nowrap;
+}
+
+.etf-hot-poll-line>strong,
+.etf-poll-topic {
+  display: inline-flex;
+  align-items: center;
+}
+
+.etf-hot-poll-line>strong {
+  gap: 3px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.etf-hot-poll-line>strong svg {
+  width: 13px;
+  height: 13px;
+  color: #dc2626;
+  fill: #dc2626;
+}
+
+.etf-poll-topic {
+  gap: 6px;
+}
+
+.etf-poll-topic>i {
+  width: 1px;
+  height: 14px;
+  margin: 0 2px;
+  background: rgb(153 27 27 / 18%);
+}
+
+.etf-poll-topic>span {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.etf-poll-topic button {
+  display: inline-flex;
+  height: 23px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  color: #b42318;
+  font-size: 12px;
+  font-weight: 700;
+  background: rgb(255 255 255 / 74%);
+  border: 1px solid rgb(220 38 38 / 22%);
+  border-radius: 999px;
+}
+
+.etf-poll-topic button:hover,
+.etf-poll-topic button.active {
+  color: #ffffff;
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+.etf-poll-topic button b {
+  min-width: 14px;
+  height: 15px;
+  padding: 0 4px;
+  color: rgb(75 85 99 / 82%);
+  font-size: 12px;
+  line-height: 15px;
+  text-align: center;
+  background: rgb(107 114 128 / 10%);
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+
+.etf-poll-topic button.active b {
+  color: #991b1b;
+  background: rgb(255 255 255 / 82%);
 }
 
 .etf-reference-header .etf-brand-line {
@@ -1011,21 +1140,131 @@
   padding: 0;
 }
 
+.etf-support-row {
+  display: flex;
+  width: 622px;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin-top: 13px;
+}
+
+.etf-featured-source,
+.etf-source-ticker,
+.etf-audit-jump {
+  height: 31px;
+  border-radius: 999px;
+}
+
+.etf-featured-source {
+  position: relative;
+  display: inline-flex;
+  width: 191px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 13px;
+  overflow: hidden;
+  color: #6f3f00;
+  background: linear-gradient(110deg, #ffe896, #ffffff 44%, #ffcf5f);
+  border: 1px solid rgb(184 116 18 / 82%);
+  box-shadow:
+    0 0 0 1px rgb(255 231 145 / 42%),
+    0 10px 28px rgb(184 116 18 / 16%);
+  white-space: nowrap;
+}
+
+.etf-featured-source span {
+  color: #9a5b00;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.etf-featured-source strong {
+  color: #4c2a00;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.etf-source-ticker {
+  display: flex;
+  width: 260px;
+  min-width: 0;
+  flex: 0 0 260px;
+  align-items: center;
+  overflow: hidden;
+  background: linear-gradient(110deg, #fff7d5, #ffffff 48%, #e8f3ff);
+  border: 1px solid rgb(230 169 45 / 58%);
+  box-shadow: 0 8px 24px rgb(206 148 35 / 12%);
+}
+
+.etf-source-ticker>span {
+  flex: 0 0 auto;
+  padding: 0 10px 0 12px;
+  color: #8c5c00;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  border-right: 1px solid rgb(230 169 45 / 42%);
+}
+
+.etf-source-ticker>div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 18px;
+  padding: 0 16px;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+
+.etf-source-ticker b {
+  flex: 0 0 auto;
+  color: #3a4251;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.etf-audit-jump {
+  display: inline-flex;
+  width: 155px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  color: #7d3b00;
+  font-size: 12px;
+  font-weight: 750;
+  background: linear-gradient(110deg, #ffe59b, #ffffff 44%, #ffd2e2);
+  border: 1px solid rgb(219 119 30 / 62%);
+  box-shadow: 0 8px 20px rgb(219 119 30 / 14%);
+  white-space: nowrap;
+}
+
+.etf-audit-jump svg {
+  width: 15px;
+  height: 15px;
+}
+
 .etf-meta-line {
-  margin: 5px 0 0;
+  width: 42%;
+  margin: 0;
   color: var(--etf-muted);
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.35;
 }
 
 .etf-feedback-row {
   display: flex;
   width: max-content;
-  max-width: calc(100vw - 390px);
+  max-width: calc(100vw - 300px);
   min-height: 28px;
   align-items: center;
   gap: 6px;
-  margin-top: 7px;
+  margin-top: 5px;
   overflow-x: auto;
   color: var(--etf-muted);
   scrollbar-width: none;
@@ -1091,10 +1330,16 @@
 }
 
 .etf-selector-toolbar {
+  position: absolute;
+  top: 66px;
+  right: 226px;
+  left: calc(30% + 6px);
   display: grid;
-  grid-template-columns: auto minmax(170px, 0.72fr) minmax(280px, 1.28fr);
+  width: auto;
+  max-width: none;
+  grid-template-columns: 82px minmax(145px, 0.75fr) minmax(220px, 1.25fr);
   gap: 10px;
-  margin-bottom: 12px;
+  margin: 0;
 }
 
 .etf-selector-toolbar button,
@@ -1109,6 +1354,11 @@
   border: 1px solid var(--etf-border);
   border-radius: 6px;
   box-shadow: 0 4px 14px rgb(31 41 55 / 5%);
+}
+
+.etf-selector-toolbar select {
+  height: 37px;
+  align-self: center;
 }
 
 .etf-selector-toolbar button {
@@ -1158,12 +1408,15 @@
 }
 
 .etf-metric-grid {
-  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 10px;
+  row-gap: 11px;
   margin-bottom: 12px;
 }
 
 .etf-metric-grid>div {
-  min-height: 70px;
+  height: 69px;
+  min-height: 69px;
   padding: 10px 12px;
   border-radius: 8px;
   box-shadow: 0 4px 14px rgb(31 41 55 / 6%);
@@ -1180,7 +1433,7 @@
   margin-left: 5px;
   place-items: center;
   color: #7e8795;
-  font-size: 9px;
+  font-size: 11px;
   content: "?";
   border: 1px solid #aeb5c0;
   border-radius: 50%;
@@ -1192,6 +1445,7 @@
 }
 
 .etf-spot-strip {
+  display: none;
   margin-bottom: 12px;
   border-radius: 8px;
 }
@@ -1202,8 +1456,9 @@
 }
 
 .etf-range-strip button {
-  min-height: 58px;
-  padding: 8px 10px;
+  height: 45px;
+  min-height: 45px;
+  padding: 5px 10px;
   border-radius: 8px;
   box-shadow: 0 4px 14px rgb(31 41 55 / 5%);
 }
@@ -1214,7 +1469,7 @@
 }
 
 .etf-range-strip span {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .etf-range-strip b {
@@ -1223,10 +1478,11 @@
 }
 
 .etf-date-range {
+  height: 84px;
   min-height: 64px;
   grid-template-columns: repeat(2, minmax(150px, 1fr)) auto auto;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   padding: 10px 12px;
   border-radius: 8px;
   box-shadow: 0 4px 14px rgb(31 41 55 / 5%);
@@ -1247,6 +1503,134 @@
   font-size: 13px;
 }
 
+.etf-time-navigator {
+  min-height: 84px;
+  margin-bottom: 12px;
+  padding: 8px 12px 10px;
+  background: var(--etf-surface);
+  border: 1px solid var(--etf-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgb(31 41 55 / 5%);
+}
+
+.etf-time-navigator>header {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+
+.etf-time-navigator>header>div:first-child {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.etf-time-navigator>header strong {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.etf-time-navigator>header span {
+  color: var(--etf-muted);
+  font-size: 12px;
+}
+
+.etf-time-track {
+  position: relative;
+  height: 22px;
+  background:
+    linear-gradient(90deg, rgb(37 99 235 / 8%), rgb(17 138 116 / 8%)),
+    var(--etf-soft);
+  border: 1px solid var(--etf-border);
+  border-radius: 999px;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.etf-time-window {
+  position: absolute;
+  top: 3px;
+  right: calc(100% - var(--range-end));
+  bottom: 3px;
+  left: var(--range-start);
+  background: rgb(37 99 235 / 16%);
+  border: 1px solid rgb(37 99 235 / 45%);
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 55%);
+  pointer-events: none;
+}
+
+.etf-time-range {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  appearance: none;
+  background: transparent;
+  pointer-events: none;
+}
+
+.etf-time-range::-webkit-slider-runnable-track {
+  height: 22px;
+  background: transparent;
+}
+
+.etf-time-range::-moz-range-track {
+  height: 22px;
+  background: transparent;
+  border: 0;
+}
+
+.etf-time-range::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  appearance: none;
+  background: var(--etf-surface);
+  border: 2px solid var(--etf-primary);
+  border-radius: 50%;
+  box-shadow: 0 2px 7px rgb(31 41 55 / 18%);
+  cursor: ew-resize;
+  pointer-events: auto;
+}
+
+.etf-time-range::-moz-range-thumb {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  background: var(--etf-surface);
+  border: 2px solid var(--etf-primary);
+  border-radius: 50%;
+  box-shadow: 0 2px 7px rgb(31 41 55 / 18%);
+  cursor: ew-resize;
+  pointer-events: auto;
+}
+
+.etf-time-range-start {
+  z-index: 2;
+}
+
+.etf-time-range-end {
+  z-index: 3;
+}
+
+.etf-time-range:disabled::-webkit-slider-thumb {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.etf-time-range:focus-visible {
+  outline: 2px solid rgb(37 99 235 / 45%);
+  outline-offset: 2px;
+}
+
 .etf-chart-section {
   scroll-margin-top: 12px;
   margin-bottom: 14px;
@@ -1264,11 +1648,11 @@
 }
 
 .etf-chart-section>header span {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .etf-linked-charts {
-  height: 920px;
+  height: 1050px;
 }
 
 .etf-trend-section h2 {
@@ -1644,6 +2028,49 @@ body.research-agent-dialog-open {
   border-color: rgb(91 140 255 / 52%);
 }
 
+.theme-dark .etf-hot-polls {
+  color: #fecaca;
+  background: linear-gradient(90deg, rgb(127 29 29 / 22%), rgb(69 26 3 / 16%));
+  border-color: rgb(248 113 113 / 32%);
+}
+
+.theme-dark .etf-poll-topic button {
+  color: #fecaca;
+  background: rgb(127 29 29 / 18%);
+  border-color: rgb(248 113 113 / 32%);
+}
+
+.theme-dark .etf-featured-source,
+.theme-dark .etf-source-ticker,
+.theme-dark .etf-audit-jump {
+  color: #eef2f7;
+  background: #202634;
+  border-color: #5d5031;
+  box-shadow: none;
+}
+
+.theme-dark .etf-featured-source span,
+.theme-dark .etf-featured-source strong,
+.theme-dark .etf-source-ticker>span,
+.theme-dark .etf-source-ticker b {
+  color: #e8d89f;
+}
+
+.theme-dark .etf-time-navigator {
+  background: #151a23;
+  border-color: #303949;
+}
+
+.theme-dark .etf-time-track {
+  background: #1e2633;
+  border-color: #303949;
+}
+
+.theme-dark .etf-time-range::-webkit-slider-thumb,
+.theme-dark .etf-time-range::-moz-range-thumb {
+  background: #151a23;
+}
+
 @media (max-width: 980px) {
   .workbench-page.etf-dashboard-page {
     padding: 14px 10px 28px;
@@ -1654,6 +2081,24 @@ body.research-agent-dialog-open {
     padding-right: 0;
   }
 
+  .etf-hot-polls {
+    max-width: 100%;
+  }
+
+  .etf-support-row {
+    width: min(622px, 100%);
+  }
+
+  .etf-meta-line {
+    width: 100%;
+  }
+
+  .etf-selector-toolbar {
+    position: static;
+    width: 100%;
+    margin-top: 10px;
+  }
+
   .etf-global-controls {
     top: 10px;
     right: 10px;
@@ -1662,6 +2107,7 @@ body.research-agent-dialog-open {
 
   .etf-global-controls .etf-agent-link,
   .etf-global-controls .etf-utility-button {
+    height: 34px;
     min-height: 34px;
     padding: 0 10px;
   }
@@ -1669,6 +2115,10 @@ body.research-agent-dialog-open {
   .etf-feedback-row {
     width: 100%;
     max-width: 100%;
+  }
+
+  .etf-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .etf-search-results-inline {
@@ -1692,11 +2142,17 @@ body.research-agent-dialog-open {
 
   .etf-global-controls .etf-agent-link,
   .etf-global-controls .etf-utility-button {
+    height: 31px;
     min-height: 31px;
     padding: 0 7px;
     border-radius: 8px;
     box-shadow: none;
     font-size: 11px;
+  }
+
+  .etf-global-controls>:nth-child(n) {
+    width: auto;
+    min-width: max-content;
   }
 
   .etf-global-controls .etf-home-link {
@@ -1714,6 +2170,28 @@ body.research-agent-dialog-open {
 
   .etf-reference-header .etf-title-line h1 {
     font-size: 20px;
+  }
+
+  .etf-support-row {
+    display: grid;
+    width: 100%;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 6px;
+  }
+
+  .etf-featured-source,
+  .etf-audit-jump {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+  }
+
+  .etf-source-ticker {
+    width: 100%;
+    min-width: 0;
+    flex: 1 1 auto;
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .etf-meta-line {
@@ -1794,6 +2272,8 @@ body.research-agent-dialog-open {
 
   .etf-range-strip button {
     display: grid;
+    height: auto;
+    min-height: 58px;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     box-shadow: none;
     scroll-snap-align: start;
@@ -1809,6 +2289,8 @@ body.research-agent-dialog-open {
   }
 
   .etf-date-range {
+    height: auto;
+    min-height: 0;
     grid-template-columns: 1fr 1fr;
     gap: 8px;
     box-shadow: none;
@@ -1818,6 +2300,22 @@ body.research-agent-dialog-open {
   .etf-date-range button {
     width: 100%;
     border-radius: 8px;
+  }
+
+  .etf-time-navigator {
+    min-height: 76px;
+    padding: 8px 10px;
+    box-shadow: none;
+  }
+
+  .etf-time-navigator>header {
+    align-items: flex-start;
+  }
+
+  .etf-time-navigator>header>div:first-child {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
   }
 
   .etf-chart-section {
@@ -1895,7 +2393,7 @@ body.research-agent-dialog-open {
   }
 
   .etf-metric-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -1957,7 +2455,7 @@ body.research-agent-dialog-open {
 
 /* wangwang-etf page composition */
 .etf-reference-header {
-  padding-right: 330px;
+  padding-right: 0;
 }
 
 .etf-dashboard-grid,
@@ -2038,7 +2536,7 @@ body.research-agent-dialog-open {
 .etf-rail-list span,
 .etf-rail-list small {
   color: var(--etf-muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .etf-rail-list small {
@@ -2069,7 +2567,7 @@ body.research-agent-dialog-open {
 
 .etf-trend-panel header span {
   color: var(--etf-muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .etf-trend-panel .etf-trend-table-wrap {
@@ -2245,17 +2743,15 @@ body.research-agent-dialog-open {
   }
 
   .etf-global-controls {
-    position: absolute;
-    top: 8px;
-    right: 10px;
-    width: auto;
-    max-width: calc(100vw - 176px);
-    overflow: hidden;
+    position: static;
+    width: 100%;
+    max-width: none;
+    overflow-x: auto;
   }
 
   .etf-reference-header {
-    min-height: 182px;
-    padding-top: 0;
+    min-height: 0;
+    padding-top: 10px;
   }
 
   .etf-reference-header .etf-brand-line {
@@ -2263,7 +2759,7 @@ body.research-agent-dialog-open {
   }
 
   .etf-reference-header .etf-title-line {
-    width: 164px;
+    width: 100%;
     min-height: 34px;
     flex-wrap: nowrap;
   }
@@ -2279,5 +2775,228 @@ body.research-agent-dialog-open {
   .etf-reference-header .etf-title-line .data-status,
   .etf-reference-header .etf-refresh-button {
     display: none;
+  }
+
+  .etf-time-navigator .data-status {
+    display: none;
+  }
+
+  .etf-time-navigator .etf-chart-actions {
+    width: auto;
+    min-width: max-content;
+  }
+
+  .etf-time-navigator .etf-chart-actions button:first-child {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 360px) {
+  .etf-metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .etf-support-row {
+    grid-template-columns: 1fr;
+  }
+
+  .etf-source-ticker {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+/* Content must remain visible when values or labels are wider than expected. */
+.etf-metric-grid>div {
+  height: auto;
+}
+
+.etf-metric-grid strong {
+  min-width: 0;
+  max-width: 100%;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.etf-range-strip b {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.etf-feedback-row {
+  width: 100%;
+  max-width: 100%;
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.etf-source-ticker>div {
+  overflow: visible;
+}
+
+@media (min-width: 761px) {
+  .etf-hot-polls {
+    width: 560px;
+    max-width: calc(100vw - 470px);
+    overflow: visible;
+    border-radius: 12px;
+  }
+
+  .etf-hot-poll-line {
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 760px) {
+  .etf-global-controls {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: visible;
+  }
+
+  .etf-global-controls>:nth-child(1) {
+    grid-column: span 2;
+  }
+
+  .etf-global-controls>:nth-child(n) {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+  }
+
+  .etf-hot-polls {
+    width: 100%;
+    max-width: none;
+    overflow: visible;
+    border-radius: 10px;
+  }
+
+  .etf-hot-poll-line {
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+
+  .etf-poll-topic {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .etf-source-ticker {
+    height: auto;
+    min-height: 31px;
+  }
+
+  .etf-source-ticker>div {
+    padding: 6px 10px;
+    overflow-wrap: anywhere;
+  }
+
+  .etf-source-ticker b {
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .etf-feedback-row {
+    display: grid;
+    gap: 6px;
+  }
+
+  .etf-feedback-group {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .etf-range-strip {
+    display: grid;
+    grid-auto-flow: row;
+    grid-template-columns: 1fr;
+    overflow: visible;
+  }
+
+  .etf-range-strip button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .etf-metric-grid>div {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .etf-reference-header .etf-title-line {
+    min-height: 0;
+  }
+
+  .etf-reference-header .etf-title-line h1 {
+    overflow: visible;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .etf-metric-grid strong {
+    font-size: 16px;
+  }
+
+  .etf-date-range button {
+    min-width: 0;
+  }
+}
+/* ===== ETF 终端排版修复 =====
+   1. 趋势表原先 min-width:820px，而右侧面板内容宽只有 488px，
+      「成交量」「回撤」两列被 overflow:auto 完全裁掉且没有可见滚动条，
+      用户观感就是表格缺列。改为不设硬性最小宽度并收紧单元格横向内边距，
+      6 列可在面板内完整显示；仍保留 scrollbar-gutter 以便极窄时可滚动。
+   2. 区间摘要卡片固定 height:45px，但内部「价格 / 成交额 / 最大回撤」
+      三组标签数值实际需要 69px，内容被下边界裁断，
+      改为最小高度 + 自动增高。 */
+.etf-trend-table {
+  min-width: 0;
+}
+
+.etf-trend-table th {
+  padding-right: 0;
+  padding-left: 0;
+}
+
+/* 表头排序按钮自带 0 13px 内边距，若在 th 上再叠加横向 padding，
+   列内容宽会被压到 min-content，导致表头文字逐字竖排。 */
+.etf-trend-table th button {
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+.etf-trend-table td {
+  padding-right: 8px;
+  padding-left: 8px;
+  white-space: nowrap;
+}
+
+.etf-trend-table-wrap {
+  scrollbar-gutter: stable;
+}
+
+.etf-range-strip button {
+  height: auto;
+  min-height: 58px;
+}
+
+.etf-range-strip strong {
+  font-size: 14px;
+}
+
+/* 区间摘要卡片在 1600px 以下每列只有 37px，「成交额 742.1 亿」「最大回撤」
+   会折行；改为两列排布后每列 71px，可完整显示。 */
+@media (max-width: 1600px) {
+  .etf-range-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

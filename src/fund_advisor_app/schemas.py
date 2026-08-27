@@ -1,4 +1,4 @@
-"""Contracts shared by the Agent API, web client and terminal client."""
+"""Contracts shared by the Agent API and web client."""
 
 from __future__ import annotations
 

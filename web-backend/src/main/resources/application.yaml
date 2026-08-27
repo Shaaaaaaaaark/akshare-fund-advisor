@@ -1,0 +1,14 @@
+server:
+  port: ${WEB_BACKEND_PORT:8080}
+
+spring:
+  application:
+    name: fund-advisor-web-backend
+  main:
+    banner-mode: "off"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

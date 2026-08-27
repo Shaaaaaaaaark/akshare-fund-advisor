@@ -2,22 +2,21 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
-  Bot,
   CalendarRange,
+  Flame,
   List,
-  Moon,
-  RefreshCw,
-  RotateCcw,
-  Sun,
+  ShieldCheck,
 } from "lucide-react";
 import {
+  type CSSProperties,
   type FormEvent,
+  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useMemo,
   useState,
 } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { fetchETFDetail, searchFunds } from "../api";
 import { warningText } from "../components/display";
@@ -31,7 +30,7 @@ import type {
   FundIdentity
 } from "../types";
 
-const DEFAULT_ETF = "510300";
+const DEFAULT_ETF = "510310";
 const ETF_GROUPS = [
   { value: "all", label: "全部", keyword: "" },
   { value: "hs300", label: "宽基 / 沪深300", keyword: "沪深300" },
@@ -51,6 +50,24 @@ const FEATURE_ITEMS = [
   "基金抱团/打埋伏追踪",
   "其他",
 ];
+const TOP_POLLS = [
+  {
+    id: "broad_market",
+    question: "本周更关注宽基 ETF 吗？",
+    options: [
+      { value: "yes", label: "是", count: 126 },
+      { value: "no", label: "不是", count: 84 },
+    ],
+  },
+  {
+    id: "valuation",
+    question: "你更常看估值还是资金趋势？",
+    options: [
+      { value: "valuation", label: "估值", count: 98 },
+      { value: "flow", label: "趋势", count: 112 },
+    ],
+  },
+] as const;
 
 type TableSortKey =
   | "date"
@@ -92,6 +109,7 @@ export default function FundsPage() {
   const [groupFilter, setGroupFilter] = useState("all");
   const [selectedFeedback, setSelectedFeedback] = useState<string | null>(null);
   const [featureStatus, setFeatureStatus] = useState<string | null>(null);
+  const [pollVotes, setPollVotes] = useState<Record<string, string>>({});
 
   const load = useCallback((signal: AbortSignal) => {
     setLoading(true);
@@ -219,9 +237,11 @@ export default function FundsPage() {
           aria-expanded={agentOpen}
           onClick={() => setAgentOpen(true)}
         >
-          <Bot aria-hidden="true" />
-          问问研究 Agent
+          问问AI研究
         </button>
+        <Link className="etf-utility-button" to="/overview">
+          数据总览页
+        </Link>
         <button type="button" className="etf-utility-button" disabled>
           公开只读
         </button>
@@ -230,7 +250,6 @@ export default function FundsPage() {
           className="etf-utility-button"
           onClick={resetPage}
         >
-          <RotateCcw aria-hidden="true" />
           复位
         </button>
         <button
@@ -238,12 +257,46 @@ export default function FundsPage() {
           className="etf-utility-button"
           onClick={() => setDarkMode((current) => !current)}
         >
-          {darkMode ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
           {darkMode ? "日间" : "夜间"}
         </button>
       </div>
 
       <header className="etf-reference-header">
+        <section className="etf-hot-polls" aria-label="今日站队投票">
+          <div className="etf-hot-poll-line">
+            <strong>
+              <Flame aria-hidden="true" />
+              今日站队
+            </strong>
+            {TOP_POLLS.map((poll, pollIndex) => (
+              <div className="etf-poll-topic" key={poll.id}>
+                {pollIndex > 0 && <i aria-hidden="true" />}
+                <span>{poll.question}</span>
+                {poll.options.map((option) => {
+                  const selected = pollVotes[poll.id] === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={selected ? "active" : ""}
+                      aria-pressed={selected}
+                      onClick={() =>
+                        setPollVotes((current) => ({
+                          ...current,
+                          [poll.id]: option.value,
+                        }))
+                      }
+                    >
+                      {option.label}
+                      <b>{option.count + (selected ? 1 : 0)}</b>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </section>
+
         <div className="etf-brand-line">
           Fund Advisor · ETF 可信数据与审计研究终端
         </div>
@@ -253,18 +306,33 @@ export default function FundsPage() {
               ? `${data.identity.code} ${data.identity.name}`
               : `${activeFund} ETF 研究看板`}
           </h1>
-          {detail && <StatusBadge status={detail.meta.status} />}
+        </div>
+
+        <section className="etf-support-row" aria-label="数据来源与审计">
+          <div className="etf-featured-source">
+            <span>数据工具</span>
+            <strong>AKShare</strong>
+          </div>
+          <div className="etf-source-ticker">
+            <span>来源追踪</span>
+            <div>
+              <b>东方财富 · 新浪证券 · 原始口径</b>
+            </div>
+          </div>
           <button
             type="button"
-            className="etf-refresh-button"
-            aria-label="刷新 ETF 数据"
-            title="刷新 ETF 数据"
-            disabled={loading}
-            onClick={() => setRefreshKey((current) => current + 1)}
+            className="etf-audit-jump"
+            onClick={() =>
+              document
+                .querySelector(".etf-data-boundary")
+                ?.scrollIntoView({ behavior: "smooth", block: "center" })
+            }
           >
-            <RefreshCw aria-hidden="true" className={loading ? "spin" : ""} />
+            <ShieldCheck aria-hidden="true" />
+            查看数据审计
           </button>
-        </div>
+        </section>
+
         <p className="etf-meta-line">
           {data
             ? `${data.identity.type} · 数据更新 ${data.summary.latest_date} · ${data.basis_note}`
@@ -309,55 +377,54 @@ export default function FundsPage() {
             </span>
           )}
         </section>
-      </header>
 
-      <section className="etf-selector-toolbar" aria-label="ETF 选择">
-        <button
-          type="button"
-          className={listOpen ? "active" : ""}
-          aria-expanded={listOpen}
-          onClick={() => setListOpen((current) => !current)}
-        >
-          <List aria-hidden="true" />
-          {listOpen ? "隐藏列表" : "显示列表"}
-        </button>
-        <select
-          aria-label="ETF 分组"
-          value={groupFilter}
-          onChange={(event) => setGroupFilter(event.target.value)}
-        >
-          {ETF_GROUPS.map((group) => (
-            <option key={group.value} value={group.value}>
-              {group.label}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="ETF"
-          value={
-            groupedETFs.some((item) => item.code === activeFund)
-              ? activeFund
-              : ""
-          }
-          onChange={(event) => {
-            const item = selectorETFs.find(
-              (candidate) => candidate.code === event.target.value,
-            );
-            if (item) {
-              selectFund(item);
+        <section className="etf-selector-toolbar" aria-label="ETF 选择">
+          <button
+            type="button"
+            aria-expanded={listOpen}
+            onClick={() => setListOpen((current) => !current)}
+          >
+            <List aria-hidden="true" />
+            {listOpen ? "隐藏列表" : "显示列表"}
+          </button>
+          <select
+            aria-label="ETF 分组"
+            value={groupFilter}
+            onChange={(event) => setGroupFilter(event.target.value)}
+          >
+            {ETF_GROUPS.map((group) => (
+              <option key={group.value} value={group.value}>
+                {group.label}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="ETF"
+            value={
+              groupedETFs.some((item) => item.code === activeFund)
+                ? activeFund
+                : ""
             }
-          }}
-        >
-          {!groupedETFs.some((item) => item.code === activeFund) && (
-            <option value="">选择 ETF</option>
-          )}
-          {groupedETFs.map((item) => (
-            <option key={item.code} value={item.code}>
-              {item.code} {item.name}
-            </option>
-          ))}
-        </select>
-      </section>
+            onChange={(event) => {
+              const item = selectorETFs.find(
+                (candidate) => candidate.code === event.target.value,
+              );
+              if (item) {
+                selectFund(item);
+              }
+            }}
+          >
+            {!groupedETFs.some((item) => item.code === activeFund) && (
+              <option value="">选择 ETF</option>
+            )}
+            {groupedETFs.map((item) => (
+              <option key={item.code} value={item.code}>
+                {item.code} {item.name}
+              </option>
+            ))}
+          </select>
+        </section>
+      </header>
 
       {error ? (
         <ETFError message={error} onRetry={() => setRefreshKey((key) => key + 1)} />
@@ -450,7 +517,63 @@ function ETFContent({
   const warnings = detail.meta.warnings ?? [];
   const [tooltipEnabled, setTooltipEnabled] = useState(true);
   const [mobileView, setMobileView] = useState<"charts" | "trend">("charts");
+  const [draggingHandle, setDraggingHandle] = useState<"start" | "end" | null>(
+    null,
+  );
   const latestRange = data.range_summaries[0];
+  const timelineDates = useMemo(
+    () =>
+      Array.from(
+        new Set(data.charts.price.chart_series.map(([date]) => date)),
+      ).sort(),
+    [data.charts.price.chart_series],
+  );
+  const timelineMax = Math.max(timelineDates.length - 1, 0);
+  const startIndex = boundedDateIndex(timelineDates, activeStart, "start");
+  const endIndex = boundedDateIndex(timelineDates, activeEnd, "end");
+  const rangeStyle = {
+    "--range-start": `${timelineMax ? (startIndex / timelineMax) * 100 : 0}%`,
+    "--range-end": `${timelineMax ? (endIndex / timelineMax) * 100 : 100}%`,
+  } as CSSProperties;
+
+  function setTimelineRange(nextStartIndex: number, nextEndIndex: number) {
+    const nextStart = timelineDates[nextStartIndex];
+    const nextEnd = timelineDates[nextEndIndex];
+    if (!nextStart || !nextEnd) {
+      return;
+    }
+    setDraftStart(nextStart);
+    setDraftEnd(nextEnd);
+    setActiveStart(nextStart);
+    setActiveEnd(nextEnd);
+  }
+
+  function updateTimelineFromPointer(
+    event: Pick<
+      ReactPointerEvent<HTMLDivElement>,
+      "clientX" | "currentTarget"
+    >,
+    handle: "start" | "end" | null,
+  ): "start" | "end" {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const ratio = Math.min(
+      1,
+      Math.max(0, (event.clientX - rect.left) / rect.width),
+    );
+    const nextIndex = Math.round(ratio * timelineMax);
+    const nextHandle =
+      handle ||
+      (Math.abs(nextIndex - startIndex) <= Math.abs(nextIndex - endIndex)
+        ? "start"
+        : "end");
+    if (nextHandle === "start") {
+      setTimelineRange(Math.min(nextIndex, endIndex), endIndex);
+    } else {
+      setTimelineRange(startIndex, Math.max(nextIndex, startIndex));
+    }
+    return nextHandle;
+  }
+
   return (
     <>
       <nav className="etf-mobile-view-switch" aria-label="手机视图切换">
@@ -613,18 +736,17 @@ function ETFContent({
             </button>
           </form>
 
-          <section
-            id="etf-main-chart"
-            className="etf-chart-section"
-            aria-label="ETF 五联图"
-          >
+          <section className="etf-time-navigator" aria-label="图表时间位置">
             <header>
-              <div className="etf-chart-heading-copy">
+              <div>
                 <strong>
                   {activeStart} 至 {activeEnd}
                 </strong>
                 <span>
-                  {data.lookback.source_observations} 个源观测 · 不插值 · 不补点
+                  {activeStart === data.lookback.actual_start_date &&
+                    activeEnd === data.lookback.latest_date
+                    ? "全区间"
+                    : "自定义区间"}
                 </span>
               </div>
               <div className="etf-chart-actions">
@@ -651,6 +773,75 @@ function ETFContent({
                 <StatusBadge status={detail.meta.status} />
               </div>
             </header>
+            <div
+              className="etf-time-track"
+              role="group"
+              aria-label="当前图表时间窗口"
+              style={rangeStyle}
+              onPointerDown={(event) => {
+                if (timelineMax === 0) {
+                  return;
+                }
+                event.currentTarget.setPointerCapture(event.pointerId);
+                setDraggingHandle(updateTimelineFromPointer(event, null));
+              }}
+              onPointerMove={(event) => {
+                if (draggingHandle && event.currentTarget.hasPointerCapture(event.pointerId)) {
+                  updateTimelineFromPointer(event, draggingHandle);
+                }
+              }}
+              onPointerUp={(event) => {
+                if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+                }
+                setDraggingHandle(null);
+              }}
+              onPointerCancel={() => setDraggingHandle(null)}
+              onClick={(event) => {
+                if (timelineMax > 0) {
+                  updateTimelineFromPointer(event, null);
+                }
+              }}
+            >
+              <div className="etf-time-window" aria-hidden="true" />
+              <input
+                className="etf-time-range etf-time-range-start"
+                type="range"
+                aria-label="图表开始日期"
+                min={0}
+                max={timelineMax}
+                value={startIndex}
+                disabled={timelineMax === 0}
+                onChange={(event) =>
+                  setTimelineRange(
+                    Math.min(Number(event.target.value), endIndex),
+                    endIndex,
+                  )
+                }
+              />
+              <input
+                className="etf-time-range etf-time-range-end"
+                type="range"
+                aria-label="图表结束日期"
+                min={0}
+                max={timelineMax}
+                value={endIndex}
+                disabled={timelineMax === 0}
+                onChange={(event) =>
+                  setTimelineRange(
+                    startIndex,
+                    Math.max(Number(event.target.value), startIndex),
+                  )
+                }
+              />
+            </div>
+          </section>
+
+          <section
+            id="etf-main-chart"
+            className="etf-chart-section"
+            aria-label="ETF 五联图"
+          >
             <ETFLinkedCharts
               charts={data.charts}
               startDate={activeStart}
@@ -838,6 +1029,30 @@ function sortRows(rows: ETFRecentRow[], sort: TableSort): ETFRecentRow[] {
         : String(leftValue).localeCompare(String(rightValue));
     return sort.direction === "asc" ? comparison : -comparison;
   });
+}
+
+function boundedDateIndex(
+  dates: string[],
+  target: string,
+  boundary: "start" | "end",
+): number {
+  if (dates.length === 0) {
+    return 0;
+  }
+  const exact = dates.indexOf(target);
+  if (exact >= 0) {
+    return exact;
+  }
+  if (boundary === "start") {
+    const insertion = dates.findIndex((date) => date > target);
+    return insertion < 0 ? dates.length - 1 : insertion;
+  }
+  for (let index = dates.length - 1; index >= 0; index -= 1) {
+    if (dates[index] < target) {
+      return index;
+    }
+  }
+  return 0;
 }
 
 function uniqueFunds(items: FundIdentity[]): FundIdentity[] {

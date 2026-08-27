@@ -178,6 +178,24 @@ export function ValuationCharts({ pe, pb }: ValuationChartsProps) {
 }
 
 export function IndexPointChart({ metric }: { metric: ChartMetric }) {
+  return (
+    <PointChart
+      metric={metric}
+      title="指数点位"
+      ariaLabel="指数点位历史曲线"
+    />
+  );
+}
+
+export function PointChart({
+  metric,
+  title,
+  ariaLabel,
+}: {
+  metric: ChartMetric;
+  title: string;
+  ariaLabel: string;
+}) {
   const option = useMemo(
     () => ({
       animation: false,
@@ -221,7 +239,7 @@ export function IndexPointChart({ metric }: { metric: ChartMetric }) {
       ],
       series: [
         {
-          name: "指数点位",
+          name: title,
           type: "line",
           data: metric.chart_series.map(([, value]) => value),
           showSymbol: false,
@@ -231,7 +249,7 @@ export function IndexPointChart({ metric }: { metric: ChartMetric }) {
         },
       ],
     }),
-    [metric],
+    [metric, title],
   );
 
   return (
@@ -239,7 +257,7 @@ export function IndexPointChart({ metric }: { metric: ChartMetric }) {
       className="index-point-chart"
       option={option as echarts.EChartsOption}
       height={360}
-      ariaLabel="指数点位历史曲线"
+      ariaLabel={ariaLabel}
     />
   );
 }
@@ -262,7 +280,7 @@ function EChart({
     if (!container) {
       return;
     }
-    const chart = echarts.init(container, undefined, { renderer: "svg" });
+    const chart = echarts.init(container, undefined, { renderer: "canvas" });
     chart.setOption(option, { notMerge: true });
     const observer = new ResizeObserver(() => chart.resize());
     observer.observe(container);

@@ -1,51 +1,14 @@
-"""Strongly typed contracts for the Fund Advisor MCP boundary."""
+"""Strongly typed request schemas for the Fund Advisor MCP boundary."""
 
 from __future__ import annotations
 
-from datetime import datetime
-from enum import StrEnum
-from typing import Any, Literal
-from uuid import UUID, uuid4
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
-class ToolName(StrEnum):
-    FUND_SEARCH = "fund_search"
-    FUND_STATUS = "fund_status"
-    FUND_ANALYZE = "fund_analyze"
-    ETF_DASHBOARD = "etf_dashboard"
-    FUND_PROFILE = "fund_profile"
-    FUND_RATING = "fund_rating"
-    INDEX_VALUATION = "index_valuation"
-    STOCK_VALUATION = "stock_valuation"
-    FUND_COMPARE = "fund_compare"
-    INTERFACE_AUDIT = "interface_audit"
-
-
-class ToolError(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    code: str
-    message: str
-    retryable: bool = False
-    details: dict[str, Any] = Field(default_factory=dict)
-
-
-class ToolEnvelope(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    schema_version: Literal["1.0"] = "1.0"
-    request_id: UUID = Field(default_factory=uuid4)
-    tool: ToolName
-    ok: bool
-    data: dict[str, Any] | None = None
-    sources: list[dict[str, Any]] = Field(default_factory=list)
-    data_audit: list[dict[str, Any]] = Field(default_factory=list)
-    data_warnings: list[dict[str, Any] | str] = Field(default_factory=list)
-    data_policy: dict[str, Any] = Field(default_factory=dict)
-    queried_at: datetime
-    error: ToolError | None = None
+from fund_advisor_data_core.contracts import ToolEnvelope as ToolEnvelope
+from fund_advisor_data_core.contracts import ToolError as ToolError
+from fund_advisor_data_core.contracts import ToolName as ToolName
 
 
 class SearchInput(BaseModel):

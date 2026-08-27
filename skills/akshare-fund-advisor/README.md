@@ -152,14 +152,6 @@ LangGraph Agent 可以关联解释基金产品、历史风险、指数估值和�
 域名和标题规则生成，不代表博主身份或内容真实性已经核验；搜索失败时保留已审计的市场
 分析并标记部分结果。
 
-兼容 CLI 通过 Agent API 执行单轮研究：
-
-```bash
-fund-advisor --api-url http://127.0.0.1:8000 ask \
-  "沪深300指数估值" \
-  --output text
-```
-
 默认使用规则关联；只有显式配置 OpenAI-compatible 模型并启用开关时才调用结构化模型。
 
 ## 项目结构
@@ -168,14 +160,14 @@ fund-advisor --api-url http://127.0.0.1:8000 ask \
 skills/akshare-fund-advisor/   # 纯数据层，可独立拷贝
 ├── SKILL.md                 # 模型调用顺序、回答格式和禁止事项
 ├── DESIGN.md                # 系统设计、数据源、指标与策略
-├── USAGE.md                 # 独立安装、命令和排错说明
+├── USAGE.md                 # 独立安装、脚本和排错说明
 ├── requirements.txt         # 锁定的运行依赖
 ├── scripts/
-│   ├── fund_advisor.py      # CLI、数据访问、校验、指标与策略规则
+│   ├── fund_advisor.py      # 内部脚本、数据访问、校验、指标与策略规则
 │   ├── audit_quality_interfaces.py # 候选筛选接口 discovery audit
 │   ├── audit_source_providers.py # 多源代表性真实接口审计
 │   ├── source_validation.py # 可选 Provider 和确定性 Comparator
-│   ├── run.sh               # 选择虚拟环境并启动 CLI
+│   ├── run.sh               # 选择虚拟环境并启动内部脚本
 │   └── setup.sh             # 创建虚拟环境并安装锁定依赖
 ├── tests/
 │   └── test_fund_advisor.py # 指标、降级、审计与错误输出回归测试
@@ -194,7 +186,7 @@ MCP 与 LangGraph Agent 源码位于仓库级源码根（不随 skill 拷贝）�
 src/
 ├── fund_advisor_mcp/        # config、fund/ 市场事实 MCP、web/ 背景 MCP
 ├── fund_advisor_agent/      # LangGraph 固定状态图、FactRef 与门禁
-└── fund_advisor_app/        # Agent API、SSE、临时会话和兼容 CLI
+└── fund_advisor_app/        # Agent API、SSE 和临时会话
 ```
 
 ## 开发验证
@@ -222,7 +214,7 @@ sh -n "$SKILL_DIR/scripts/setup.sh"
 
 - 使用说明：[USAGE.md](USAGE.md)
 - 系统设计：[DESIGN.md](DESIGN.md)
-- 金融 Agent 高层设计：[../../docs/HLD.md](../../docs/HLD.md)
+- 金融 Agent 高层设计：[../../docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)
 - Skill 调用规范：[SKILL.md](SKILL.md)
 - 接口契约：[references/akshare_api.md](references/akshare_api.md)
 - 指标解释：[references/professional_metrics.md](references/professional_metrics.md)

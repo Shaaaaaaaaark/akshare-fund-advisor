@@ -1,0 +1,1004 @@
+.fund-product-page {
+  color: #202733;
+  background: #f5f6f8;
+}
+
+.fund-product-breadcrumb,
+.fund-product-heading,
+.fund-product-toolbar,
+.fund-product-notice,
+.fund-summary-band,
+.fund-product-sections,
+.fund-product-warnings,
+.fund-audit-summary,
+.fund-product-loading,
+.fund-product-failure {
+  width: min(1540px, 100%);
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.fund-product-breadcrumb {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.fund-product-breadcrumb > a,
+.fund-product-breadcrumb > div a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #5d6878;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.fund-product-breadcrumb > div {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.fund-product-breadcrumb svg {
+  width: 14px;
+  height: 14px;
+}
+
+.fund-product-breadcrumb a:hover {
+  color: #2563eb;
+}
+
+.fund-product-heading {
+  display: flex;
+  min-height: 72px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #d9dee6;
+}
+
+.fund-product-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.fund-product-title h1 {
+  margin: 3px 0;
+  color: #202733;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.fund-product-title > span:not(.data-status) {
+  color: #687386;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+}
+
+.fund-product-heading > div > p:last-child {
+  max-width: 920px;
+  margin: 3px 0 0;
+  color: #697386;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.fund-product-toolbar {
+  position: relative;
+  z-index: 8;
+  display: grid;
+  min-height: 54px;
+  grid-template-columns: minmax(320px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  margin-bottom: 10px;
+  padding: 8px;
+  background: #ffffff;
+  border: 1px solid #d9dee6;
+  border-radius: 6px;
+}
+
+.fund-product-toolbar form {
+  display: grid;
+  height: 36px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding-left: 10px;
+  background: #f7f9fb;
+  border: 1px solid #dce1e8;
+  border-radius: 5px;
+}
+
+.fund-product-toolbar form > svg {
+  width: 15px;
+  height: 15px;
+  color: #748094;
+}
+
+.fund-product-toolbar input {
+  min-width: 0;
+  color: #202733;
+  font: inherit;
+  font-size: 11px;
+  background: transparent;
+  border: 0;
+  outline: 0;
+}
+
+.fund-product-toolbar form button,
+.fund-product-failure button {
+  display: inline-flex;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 13px;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 650;
+  background: #2563eb;
+  border: 1px solid #2563eb;
+  border-radius: 0 4px 4px 0;
+}
+
+.fund-years-control {
+  display: inline-flex;
+  height: 36px;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  background: #eef1f5;
+  border-radius: 5px;
+}
+
+.fund-years-control > span {
+  padding: 0 7px;
+  color: #6b7482;
+  font-size: 11px;
+}
+
+.fund-years-control button {
+  height: 30px;
+  min-width: 48px;
+  padding: 0 8px;
+  color: #5d6878;
+  font-size: 12px;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+}
+
+.fund-years-control button.active {
+  color: #1d4ed8;
+  font-weight: 700;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgb(31 41 55 / 8%);
+}
+
+.fund-search-popover {
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 8px;
+  left: 8px;
+  display: grid;
+  max-height: 330px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 8px;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #cfd6e0;
+  border-radius: 6px;
+  box-shadow: 0 18px 36px rgb(31 41 55 / 14%);
+}
+
+.fund-search-popover > span {
+  grid-column: 1 / -1;
+  padding: 14px;
+  color: #984848;
+  font-size: 12px;
+}
+
+.fund-search-popover button {
+  display: grid;
+  min-width: 0;
+  min-height: 58px;
+  grid-template-columns: auto minmax(0, 1fr) 14px;
+  grid-template-rows: auto auto;
+  gap: 3px 8px;
+  padding: 9px 10px;
+  color: #303846;
+  text-align: left;
+  background: #f8f9fb;
+  border: 1px solid #e0e4ea;
+  border-radius: 5px;
+}
+
+.fund-search-popover button:hover {
+  border-color: #89a7ec;
+}
+
+.fund-search-popover strong {
+  color: #2563eb;
+  font-size: 12px;
+}
+
+.fund-search-popover span {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fund-search-popover small {
+  grid-column: 1 / 3;
+  color: #7a8493;
+  font-size: 11px;
+}
+
+.fund-search-popover svg {
+  width: 13px;
+  height: 13px;
+  grid-column: 3;
+  grid-row: 1 / 3;
+  align-self: center;
+  color: #8791a0;
+}
+
+.fund-product-notice,
+.fund-product-warnings {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  color: #80551f;
+  background: #fff8e9;
+  border: 1px solid #ead8ae;
+  border-radius: 6px;
+}
+
+.fund-product-notice svg,
+.fund-product-warnings svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.fund-product-notice > div,
+.fund-product-warnings > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.fund-product-notice strong,
+.fund-product-warnings strong {
+  font-size: 12px;
+}
+
+.fund-product-notice span,
+.fund-product-warnings span {
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.fund-summary-band {
+  display: grid;
+  min-height: 86px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-bottom: 10px;
+  background: #ffffff;
+  border: 1px solid #d9dee6;
+  border-radius: 6px;
+}
+
+.fund-summary-band > div {
+  display: flex;
+  min-width: 0;
+  justify-content: center;
+  flex-direction: column;
+  gap: 5px;
+  padding: 11px 13px;
+  border-right: 1px solid #e5e8ed;
+}
+
+.fund-summary-band > div:last-child {
+  border-right: 0;
+}
+
+.fund-summary-band span,
+.fund-summary-band small {
+  overflow: hidden;
+  color: #6d7787;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fund-summary-band strong {
+  overflow-wrap: anywhere;
+  color: #202733;
+  font-size: 19px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.fund-product-sections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.fund-product-section {
+  min-width: 0;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #d9dee6;
+  border-radius: 6px;
+}
+
+.fund-product-section > header {
+  display: grid;
+  min-height: 54px;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 11px;
+  background: #f7f9fb;
+  border-bottom: 1px solid #e1e5eb;
+}
+
+.fund-section-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  color: #2563eb;
+  background: #e8eefc;
+  border-radius: 5px;
+}
+
+.fund-section-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.fund-product-section > header p {
+  margin: 0 0 2px;
+  color: #778191;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.fund-product-section > header h2 {
+  margin: 0;
+  color: #202733;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.fund-section-status {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.fund-section-status > span {
+  color: #7b8492;
+  font-size: 11px;
+}
+
+.fund-section-body {
+  padding: 11px;
+}
+
+.fund-stat-grid,
+.fund-rating-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.fund-rating-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.fund-data-point {
+  display: flex;
+  min-width: 0;
+  min-height: 58px;
+  justify-content: center;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 9px;
+  background: #f7f9fb;
+  border-left: 2px solid #c5cedb;
+}
+
+.fund-data-point span {
+  color: #737d8c;
+  font-size: 11px;
+}
+
+.fund-data-point strong {
+  overflow-wrap: anywhere;
+  color: #303846;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.fund-allocation-block {
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid #e6e9ee;
+}
+
+.fund-allocation-block > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.fund-allocation-block > div:first-child strong {
+  font-size: 12px;
+}
+
+.fund-allocation-block > div:first-child span,
+.fund-allocation-block > small {
+  color: #798392;
+  font-size: 11px;
+}
+
+.fund-allocation-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.fund-allocation-list > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 7px 8px;
+  background: #edf5f2;
+  border-bottom: 2px solid #5a9d87;
+}
+
+.fund-allocation-list span {
+  color: #5f6c67;
+  font-size: 11px;
+}
+
+.fund-allocation-list strong {
+  color: #176b54;
+  font-size: 12px;
+}
+
+.fund-allocation-block > small {
+  display: block;
+  margin-top: 6px;
+  line-height: 1.45;
+}
+
+.fund-coverage-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.fund-coverage-grid > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 9px;
+  color: #687386;
+  border-left: 2px solid #65a58f;
+}
+
+.fund-coverage-grid > div:last-child {
+  border-left-color: #c99855;
+}
+
+.fund-coverage-grid strong {
+  color: #46515f;
+  font-size: 11px;
+}
+
+.fund-coverage-grid span {
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.fund-profile-grid {
+  display: grid;
+  margin: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid #e5e8ed;
+  border-left: 1px solid #e5e8ed;
+}
+
+.fund-profile-grid > div {
+  min-width: 0;
+  padding: 8px 9px;
+  border-right: 1px solid #e5e8ed;
+  border-bottom: 1px solid #e5e8ed;
+}
+
+.fund-profile-grid dt {
+  color: #788291;
+  font-size: 11px;
+}
+
+.fund-profile-grid dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: #303846;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.fund-inline-table-wrap {
+  margin-top: 9px;
+  overflow-x: auto;
+  border: 1px solid #e1e5eb;
+}
+
+.fund-inline-table {
+  width: 100%;
+  min-width: 540px;
+  border-spacing: 0;
+}
+
+.fund-inline-table th,
+.fund-inline-table td {
+  padding: 7px 9px;
+  font-size: 11px;
+  text-align: left;
+  border-bottom: 1px solid #e9ecf0;
+}
+
+.fund-inline-table th {
+  color: #697486;
+  background: #f3f5f8;
+}
+
+.fund-inline-table td {
+  color: #303846;
+}
+
+.fund-inline-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.fund-section-note {
+  margin: 8px 0 0;
+  color: #737d8d;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.fund-section-evidence {
+  border-top: 1px solid #e5e8ed;
+}
+
+.fund-section-evidence summary {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  color: #687386;
+  font-size: 11px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.fund-section-evidence summary::-webkit-details-marker {
+  display: none;
+}
+
+.fund-section-evidence summary svg {
+  width: 13px;
+  height: 13px;
+  color: #2563eb;
+}
+
+.fund-section-evidence > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 11px 10px;
+  color: #737d8c;
+  font-size: 11px;
+}
+
+.fund-section-evidence code {
+  overflow-wrap: anywhere;
+  color: #5c6776;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.fund-unavailable-section {
+  display: flex;
+  min-height: 140px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 18px;
+  color: #934848;
+}
+
+.fund-unavailable-section > svg {
+  width: 20px;
+  height: 20px;
+}
+
+.fund-unavailable-section > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fund-unavailable-section strong {
+  font-size: 12px;
+}
+
+.fund-unavailable-section span,
+.fund-unavailable-section code {
+  max-width: 520px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.fund-audit-summary {
+  margin-bottom: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #d9dee6;
+}
+
+.fund-audit-summary > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.fund-audit-summary > header svg {
+  width: 18px;
+  height: 18px;
+  color: #2563eb;
+}
+
+.fund-audit-summary h2 {
+  margin: 2px 0 0;
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+.fund-audit-summary > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid #d9dee6;
+  background: #ffffff;
+}
+
+.fund-audit-summary > div > div {
+  display: grid;
+  min-width: 0;
+  min-height: 72px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-content: center;
+  gap: 5px 8px;
+  padding: 9px 11px;
+  border-right: 1px solid #e5e8ed;
+}
+
+.fund-audit-summary > div > div:last-child {
+  border-right: 0;
+}
+
+.fund-audit-summary span,
+.fund-audit-summary strong,
+.fund-audit-summary small {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fund-audit-summary span {
+  color: #687386;
+}
+
+.fund-audit-summary strong,
+.fund-audit-summary small {
+  grid-column: 1 / -1;
+}
+
+.fund-audit-summary strong {
+  color: #303846;
+  font-size: 12px;
+}
+
+.fund-audit-summary small {
+  color: #7a8493;
+}
+
+.fund-product-loading {
+  display: flex;
+  min-height: 440px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  padding: 32px;
+  background: #ffffff;
+  border: 1px solid #d9dee6;
+}
+
+.fund-product-loading > span {
+  width: min(520px, 80%);
+  height: 14px;
+  background: #e9edf2;
+  animation: loading-pulse 1.2s ease-in-out infinite;
+}
+
+.fund-product-loading > span:nth-child(2) {
+  width: min(380px, 65%);
+}
+
+.fund-product-loading > div {
+  display: grid;
+  width: min(700px, 90%);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.fund-product-loading > div span {
+  height: 72px;
+  background: #edf0f4;
+  animation: loading-pulse 1.2s ease-in-out infinite;
+}
+
+.fund-product-loading strong {
+  color: #707b8b;
+  font-size: 12px;
+}
+
+.fund-product-failure {
+  display: flex;
+  min-height: 420px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  background: #ffffff;
+  border: 1px solid #d9dee6;
+}
+
+.fund-product-failure > svg {
+  width: 26px;
+  height: 26px;
+  color: #a44b48;
+}
+
+.fund-product-failure h2 {
+  margin: 0;
+  font-size: 17px;
+  letter-spacing: 0;
+}
+
+.fund-product-failure p {
+  margin: 0;
+  color: #747e8d;
+  font-size: 12px;
+}
+
+.fund-product-failure button {
+  margin-top: 5px;
+  border-radius: 5px;
+}
+
+.fund-product-failure button svg {
+  width: 14px;
+  height: 14px;
+}
+
+@media (max-width: 1080px) {
+  .fund-summary-band {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .fund-summary-band > div:nth-child(3) {
+    border-right: 0;
+  }
+
+  .fund-summary-band > div:nth-child(-n + 3) {
+    border-bottom: 1px solid #e5e8ed;
+  }
+
+  .fund-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fund-rating-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .fund-product-heading {
+    min-height: 62px;
+  }
+
+  .fund-product-title h1 {
+    font-size: 20px;
+  }
+
+  .fund-product-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .fund-years-control {
+    width: 100%;
+  }
+
+  .fund-years-control button {
+    flex: 1;
+  }
+
+  .fund-search-popover {
+    grid-template-columns: 1fr;
+  }
+
+  .fund-summary-band {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fund-summary-band > div,
+  .fund-summary-band > div:nth-child(3) {
+    border-right: 1px solid #e5e8ed;
+    border-bottom: 1px solid #e5e8ed;
+  }
+
+  .fund-summary-band > div:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .fund-summary-band > div:last-child {
+    border-bottom: 0;
+  }
+
+  .fund-product-sections {
+    grid-template-columns: 1fr;
+  }
+
+  .fund-allocation-list,
+  .fund-audit-summary > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fund-audit-summary > div > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .fund-audit-summary > div > div:nth-child(-n + 2) {
+    border-bottom: 1px solid #e5e8ed;
+  }
+}
+
+@media (max-width: 480px) {
+  .fund-product-breadcrumb > div {
+    gap: 8px;
+  }
+
+  .fund-product-heading {
+    gap: 8px;
+  }
+
+  .fund-product-title h1 {
+    max-width: 100%;
+    font-size: 18px;
+    overflow-wrap: anywhere;
+  }
+
+  .fund-summary-band,
+  .fund-profile-grid,
+  .fund-coverage-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .fund-summary-band > div,
+  .fund-summary-band > div:nth-child(2n),
+  .fund-summary-band > div:nth-child(3) {
+    min-height: 70px;
+    border-right: 0;
+    border-bottom: 1px solid #e5e8ed;
+  }
+
+  .fund-summary-band > div:last-child {
+    border-bottom: 0;
+  }
+
+  .fund-stat-grid,
+  .fund-rating-grid,
+  .fund-allocation-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fund-product-section > header {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .fund-section-status {
+    grid-column: 1 / -1;
+    align-items: center;
+    justify-content: space-between;
+    flex-direction: row;
+  }
+
+  .fund-audit-summary > div {
+    grid-template-columns: 1fr;
+  }
+
+  .fund-audit-summary > div > div,
+  .fund-audit-summary > div > div:nth-child(2) {
+    border-right: 0;
+    border-bottom: 1px solid #e5e8ed;
+  }
+
+  .fund-audit-summary > div > div:last-child {
+    border-bottom: 0;
+  }
+}
+
+/* ===== 排版对齐修复 =====
+   1. .fund-trading-grid 在 TSX 中被引用但 CSS 从未定义，交易状态 6 个字段
+      落到 .fund-stat-grid 的 4 列网格里，尾行只剩 2 格，视觉参差；
+      交易状态固定 3 列可整齐排成 2 行。
+   2. 中英混排的标签/数值声明确定行高，避免同一行内基线错位。 */
+.fund-trading-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.fund-data-point span {
+  line-height: 16px;
+}
+
+.fund-data-point strong {
+  line-height: 22px;
+}
+
+.fund-profile-grid dt {
+  line-height: 16px;
+}
+
+@media (max-width: 900px) {
+  .fund-trading-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

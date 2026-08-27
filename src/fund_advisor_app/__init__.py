@@ -1,4 +1,4 @@
-"""Web and terminal product interfaces for the research agent."""
+"""Web-facing Agent API interfaces for the research agent."""
 
 from .service import AgentChatService
 from .sessions import InMemorySessionStore

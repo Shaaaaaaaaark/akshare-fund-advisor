@@ -2,19 +2,14 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
-from io import StringIO
 from typing import Any
 
-import httpx
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from rich.console import Console
 
 from fund_advisor_agent.state import AgentResponse, AgentStatus, Intent
 from fund_advisor_app.api import create_app
-from fund_advisor_app.cli import _chat
-from fund_advisor_app.client import AgentApiClient, _parse_sse
 from fund_advisor_app.schemas import ChatRequest, SessionView, StreamEvent
 from fund_advisor_app.service import AgentChatService
 from fund_advisor_app.sessions import (
@@ -114,18 +109,6 @@ class StubChatService:
             },
         )
         yield StreamEvent(event="done", data={"session_id": resolved})
-
-
-class StubCliClient:
-    def __init__(self) -> None:
-        self.session = _session_view("c" * 32)
-        self.deleted: list[str] = []
-
-    def create_session(self) -> SessionView:
-        return self.session
-
-    def delete_session(self, session_id: str) -> None:
-        self.deleted.append(session_id)
 
 
 class CapacityChatService(StubChatService):
@@ -341,83 +324,3 @@ def test_api_reports_session_capacity_without_dropping_active_context() -> None:
     assert session.json()["detail"] == "临时会话已满，请稍后重试"
     assert "SESSION_CAPACITY_EXCEEDED" in stream.text
     assert "event: done" in stream.text
-
-
-def test_sse_parser_handles_multiple_events() -> None:
-    events = list(
-        _parse_sse(
-            iter(
-                [
-                    "event: session",
-                    'data: {"session_id":"abc"}',
-                    "",
-                    "event: done",
-                    "data: {}",
-                    "",
-                ]
-            )
-        )
-    )
-
-    assert [item.event for item in events] == ["session", "done"]
-    assert events[0].data == {"session_id": "abc"}
-
-
-def test_agent_api_client_consumes_sse() -> None:
-    now = datetime.now(timezone.utc).isoformat()
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/api/sessions":
-            return httpx.Response(
-                200,
-                json={
-                    "session_id": "b" * 32,
-                    "turns": [],
-                    "created_at": now,
-                    "updated_at": now,
-                },
-            )
-        return httpx.Response(
-            200,
-            headers={"Content-Type": "text/event-stream"},
-            text=(
-                "event: session\n"
-                'data: {"session_id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}\n\n'
-                "event: done\n"
-                "data: {}\n\n"
-            ),
-        )
-
-    with AgentApiClient(
-        "http://testserver",
-        transport=httpx.MockTransport(handler),
-    ) as client:
-        session = client.create_session()
-        events = list(
-            client.stream_message(
-                "分析 000001",
-                session_id=session.session_id,
-            )
-        )
-
-    assert session.session_id == "b" * 32
-    assert [item.event for item in events] == ["session", "done"]
-
-
-def test_interactive_cli_deletes_session_on_exit(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    client = StubCliClient()
-    console = Console(file=StringIO(), force_terminal=False)
-    monkeypatch.setattr(
-        "fund_advisor_app.cli.Prompt.ask",
-        lambda *_args, **_kwargs: "/exit",
-    )
-
-    result = _chat(  # type: ignore[arg-type]
-        client,
-        console,
-    )
-
-    assert result == 0
-    assert client.deleted == ["c" * 32]

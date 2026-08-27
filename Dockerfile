@@ -9,17 +9,16 @@ COPY web/ ./
 RUN npm run build
 
 
-FROM golang:1.22-alpine AS go-build
+FROM maven:3.9.9-eclipse-temurin-21 AS java-build
 
-WORKDIR /src
+WORKDIR /workspace
 
-# Module has no third-party dependencies, so go.mod alone primes the cache.
-COPY web-backend/go.mod ./
-RUN go mod download
+COPY web-backend/pom.xml web-backend/mvnw web-backend/mvnw.cmd ./
+COPY web-backend/.mvn .mvn
+RUN ./mvnw -q -DskipTests dependency:go-offline
 
-COPY web-backend/ ./
-RUN go vet ./... \
-    && CGO_ENABLED=0 go build -trimpath -o /out/web-backend ./cmd/server
+COPY web-backend/src ./src
+RUN ./mvnw -q -DskipTests package
 
 
 FROM python:3.11-slim AS base
@@ -67,17 +66,19 @@ EXPOSE 8000 8001 8002 8003
 CMD ["fund-advisor-mcp"]
 
 
-# Go web backend (BFF): serves the React app, reads Dashboard data through the
+# Java web backend (BFF): serves the React app, reads Dashboard data through the
 # standalone Data API, and reverse-proxies Agent SSE. No financial computation.
-FROM alpine:3.20 AS web-backend
+FROM eclipse-temurin:21-jre AS web-backend
 
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates wget \
-    && addgroup -S webbackend \
-    && adduser -S -G webbackend webbackend
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates wget \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system webbackend \
+    && useradd --system --gid webbackend --home-dir /app webbackend
 
-COPY --from=go-build /out/web-backend /usr/local/bin/web-backend
+COPY --from=java-build /workspace/target/web-backend-*.jar ./web-backend.jar
 COPY --from=web-build /web/dist ./web/dist
 
 ENV WEB_STATIC_DIR=/app/web/dist \
@@ -87,4 +88,4 @@ USER webbackend
 
 EXPOSE 8080
 
-CMD ["web-backend"]
+CMD ["java", "-jar", "/app/web-backend.jar"]

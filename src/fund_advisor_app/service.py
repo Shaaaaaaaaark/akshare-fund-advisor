@@ -1,4 +1,4 @@
-"""Shared chat application service for web and terminal clients."""
+"""Shared chat application service for web-facing Agent clients."""
 
 from __future__ import annotations
 

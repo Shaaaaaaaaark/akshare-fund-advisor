@@ -16,7 +16,7 @@
 
 ```text
 scripts/fund_advisor.py
-    |-- CLI 参数与退出码
+    |-- 内部脚本参数与退出码
     |-- 基金/指数精确解析
     |-- AKShare 数据适配
     |-- Schema、空值和时效校验
@@ -66,15 +66,15 @@ LangChain Agent、ReAct、数据库 checkpoint、长期 Memory 或多 Agent。
 | 文件 | 职责 |
 | --- | --- |
 | `SKILL.md` | 模型调用顺序、回答格式和禁止事项 |
-| `scripts/fund_advisor.py` | CLI、数据访问、校验、指标和策略规则 |
+| `scripts/fund_advisor.py` | 内部脚本、数据访问、校验、指标和策略规则 |
 | `scripts/source_validation.py` | 可选数据源 Provider 和确定性 Comparator |
 | `scripts/audit_source_providers.py` | 多源代表性真实接口审计 |
-| `scripts/run.sh` | 选择 Skill 虚拟环境并启动 CLI |
+| `scripts/run.sh` | 选择 Skill 虚拟环境并启动内部脚本 |
 | `scripts/setup.sh` | 创建虚拟环境并安装锁定依赖 |
 | `tests/test_fund_advisor.py` | 指标、降级、审计和错误输出回归测试 |
 | `../../src/fund_advisor_mcp/` | Fund/Web MCP 配置、Client、Adapter 与 Server |
 | `../../src/fund_advisor_agent/` | 固定 LangGraph、FactRef 和关联门禁 |
-| `../../src/fund_advisor_app/` | Agent API、SSE、临时会话和兼容 CLI |
+| `../../src/fund_advisor_app/` | Agent API、SSE 和临时会话 |
 | `references/akshare_api.md` | 接口、字段和公式契约 |
 | `references/professional_metrics.md` | 专业指标解释 |
 | `references/valuation_chart.md` | 指数估值图数据和渲染契约 |

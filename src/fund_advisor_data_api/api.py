@@ -6,8 +6,8 @@ import argparse
 
 from fastapi import FastAPI, HTTPException, Query
 
+from fund_advisor_data_core.contracts import ToolEnvelope
 from fund_advisor_mcp.fund.adapter import FundAdvisorToolAdapter
-from fund_advisor_mcp.fund.schemas import ToolEnvelope
 
 
 def create_app(*, adapter: FundAdvisorToolAdapter | None = None) -> FastAPI:
@@ -29,6 +29,38 @@ def create_app(*, adapter: FundAdvisorToolAdapter | None = None) -> FastAPI:
         limit: int = Query(default=10, ge=1, le=20),
     ) -> ToolEnvelope:
         return data_adapter.fund_search(query=query, limit=limit)
+
+    @application.get(
+        "/v1/funds/{fund}/analysis",
+        response_model=ToolEnvelope,
+    )
+    def fund_analysis(
+        fund: str,
+        years: int = Query(default=3),
+    ) -> ToolEnvelope:
+        _require_years(years, {1, 3, 5})
+        return data_adapter.fund_analyze(fund=fund, years=years)
+
+    @application.get(
+        "/v1/funds/{fund}/profile",
+        response_model=ToolEnvelope,
+    )
+    def fund_profile(fund: str) -> ToolEnvelope:
+        return data_adapter.fund_profile(fund=fund)
+
+    @application.get(
+        "/v1/funds/{fund}/rating",
+        response_model=ToolEnvelope,
+    )
+    def fund_rating(fund: str) -> ToolEnvelope:
+        return data_adapter.fund_rating(fund=fund)
+
+    @application.get(
+        "/v1/funds/{fund}/status",
+        response_model=ToolEnvelope,
+    )
+    def fund_status(fund: str) -> ToolEnvelope:
+        return data_adapter.fund_status(fund=fund)
 
     @application.get("/v1/etfs/{fund}", response_model=ToolEnvelope)
     def etf_dashboard(
@@ -52,6 +84,19 @@ def create_app(*, adapter: FundAdvisorToolAdapter | None = None) -> FastAPI:
         _require_years(years, {3, 5, 10, 20})
         return data_adapter.index_valuation(
             index=index,
+            years=years,
+            max_points=max_points,
+        )
+
+    @application.get("/v1/stocks/{stock}", response_model=ToolEnvelope)
+    def stock_valuation(
+        stock: str,
+        years: int = Query(default=10),
+        max_points: int = Query(default=600, ge=50, le=3000),
+    ) -> ToolEnvelope:
+        _require_years(years, {1, 3, 5, 10})
+        return data_adapter.stock_valuation(
+            stock=stock,
             years=years,
             max_points=max_points,
         )

@@ -8,9 +8,11 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 from zoneinfo import ZoneInfo
 
+from fund_advisor_data_core.contracts import ToolEnvelope, ToolError, ToolName
+from fund_advisor_data_core.services import FundSearchService, FundStatusService
 from fund_advisor_mcp.config import AppConfig, get_config
 
 from .cache import EnvelopeCache, build_envelope_cache
@@ -22,9 +24,6 @@ from .schemas import (
     FundInput,
     SearchInput,
     StockValuationInput,
-    ToolEnvelope,
-    ToolError,
-    ToolName,
     ValuationInput,
 )
 from .skill_loader import load_skill_module
@@ -43,6 +42,16 @@ class ToolExecutionTimeout(TimeoutError):
     pass
 
 
+class FundSearchRunner(Protocol):
+    def search(self, query: str, limit: int) -> ToolEnvelope:
+        ...
+
+
+class FundStatusRunner(Protocol):
+    def status(self, query: str) -> ToolEnvelope:
+        ...
+
+
 class FundAdvisorToolAdapter:
     """Execute Skill methods and preserve their audit payload verbatim."""
 
@@ -51,12 +60,16 @@ class FundAdvisorToolAdapter:
         config: AppConfig | None = None,
         *,
         advisor_factory: Callable[[], Any] | None = None,
+        fund_search_service: FundSearchRunner | None = None,
+        fund_status_service: FundStatusRunner | None = None,
         cache: EnvelopeCache | None = None,
     ) -> None:
         self._config = config or get_config()
         self._semaphore = threading.BoundedSemaphore(self._config.mcp.concurrency)
         self._cache = cache or build_envelope_cache(self._config)
         self._advisor_factory = advisor_factory or self._default_advisor_factory
+        self._fund_search_service = fund_search_service or FundSearchService()
+        self._fund_status_service = fund_status_service or FundStatusService()
         self._executor = ThreadPoolExecutor(
             max_workers=self._config.mcp.concurrency,
             thread_name_prefix="fund-advisor-tool",
@@ -186,22 +199,90 @@ class FundAdvisorToolAdapter:
                 f"Fund Advisor 超过 {self._config.mcp.timeout_seconds} 秒未完成"
             ) from exc
 
+    def _invoke_envelope_with_timeout(
+        self,
+        call: Callable[[], ToolEnvelope],
+    ) -> ToolEnvelope:
+        def invoke() -> ToolEnvelope:
+            with self._semaphore:
+                return call()
+
+        future = self._executor.submit(invoke)
+        try:
+            return future.result(timeout=self._config.mcp.timeout_seconds)
+        except FutureTimeoutError as exc:
+            future.cancel()
+            raise ToolExecutionTimeout(
+                f"Fund Advisor 超过 {self._config.mcp.timeout_seconds} 秒未完成"
+            ) from exc
+
+    def _execute_core_envelope(
+        self,
+        tool: ToolName,
+        arguments: dict[str, Any],
+        call: Callable[[], ToolEnvelope],
+        *,
+        cache: bool = True,
+    ) -> ToolEnvelope:
+        key = self._cache_key(tool, arguments)
+        if cache:
+            cached = self._cache.get(key)
+            if cached is not None:
+                return ToolEnvelope.model_validate(cached)
+
+        try:
+            envelope = self._invoke_envelope_with_timeout(call)
+            if cache and envelope.ok:
+                self._cache.set(
+                    key,
+                    envelope.model_dump(mode="json"),
+                    self._ttl(tool),
+                )
+            return envelope
+        except ToolExecutionTimeout as exc:
+            return ToolEnvelope(
+                tool=tool,
+                ok=False,
+                data=None,
+                data_policy={"ai_may_generate_market_data": False},
+                queried_at=datetime.now(SHANGHAI),
+                error=ToolError(
+                    code="UPSTREAM_TIMEOUT",
+                    message=str(exc),
+                    retryable=True,
+                    details={"timeout_seconds": self._config.mcp.timeout_seconds},
+                ),
+            )
+        except Exception as exc:
+            return ToolEnvelope(
+                tool=tool,
+                ok=False,
+                data=None,
+                data_policy={"ai_may_generate_market_data": False},
+                queried_at=datetime.now(SHANGHAI),
+                error=ToolError(
+                    code="INTERNAL_ERROR",
+                    message="Fund Advisor 工具执行失败",
+                    details={"reason": str(exc)},
+                ),
+            )
+
     def fund_search(self, **kwargs: Any) -> ToolEnvelope:
         request = SearchInput.model_validate(kwargs)
         arguments = request.model_dump()
-        return self._execute(
+        return self._execute_core_envelope(
             ToolName.FUND_SEARCH,
             arguments,
-            lambda advisor: advisor.search(request.query, request.limit),
+            lambda: self._fund_search_service.search(request.query, request.limit),
         )
 
     def fund_status(self, **kwargs: Any) -> ToolEnvelope:
         request = FundInput.model_validate(kwargs)
         arguments = request.model_dump()
-        return self._execute(
+        return self._execute_core_envelope(
             ToolName.FUND_STATUS,
             arguments,
-            lambda advisor: advisor.status(request.fund),
+            lambda: self._fund_status_service.status(request.fund),
         )
 
     def fund_analyze(self, **kwargs: Any) -> ToolEnvelope:

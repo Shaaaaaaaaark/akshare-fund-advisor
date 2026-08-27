@@ -41,6 +41,7 @@ build/
 web/node_modules/
 web/dist/
 web/*.tsbuildinfo
+web-backend/target/
 web-backend/web/dist/
 /web-backend/web-backend
 *.test

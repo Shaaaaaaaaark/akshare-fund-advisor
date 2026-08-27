@@ -3,7 +3,9 @@ import { Link, Outlet, useLocation } from "react-router-dom";
 
 export default function WorkbenchLayout() {
   const { pathname } = useLocation();
-  const immersiveETF = pathname === "/funds" || pathname.startsWith("/funds/");
+  const immersiveETF =
+    pathname === "/funds" ||
+    (/^\/funds\/[^/]+\/?$/.test(pathname) && !pathname.endsWith("/product"));
   const agentActive = pathname === "/chat";
 
   return (

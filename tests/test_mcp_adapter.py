@@ -1,6 +1,5 @@
 from datetime import datetime
 from threading import Event, Lock
-from threading import enumerate as enumerate_threads
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -9,12 +8,77 @@ from fund_advisor_mcp.fund.adapter import (
     FundAdvisorToolAdapter,
     ToolExecutionTimeout,
 )
+from fund_advisor_mcp.fund.schemas import ToolEnvelope, ToolName
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
+class FakeFundSearchService:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, int]] = []
+
+    def search(self, query: str, limit: int) -> ToolEnvelope:
+        self.calls.append((query, limit))
+        return ToolEnvelope(
+            tool=ToolName.FUND_SEARCH,
+            ok=True,
+            data={
+                "ok": True,
+                "action": "search",
+                "query": query,
+                "count": 1,
+                "has_more": False,
+                "results": [{"code": "000001", "name": "示例基金"}],
+                "guidance": None,
+            },
+            queried_at=datetime.now(SHANGHAI),
+            sources=[{"provider": "AKShare", "interface": "fund_name_em"}],
+            data_audit=[
+                {
+                    "interface": "fund_name_em",
+                    "validation": "passed",
+                    "frame_sha256": "data-core-hash",
+                }
+            ],
+            data_policy={"ai_may_generate_market_data": False},
+        )
+
+
+class FakeFundStatusService:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def status(self, query: str) -> ToolEnvelope:
+        self.calls.append(query)
+        return ToolEnvelope(
+            tool=ToolName.FUND_STATUS,
+            ok=True,
+            data={
+                "ok": True,
+                "action": "status",
+                "fund": {"code": "000001", "name": "示例基金"},
+                "availability": {
+                    "confirmed": True,
+                    "mode": "off_exchange",
+                    "off_exchange": {"subscription_status": "开放申购"},
+                },
+            },
+            queried_at=datetime.now(SHANGHAI),
+            sources=[{"provider": "AKShare", "interface": "fund_purchase_em"}],
+            data_audit=[
+                {
+                    "interface": "fund_purchase_em",
+                    "validation": "passed",
+                    "frame_sha256": "status-core-hash",
+                }
+            ],
+            data_policy={"ai_may_generate_market_data": False},
+        )
+
+
 class FakeAdvisor:
-    def search(self, query, limit):
+    def search(self, query, _limit):
+        _ = _limit
         return {
             "ok": True,
             "action": "search",
@@ -103,35 +167,64 @@ class FakeCrossValidationAdvisor:
         }
 
 
-def test_adapter_preserves_skill_data_and_audit(test_config) -> None:
+def test_adapter_uses_data_core_fund_search_and_preserves_audit(test_config) -> None:
+    search_service = FakeFundSearchService()
+
+    def fail_factory():
+        raise AssertionError("fund_search should not instantiate the legacy Skill")
+
     adapter = FundAdvisorToolAdapter(
         test_config,
-        advisor_factory=FakeAdvisor,
+        advisor_factory=fail_factory,
+        fund_search_service=search_service,
     )
 
     envelope = adapter.fund_search(query="示例", limit=5)
 
     assert envelope.ok
-    assert envelope.data["results"][0]["code"] == "000001"
-    assert envelope.data_audit[0]["frame_sha256"] == "source-hash"
+    data = envelope.data
+    assert data is not None
+    assert data["results"][0]["code"] == "000001"
+    assert envelope.data_audit[0]["frame_sha256"] == "data-core-hash"
     assert envelope.data_policy["ai_may_generate_market_data"] is False
+    assert search_service.calls == [("示例", 5)]
 
 
 def test_adapter_reuses_complete_cached_envelope(test_config) -> None:
-    calls = 0
+    search_service = FakeFundSearchService()
 
-    def factory():
-        nonlocal calls
-        calls += 1
-        return FakeAdvisor()
-
-    adapter = FundAdvisorToolAdapter(test_config, advisor_factory=factory)
+    adapter = FundAdvisorToolAdapter(
+        test_config,
+        fund_search_service=search_service,
+    )
     first = adapter.fund_search(query="示例", limit=5)
     second = adapter.fund_search(query="示例", limit=5)
 
-    assert calls == 1
+    assert search_service.calls == [("示例", 5)]
     assert first.request_id == second.request_id
     assert second.data_audit == first.data_audit
+
+
+def test_adapter_uses_data_core_fund_status_and_preserves_audit(test_config) -> None:
+    status_service = FakeFundStatusService()
+
+    def fail_factory():
+        raise AssertionError("fund_status should not instantiate the legacy Skill")
+
+    adapter = FundAdvisorToolAdapter(
+        test_config,
+        advisor_factory=fail_factory,
+        fund_status_service=status_service,
+    )
+
+    envelope = adapter.fund_status(fund="000001")
+
+    assert envelope.ok
+    data = envelope.data
+    assert data is not None
+    assert data["availability"]["confirmed"] is True
+    assert envelope.data_audit[0]["frame_sha256"] == "status-core-hash"
+    assert status_service.calls == ["000001"]
 
 
 def test_adapter_exposes_etf_dashboard_with_audit(test_config) -> None:
@@ -148,8 +241,10 @@ def test_adapter_exposes_etf_dashboard_with_audit(test_config) -> None:
 
     assert envelope.ok
     assert envelope.tool.value == "etf_dashboard"
-    assert envelope.data["summary"]["latest_close"] == 4.801
-    assert envelope.data["lookback"]["chart_max_points"] == 600
+    data = envelope.data
+    assert data is not None
+    assert data["summary"]["latest_close"] == 4.801
+    assert data["lookback"]["chart_max_points"] == 600
     assert envelope.data_audit[0]["frame_sha256"] == "source-hash"
 
 
@@ -166,13 +261,17 @@ def test_adapter_preserves_cross_validation_audit_and_warning(test_config) -> No
     )
 
     assert envelope.ok
-    assert envelope.data["summary"]["stock_price"]["current"] == 100.0
+    data = envelope.data
+    assert data is not None
+    assert data["summary"]["stock_price"]["current"] == 100.0
     assert [item["role"] for item in envelope.data_audit] == [
         "cross_validation_primary",
         "cross_validation_source",
         "cross_validation_comparison",
     ]
-    assert envelope.data_warnings[0]["code"] == "SOURCE_DISAGREE"
+    warning = envelope.data_warnings[0]
+    assert isinstance(warning, dict)
+    assert warning["code"] == "SOURCE_DISAGREE"
 
 
 def test_adapter_timeout_keeps_worker_count_bounded(test_config) -> None:
@@ -189,8 +288,9 @@ def test_adapter_timeout_keeps_worker_count_bounded(test_config) -> None:
     started_lock = Lock()
     started = 0
 
-    def blocked_call(_advisor):
+    def blocked_call(_unused_advisor):
         nonlocal started
+        _ = _unused_advisor
         with started_lock:
             started += 1
         release.wait(timeout=2)
@@ -201,13 +301,8 @@ def test_adapter_timeout_keeps_worker_count_bounded(test_config) -> None:
             with pytest.raises(ToolExecutionTimeout):
                 adapter._invoke_with_timeout(blocked_call, FakeAdvisor())
 
-        workers = [
-            thread
-            for thread in enumerate_threads()
-            if thread.name.startswith("fund-advisor-tool")
-        ]
         assert started == concurrency
-        assert len(workers) <= concurrency
+        assert len(adapter._executor._threads) <= concurrency
     finally:
         release.set()
         adapter._executor.shutdown(wait=True, cancel_futures=True)
