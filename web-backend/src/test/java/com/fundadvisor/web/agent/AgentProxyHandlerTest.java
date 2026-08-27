@@ -69,6 +69,24 @@ class AgentProxyHandlerTest {
         assertThat(request.getBody().readUtf8()).contains("分析 000001");
     }
 
+    @Test
+    void sseBufferingHeadersOverrideUpstreamValuesInsteadOfDuplicating() {
+        server.enqueue(new MockResponse()
+                .setHeader("Content-Type", "text/event-stream")
+                .setHeader("X-Accel-Buffering", "no")
+                .setHeader("Cache-Control", "no-cache")
+                .setBody("event: done\ndata: {}\n\n"));
+
+        client.post()
+                .uri("/api/chat/stream")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"message\":\"hi\",\"session_id\":null}")
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().valueEquals("X-Accel-Buffering", "no")
+                .expectHeader().valueEquals("Cache-Control", "no-cache");
+    }
+
     private static String stripTrailingSlash(String value) {
         return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
     }

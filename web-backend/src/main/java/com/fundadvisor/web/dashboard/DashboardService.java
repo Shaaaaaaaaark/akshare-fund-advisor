@@ -2,6 +2,7 @@ package com.fundadvisor.web.dashboard;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fundadvisor.web.config.BffProperties;
 import com.fundadvisor.web.dataapi.DashboardToolCaller;
 import com.fundadvisor.web.facts.ToolEnvelope;
@@ -12,6 +13,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -19,6 +22,7 @@ import reactor.core.publisher.Mono;
 @Service
 public class DashboardService {
 
+    static final String UPSTREAM_ERROR_CODE = "UPSTREAM_ERROR";
     static final String INDEX_VALUATION_TOOL = "index_valuation";
     static final String FUND_SEARCH_TOOL = "fund_search";
     static final String ETF_DASHBOARD_TOOL = "etf_dashboard";
@@ -27,6 +31,8 @@ public class DashboardService {
     static final String FUND_RATING_TOOL = "fund_rating";
     static final String FUND_STATUS_TOOL = "fund_status";
     static final String STOCK_VALUATION_TOOL = "stock_valuation";
+
+    private static final Logger log = LoggerFactory.getLogger(DashboardService.class);
 
     private final DashboardToolCaller caller;
     private final ObjectMapper mapper;
@@ -62,7 +68,10 @@ public class DashboardService {
                             envelopeMeta(envelope, INDEX_VALUATION_TOOL, asOf),
                             envelope.rawJson());
                 })
-                .onErrorReturn(new IndexDetail(index, transportFailureMeta(INDEX_VALUATION_TOOL), null));
+                .onErrorResume(error -> Mono.just(new IndexDetail(
+                        index,
+                        transportFailureMeta(INDEX_VALUATION_TOOL, error),
+                        null)));
     }
 
     public Mono<FundSearchResponse> fundSearch(String query, int limit) {
@@ -71,7 +80,10 @@ public class DashboardService {
                         query,
                         envelopeMeta(envelope, FUND_SEARCH_TOOL, ""),
                         envelope.rawJson()))
-                .onErrorReturn(new FundSearchResponse(query, transportFailureMeta(FUND_SEARCH_TOOL), null));
+                .onErrorResume(error -> Mono.just(new FundSearchResponse(
+                        query,
+                        transportFailureMeta(FUND_SEARCH_TOOL, error),
+                        null)));
     }
 
     public Mono<ETFDetail> etfDetail(String fund, int years, int maxPoints) {
@@ -85,7 +97,10 @@ public class DashboardService {
                             envelopeMeta(envelope, ETF_DASHBOARD_TOOL, asOf),
                             envelope.rawJson());
                 })
-                .onErrorReturn(new ETFDetail(fund, transportFailureMeta(ETF_DASHBOARD_TOOL), null));
+                .onErrorResume(error -> Mono.just(new ETFDetail(
+                        fund,
+                        transportFailureMeta(ETF_DASHBOARD_TOOL, error),
+                        null)));
     }
 
     public Mono<FundOverview> fundOverview(String fund, int years) {
@@ -94,7 +109,10 @@ public class DashboardService {
                         fund,
                         envelopeMeta(envelope, FUND_ANALYZE_TOOL, fundProductAsOf(FUND_ANALYZE_TOOL, envelope.data())),
                         envelope.rawJson()))
-                .onErrorReturn(new FundOverview(fund, transportFailureMeta(FUND_ANALYZE_TOOL), null));
+                .onErrorResume(error -> Mono.just(new FundOverview(
+                        fund,
+                        transportFailureMeta(FUND_ANALYZE_TOOL, error),
+                        null)));
     }
 
     public Mono<FundProductResponse> fundProduct(String fund, int years) {
@@ -135,7 +153,10 @@ public class DashboardService {
                         stock,
                         envelopeMeta(envelope, STOCK_VALUATION_TOOL, stockAsOf(envelope.data())),
                         envelope.rawJson()))
-                .onErrorReturn(new StockDetail(stock, transportFailureMeta(STOCK_VALUATION_TOOL), null));
+                .onErrorResume(error -> Mono.just(new StockDetail(
+                        stock,
+                        transportFailureMeta(STOCK_VALUATION_TOOL, error),
+                        null)));
     }
 
     public Mono<OverviewResponse> overview() {
@@ -190,12 +211,12 @@ public class DashboardService {
                     }
                     return new IndexRow(index, meta, peTtm, pb, latestPoint);
                 })
-                .onErrorReturn(new IndexRow(
+                .onErrorResume(error -> Mono.just(new IndexRow(
                         index,
-                        transportFailureMeta(INDEX_VALUATION_TOOL),
+                        transportFailureMeta(INDEX_VALUATION_TOOL, error),
                         null,
                         null,
-                        null));
+                        null)));
     }
 
     private Mono<FundProductSection> fundProductSection(String tool, Map<String, Object> arguments) {
@@ -203,7 +224,8 @@ public class DashboardService {
                 .map(envelope -> new FundProductSection(
                         envelopeMeta(envelope, tool, fundProductAsOf(tool, envelope.data())),
                         envelope.rawJson()))
-                .onErrorReturn(new FundProductSection(transportFailureMeta(tool), null));
+                .onErrorResume(error -> Mono.just(
+                        new FundProductSection(transportFailureMeta(tool, error), null)));
     }
 
     private DatasetMeta envelopeMeta(ToolEnvelope envelope, String tool, String asOf) {
@@ -217,7 +239,8 @@ public class DashboardService {
                 envelope.errorRaw(mapper));
     }
 
-    private DatasetMeta transportFailureMeta(String tool) {
+    private DatasetMeta transportFailureMeta(String tool, Throwable error) {
+        log.warn("data api {} transport failure: {}", tool, describe(error), error);
         return new DatasetMeta(
                 "",
                 OffsetDateTime.now(ZoneOffset.UTC).toString(),
@@ -225,7 +248,27 @@ public class DashboardService {
                 List.of(tool),
                 List.of(),
                 null,
-                null);
+                upstreamErrorRaw(tool, error));
+    }
+
+    /** 透传上游失败原因，只描述错误本身，不补任何金融数值。 */
+    private String upstreamErrorRaw(String tool, Throwable error) {
+        ObjectNode node = mapper.createObjectNode();
+        node.put("code", UPSTREAM_ERROR_CODE);
+        node.put("message", tool + " 取数失败：" + describe(error));
+        node.put("retryable", true);
+        return node.toString();
+    }
+
+    private static String describe(Throwable error) {
+        if (error == null) {
+            return "unknown transport failure";
+        }
+        String message = error.getMessage();
+        if (message == null || message.isBlank()) {
+            return error.getClass().getSimpleName();
+        }
+        return error.getClass().getSimpleName() + ": " + message;
     }
 
     static DataStatus mapStatus(ToolEnvelope envelope) {

@@ -6,6 +6,7 @@ import com.fundadvisor.web.config.BffProperties;
 import com.fundadvisor.web.facts.ToolEnvelope;
 import io.github.resilience4j.bulkhead.Bulkhead;
 import io.github.resilience4j.bulkhead.BulkheadConfig;
+import io.github.resilience4j.bulkhead.BulkheadFullException;
 import io.github.resilience4j.reactor.bulkhead.operator.BulkheadOperator;
 import java.net.URI;
 import java.time.Duration;
@@ -32,22 +33,27 @@ public class DataApiClient implements DashboardToolCaller {
                 "dashboard-data-api",
                 BulkheadConfig.custom()
                         .maxConcurrentCalls(properties.concurrency())
-                        .maxWaitDuration(Duration.ofMinutes(5))
+                        // 必须为 0：resilience4j 的响应式 Bulkhead 走阻塞式 tryAcquire，
+                        // 任何正数等待时间都会阻塞 Netty 事件循环。排队等待交给请求超时预算控制。
+                        .maxWaitDuration(Duration.ZERO)
                         .build());
         this.timeout = properties.dataTimeout();
     }
 
     @Override
     public Mono<ToolEnvelope> callTool(String tool, Map<String, Object> arguments) {
-        return webClient
-                .get()
-                .uri(uriBuilder -> route(uriBuilder, tool, arguments))
-                .accept(MediaType.APPLICATION_JSON)
-                .exchangeToMono(response -> response.bodyToMono(String.class)
-                        .defaultIfEmpty("")
-                        .flatMap(body -> decode(tool, response.statusCode(), body)))
+        // Mono.defer：uri(Function) 在装配期执行 route()，非法参数必须走响应式错误信号而不是同步抛出。
+        return Mono.defer(() -> webClient
+                        .get()
+                        .uri(uriBuilder -> route(uriBuilder, tool, arguments))
+                        .accept(MediaType.APPLICATION_JSON)
+                        .exchangeToMono(response -> response.bodyToMono(String.class)
+                                .defaultIfEmpty("")
+                                .flatMap(body -> decode(tool, response.statusCode(), body))))
                 .timeout(timeout)
-                .transformDeferred(BulkheadOperator.of(bulkhead));
+                .transformDeferred(BulkheadOperator.of(bulkhead))
+                .onErrorMap(BulkheadFullException.class, exc -> new IllegalStateException(
+                        "data api " + tool + " UPSTREAM_ERROR: concurrency limit reached", exc));
     }
 
     URI route(UriBuilder builder, String tool, Map<String, Object> arguments) {

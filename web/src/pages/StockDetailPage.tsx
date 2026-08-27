@@ -68,12 +68,16 @@ export default function StockDetailPage() {
     [stock, years],
   );
 
+  // 只有目标标的变化时才同步搜索框，避免切年份或重试覆盖用户输入。
   useEffect(() => {
     setQuery(stock);
+  }, [stock]);
+
+  useEffect(() => {
     const controller = new AbortController();
     load(controller.signal);
     return () => controller.abort();
-  }, [load, refreshKey, stock]);
+  }, [load, refreshKey]);
 
   function submit(event: FormEvent) {
     event.preventDefault();

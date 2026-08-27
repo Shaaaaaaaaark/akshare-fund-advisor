@@ -45,7 +45,7 @@ public class DashboardController {
             case "etf" -> dashboard.etfDetail(targets.etf(), 3, 300).map(ResponseEntity::ok);
             case "fund" -> dashboard.fundOverview(targets.fund(), 3).map(ResponseEntity::ok);
             case "stock" -> dashboard.stockDetail(targets.stock(), 5, 300).map(ResponseEntity::ok);
-            default -> Mono.just(text(HttpStatus.NOT_FOUND, "overview module not found"));
+            default -> Mono.just(problemDetail(HttpStatus.NOT_FOUND, "overview module not found"));
         };
     }
 
@@ -61,18 +61,18 @@ public class DashboardController {
             @RequestParam(name = "max_points", required = false) String maxPoints) {
         Integer parsedYears = parseOptionalInt(years, 0, "years must be 3, 5, 10 or 20");
         if (parsedYears == null || (parsedYears != 0 && !INDEX_YEARS.contains(parsedYears))) {
-            return Mono.just(text(HttpStatus.BAD_REQUEST, "years must be 3, 5, 10 or 20"));
+            return Mono.just(problemDetail(HttpStatus.BAD_REQUEST, "years must be 3, 5, 10 or 20"));
         }
         Integer parsedMaxPoints = parseOptionalInt(maxPoints, 0, "max_points must be between 50 and 3000");
         if (parsedMaxPoints == null || (parsedMaxPoints != 0 && !validMaxPoints(parsedMaxPoints))) {
-            return Mono.just(text(HttpStatus.BAD_REQUEST, "max_points must be between 50 and 3000"));
+            return Mono.just(problemDetail(HttpStatus.BAD_REQUEST, "max_points must be between 50 and 3000"));
         }
         return dashboard.indexDetail(index, parsedYears, parsedMaxPoints).map(ResponseEntity::ok);
     }
 
     @GetMapping("/api/dashboard/funds")
     public Mono<ResponseEntity<?>> fundsRoot() {
-        return Mono.just(text(HttpStatus.BAD_REQUEST, "fund path is required"));
+        return Mono.just(problemDetail(HttpStatus.BAD_REQUEST, "fund path is required"));
     }
 
     @GetMapping("/api/dashboard/funds/search")
@@ -80,11 +80,11 @@ public class DashboardController {
             @RequestParam(name = "query", required = false) String query,
             @RequestParam(name = "limit", required = false) String limit) {
         if (query == null || query.isBlank()) {
-            return Mono.just(text(HttpStatus.BAD_REQUEST, "query is required"));
+            return Mono.just(problemDetail(HttpStatus.BAD_REQUEST, "query is required"));
         }
         Integer parsedLimit = parseOptionalInt(limit, 10, "limit must be between 1 and 20");
         if (parsedLimit == null || parsedLimit < 1 || parsedLimit > 20) {
-            return Mono.just(text(HttpStatus.BAD_REQUEST, "limit must be between 1 and 20"));
+            return Mono.just(problemDetail(HttpStatus.BAD_REQUEST, "limit must be between 1 and 20"));
         }
         return dashboard.fundSearch(query.trim(), parsedLimit).map(ResponseEntity::ok);
     }
@@ -96,11 +96,11 @@ public class DashboardController {
             @RequestParam(name = "max_points", required = false) String maxPoints) {
         Integer parsedYears = parseOptionalInt(years, 3, "years must be 1, 3 or 5");
         if (parsedYears == null || !FUND_YEARS.contains(parsedYears)) {
-            return Mono.just(text(HttpStatus.BAD_REQUEST, "years must be 1, 3 or 5"));
+            return Mono.just(problemDetail(HttpStatus.BAD_REQUEST, "years must be 1, 3 or 5"));
         }
         Integer parsedMaxPoints = parseOptionalInt(maxPoints, 600, "max_points must be between 50 and 3000");
         if (parsedMaxPoints == null || !validMaxPoints(parsedMaxPoints)) {
-            return Mono.just(text(HttpStatus.BAD_REQUEST, "max_points must be between 50 and 3000"));
+            return Mono.just(problemDetail(HttpStatus.BAD_REQUEST, "max_points must be between 50 and 3000"));
         }
         return dashboard.etfDetail(fund, parsedYears, parsedMaxPoints).map(ResponseEntity::ok);
     }
@@ -111,14 +111,14 @@ public class DashboardController {
             @RequestParam(name = "years", required = false) String years) {
         Integer parsedYears = parseOptionalInt(years, 3, "years must be 1, 3 or 5");
         if (parsedYears == null || !FUND_YEARS.contains(parsedYears)) {
-            return Mono.just(text(HttpStatus.BAD_REQUEST, "years must be 1, 3 or 5"));
+            return Mono.just(problemDetail(HttpStatus.BAD_REQUEST, "years must be 1, 3 or 5"));
         }
         return dashboard.fundProduct(fund, parsedYears).map(ResponseEntity::ok);
     }
 
     @GetMapping("/api/dashboard/stocks")
     public Mono<ResponseEntity<?>> stocksRoot() {
-        return Mono.just(text(HttpStatus.BAD_REQUEST, "stock path is required"));
+        return Mono.just(problemDetail(HttpStatus.BAD_REQUEST, "stock path is required"));
     }
 
     @GetMapping("/api/dashboard/stocks/{stock}")
@@ -128,11 +128,11 @@ public class DashboardController {
             @RequestParam(name = "max_points", required = false) String maxPoints) {
         Integer parsedYears = parseOptionalInt(years, 10, "years must be 1, 3, 5 or 10");
         if (parsedYears == null || !STOCK_YEARS.contains(parsedYears)) {
-            return Mono.just(text(HttpStatus.BAD_REQUEST, "years must be 1, 3, 5 or 10"));
+            return Mono.just(problemDetail(HttpStatus.BAD_REQUEST, "years must be 1, 3, 5 or 10"));
         }
         Integer parsedMaxPoints = parseOptionalInt(maxPoints, 600, "max_points must be between 50 and 3000");
         if (parsedMaxPoints == null || !validMaxPoints(parsedMaxPoints)) {
-            return Mono.just(text(HttpStatus.BAD_REQUEST, "max_points must be between 50 and 3000"));
+            return Mono.just(problemDetail(HttpStatus.BAD_REQUEST, "max_points must be between 50 and 3000"));
         }
         return dashboard.stockDetail(stock, parsedYears, parsedMaxPoints).map(ResponseEntity::ok);
     }
@@ -152,7 +152,10 @@ public class DashboardController {
         return value >= 50 && value <= 3000;
     }
 
-    private static ResponseEntity<String> text(HttpStatus status, String body) {
-        return ResponseEntity.status(status).contentType(MediaType.TEXT_PLAIN).body(body);
+    /** 前端只解析 JSON 的 detail 字段，4xx 必须返回 application/json。 */
+    private static ResponseEntity<Map<String, String>> problemDetail(HttpStatus status, String detail) {
+        return ResponseEntity.status(status)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("detail", detail));
     }
 }

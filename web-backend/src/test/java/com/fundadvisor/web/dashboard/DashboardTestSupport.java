@@ -38,6 +38,7 @@ final class DashboardTestSupport {
         final ObjectMapper mapper;
         final List<Call> calls = new ArrayList<>();
         Map<String, String> responses = Map.of();
+        Map<String, RuntimeException> failures = Map.of();
 
         RecordingCaller(ObjectMapper mapper) {
             this.mapper = mapper;
@@ -46,6 +47,10 @@ final class DashboardTestSupport {
         @Override
         public Mono<ToolEnvelope> callTool(String tool, Map<String, Object> arguments) {
             calls.add(new Call(tool, arguments));
+            RuntimeException failure = failures.get(tool);
+            if (failure != null) {
+                return Mono.error(failure);
+            }
             String raw = responses.getOrDefault(tool, rawEnvelope(tool, "{}"));
             return Mono.just(envelope(mapper, raw));
         }

@@ -12,19 +12,13 @@ from fund_advisor_data_core.audit import (
     validate_frame,
 )
 from fund_advisor_data_core.contracts import ToolEnvelope, ToolError, ToolName
-from fund_advisor_data_core.errors import DataCoreError
+from fund_advisor_data_core.errors import RETRYABLE_CODES, DataCoreError
 from fund_advisor_data_core.providers.akshare import AKShareFundProvider
 
 from .fund_catalog import search_candidates
 
 _FUND_NAME_INTERFACE = "fund_name_em"
 _FUND_NAME_UPSTREAM = "东方财富-基金基本信息"
-
-_RETRYABLE_CODES = {
-    "DATA_SOURCE_ERROR",
-    "RATE_LIMITED",
-    "UPSTREAM_TIMEOUT",
-}
 
 
 class FundNameProvider(Protocol):
@@ -67,7 +61,7 @@ class FundSearchService:
                 error=ToolError(
                     code=exc.code,
                     message=exc.message,
-                    retryable=exc.code in _RETRYABLE_CODES,
+                    retryable=exc.code in RETRYABLE_CODES,
                     details=exc.details,
                 ),
             )

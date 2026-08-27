@@ -295,8 +295,8 @@ export interface FundAnalysisData {
   action: string;
   fund: FundIdentity;
   lookback_years: number;
-  metric_basis: string;
-  basis_note: string;
+  metric_basis?: string | null;
+  basis_note?: string | null;
   fund_profile?: {
     full_name?: string | null;
     investment_type?: string | null;
@@ -398,7 +398,16 @@ export interface FundStatusData {
       purchase_fee_pct?: number | null;
       note?: string | null;
     } | null;
-    exchange?: Record<string, unknown> | null;
+    exchange?: {
+      source_subscription_status?: string | null;
+      source_redemption_status?: string | null;
+      market_session?: string | null;
+      standard_market_open_now?: boolean | null;
+      can_submit_standard_session_order?: boolean | null;
+      can_buy_now?: boolean | null;
+      can_sell_now?: boolean | null;
+      note?: string | null;
+    } | null;
     message?: string | null;
   };
 }

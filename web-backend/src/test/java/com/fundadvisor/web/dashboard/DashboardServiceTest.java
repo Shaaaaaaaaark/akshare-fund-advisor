@@ -2,6 +2,7 @@ package com.fundadvisor.web.dashboard;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.util.List;
@@ -110,6 +111,44 @@ class DashboardServiceTest {
         assertThat(response.sections().analysis().meta().asOf()).isEqualTo("2026-07-01");
         assertThat(response.sections().analysis().meta().error()).contains("\"code\":\"STALE_OR_INVALID_DATA\"");
         assertThat(response.sections().analysis().envelope()).isEqualTo(staleRaw);
+    }
+
+    @Test
+    void transportFailureKeepsUpstreamErrorInsteadOfSwallowingIt() {
+        DashboardTestSupport.RecordingCaller caller = new DashboardTestSupport.RecordingCaller(mapper);
+        caller.failures = Map.of(
+                DashboardService.INDEX_VALUATION_TOOL,
+                new IllegalStateException("data api index_valuation http 503: upstream down"));
+        DashboardService service = new DashboardService(caller, mapper, DashboardTestSupport.properties());
+
+        IndexDetail response = service.indexDetail("沪深300", 10, 300).block(Duration.ofSeconds(3));
+
+        assertThat(response).isNotNull();
+        assertThat(response.envelope()).isNull();
+        assertThat(response.meta().status()).isEqualTo(DataStatus.UNAVAILABLE);
+        assertThat(response.meta().asOf()).isEmpty();
+        assertThat(response.meta().error())
+                .contains("\"code\":\"UPSTREAM_ERROR\"")
+                .contains("index_valuation")
+                .contains("upstream down");
+    }
+
+    @Test
+    void transportFailureErrorIsValidJsonForTheFrontend() throws Exception {
+        DashboardTestSupport.RecordingCaller caller = new DashboardTestSupport.RecordingCaller(mapper);
+        caller.failures = Map.of(
+                DashboardService.FUND_ANALYZE_TOOL,
+                new IllegalStateException("timeout \"quoted\" 中文"));
+        DashboardService service = new DashboardService(caller, mapper, DashboardTestSupport.properties());
+
+        FundProductResponse response = service.fundProduct("000001", 3).block(Duration.ofSeconds(3));
+
+        assertThat(response).isNotNull();
+        assertThat(response.status()).isEqualTo(DataStatus.PARTIAL);
+        JsonNode error = mapper.readTree(response.sections().analysis().meta().error());
+        assertThat(error.get("code").asText()).isEqualTo("UPSTREAM_ERROR");
+        assertThat(error.get("message").asText()).contains("timeout \"quoted\" 中文");
+        assertThat(error.get("retryable").asBoolean()).isTrue();
     }
 
     @Test

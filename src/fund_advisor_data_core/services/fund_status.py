@@ -17,7 +17,7 @@ from fund_advisor_data_core.audit import (
     validate_frame,
 )
 from fund_advisor_data_core.contracts import ToolEnvelope, ToolError, ToolName
-from fund_advisor_data_core.errors import DataCoreError
+from fund_advisor_data_core.errors import RETRYABLE_CODES, DataCoreError
 from fund_advisor_data_core.providers.akshare import AKShareFundProvider
 
 from .fund_catalog import resolve_fund
@@ -27,11 +27,8 @@ _FUND_NAME_UPSTREAM = "东方财富-基金基本信息"
 _FUND_PURCHASE_INTERFACE = "fund_purchase_em"
 _FUND_PURCHASE_UPSTREAM = "东方财富-基金申购状态"
 
-_RETRYABLE_CODES = {
-    "DATA_SOURCE_ERROR",
-    "RATE_LIMITED",
-    "UPSTREAM_TIMEOUT",
-}
+# 名称含「联接／连接」的份额是场外基金，不能按 ETF/LOF 名称兜底判成场内。
+_OFF_EXCHANGE_NAME_MARKERS = ("联接", "连接")
 
 
 class FundStatusProvider(Protocol):
@@ -95,7 +92,7 @@ class FundStatusService:
                 error=ToolError(
                     code=exc.code,
                     message=exc.message,
-                    retryable=exc.code in _RETRYABLE_CODES,
+                    retryable=exc.code in RETRYABLE_CODES,
                     details=exc.details,
                 ),
             )
@@ -201,14 +198,44 @@ class FundStatusService:
 
     @staticmethod
     def _purchase_row(frame: pd.DataFrame, code: str) -> pd.Series | None:
-        matched = frame[frame["基金代码"].map(normalize_code).eq(normalize_code(code))]
-        return matched.iloc[0] if not matched.empty else None
+        normalized = normalize_code(code)
+        matched = frame[frame["基金代码"].map(normalize_code).eq(normalized)]
+        if matched.empty:
+            return None
+        if len(matched) > 1:
+            # 与 resolve_fund 的 AMBIGUOUS 语义一致：拒绝静默取第一行。
+            raise DataCoreError(
+                "AMBIGUOUS_FUND",
+                f"申购状态表中基金代码 {normalized} 命中多行，拒绝自动选择，请确认份额",
+                {
+                    "fund_code": normalized,
+                    "matched_rows": int(len(matched)),
+                    "candidates": [
+                        {
+                            "code": normalize_code(row.get("基金代码")),
+                            "name": json_value(row.get("基金简称")),
+                            "type": json_value(row.get("基金类型")),
+                            "subscription_status": json_value(row.get("申购状态")),
+                            "redemption_status": json_value(row.get("赎回状态")),
+                            "source_report_date": json_value(
+                                row.get("最新净值/万份收益-报告时间")
+                            ),
+                        }
+                        for _, row in matched.head(10).iterrows()
+                    ],
+                },
+            )
+        return matched.iloc[0]
 
     @staticmethod
     def _is_exchange_record(
         fund: dict[str, Any],
         purchase_row: pd.Series | None,
     ) -> bool:
+        name = str(fund.get("name") or "")
+        # ETF/LOF 联接（连接）基金是场外份额，名称兜底不得把它们判成场内。
+        if any(marker in name for marker in _OFF_EXCHANGE_NAME_MARKERS):
+            return False
         if purchase_row is not None:
             statuses = (
                 str(purchase_row.get("申购状态") or ""),
@@ -216,5 +243,5 @@ class FundStatusService:
             )
             if any("场内交易" in item for item in statuses):
                 return True
-        upper_name = str(fund.get("name") or "").upper()
+        upper_name = name.upper()
         return "ETF" in upper_name or "LOF" in upper_name

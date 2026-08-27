@@ -28,8 +28,9 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [refreshingModule, setRefreshingModule] =
-    useState<OverviewModule | null>(null);
+  const [refreshingModules, setRefreshingModules] = useState<
+    ReadonlySet<OverviewModule>
+  >(() => new Set());
   const [moduleErrors, setModuleErrors] = useState<
     Partial<Record<OverviewModule, string>>
   >({});
@@ -43,6 +44,8 @@ export default function HomePage() {
   useEffect(() => {
     const controller = new AbortController();
     invalidateModuleRefreshes(moduleRefreshSeq.current);
+    // 总览整体刷新会作废所有模块级请求，这里同时结束它们的加载态。
+    setRefreshingModules(new Set());
     setLoading(true);
     setError(null);
     void fetchOverview(controller.signal)
@@ -69,7 +72,7 @@ export default function HomePage() {
   async function refreshModule(module: OverviewModule) {
     const requestSeq = moduleRefreshSeq.current[module] + 1;
     moduleRefreshSeq.current[module] = requestSeq;
-    setRefreshingModule(module);
+    setRefreshingModules((current) => withModule(current, module, true));
     setModuleErrors((current) => ({ ...current, [module]: undefined }));
     try {
       const result = await fetchOverviewModule(module);
@@ -89,7 +92,7 @@ export default function HomePage() {
       }));
     } finally {
       if (moduleRefreshSeq.current[module] === requestSeq) {
-        setRefreshingModule(null);
+        setRefreshingModules((current) => withModule(current, module, false));
       }
     }
   }
@@ -171,7 +174,7 @@ export default function HomePage() {
               status={overview.index.meta.status}
               meta={overview.index.meta}
               href={`/indices/${encodeURIComponent(overview.index.index)}`}
-              refreshing={refreshingModule === "index"}
+              refreshing={refreshingModules.has("index")}
               refreshError={moduleErrors.index}
               onRefresh={() => void refreshModule("index")}
               metrics={[
@@ -190,7 +193,7 @@ export default function HomePage() {
               status={overview.etf.meta.status}
               meta={overview.etf.meta}
               href={`/funds/${encodeURIComponent(overview.etf.fund)}`}
-              refreshing={refreshingModule === "etf"}
+              refreshing={refreshingModules.has("etf")}
               refreshError={moduleErrors.etf}
               onRefresh={() => void refreshModule("etf")}
               metrics={[
@@ -209,7 +212,7 @@ export default function HomePage() {
               status={overview.fund.meta.status}
               meta={overview.fund.meta}
               href={`/funds/${encodeURIComponent(overview.fund.fund)}/product`}
-              refreshing={refreshingModule === "fund"}
+              refreshing={refreshingModules.has("fund")}
               refreshError={moduleErrors.fund}
               onRefresh={() => void refreshModule("fund")}
               metrics={[
@@ -228,7 +231,7 @@ export default function HomePage() {
               status={overview.stock.meta.status}
               meta={overview.stock.meta}
               href={`/stocks/${encodeURIComponent(overview.stock.stock)}`}
-              refreshing={refreshingModule === "stock"}
+              refreshing={refreshingModules.has("stock")}
               refreshError={moduleErrors.stock}
               onRefresh={() => void refreshModule("stock")}
               metrics={[
@@ -408,6 +411,23 @@ function rollUpOverviewStatus(statuses: DataStatus[]): DataStatus {
     return "available";
   }
   return "partial";
+}
+
+function withModule(
+  current: ReadonlySet<OverviewModule>,
+  module: OverviewModule,
+  refreshing: boolean,
+): ReadonlySet<OverviewModule> {
+  if (current.has(module) === refreshing) {
+    return current;
+  }
+  const next = new Set(current);
+  if (refreshing) {
+    next.add(module);
+  } else {
+    next.delete(module);
+  }
+  return next;
 }
 
 function invalidateModuleRefreshes(seq: Record<OverviewModule, number>) {

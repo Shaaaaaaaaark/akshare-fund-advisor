@@ -62,10 +62,11 @@ class AuditBundle:
         interface: str,
         upstream: str,
         *,
+        provider_version: str | None,
         documentation_url: str = PUBLIC_FUND_DOC,
         provider: str = "AKShare",
-        provider_version: str | None = SUPPORTED_AKSHARE_VERSION,
     ) -> None:
+        """记录来源；provider_version 必须由调用方传入实际运行版本，不做字面量兜底。"""
         source = {
             "provider": provider,
             "provider_version": provider_version,
@@ -187,11 +188,21 @@ def json_value(value: Any) -> Any:
 
 
 def frame_fingerprint(frame: pd.DataFrame) -> str:
+    """规范化 DataFrame 内容指纹：覆盖列名与逐行取值，排除行索引。
+
+    列名参与指纹，列改名或换序会改变指纹，可发现 schema 漂移；
+    行索引不参与指纹，重排索引等无语义变化不会改变指纹。
+    """
     normalized = frame.copy()
-    normalized.columns = [str(column) for column in normalized.columns]
+    columns = [str(column) for column in normalized.columns]
+    normalized.columns = columns
     normalized = normalized.astype(str)
-    hashed = pd.util.hash_pandas_object(normalized, index=True).values.tobytes()
-    return hashlib.sha256(hashed).hexdigest()
+    row_hashes = pd.util.hash_pandas_object(normalized, index=False).values.tobytes()
+    digest = hashlib.sha256()
+    digest.update("\x00".join(columns).encode("utf-8"))
+    digest.update(b"\x00")
+    digest.update(row_hashes)
+    return digest.hexdigest()
 
 
 def validate_frame(

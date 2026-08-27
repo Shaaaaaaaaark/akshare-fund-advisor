@@ -3,8 +3,8 @@ import {
   ArrowUp,
   ArrowUpDown,
   CalendarRange,
-  Flame,
   List,
+  RefreshCw,
   ShieldCheck,
 } from "lucide-react";
 import {
@@ -50,24 +50,6 @@ const FEATURE_ITEMS = [
   "基金抱团/打埋伏追踪",
   "其他",
 ];
-const TOP_POLLS = [
-  {
-    id: "broad_market",
-    question: "本周更关注宽基 ETF 吗？",
-    options: [
-      { value: "yes", label: "是", count: 126 },
-      { value: "no", label: "不是", count: 84 },
-    ],
-  },
-  {
-    id: "valuation",
-    question: "你更常看估值还是资金趋势？",
-    options: [
-      { value: "valuation", label: "估值", count: 98 },
-      { value: "flow", label: "趋势", count: 112 },
-    ],
-  },
-] as const;
 
 type TableSortKey =
   | "date"
@@ -109,7 +91,6 @@ export default function FundsPage() {
   const [groupFilter, setGroupFilter] = useState("all");
   const [selectedFeedback, setSelectedFeedback] = useState<string | null>(null);
   const [featureStatus, setFeatureStatus] = useState<string | null>(null);
-  const [pollVotes, setPollVotes] = useState<Record<string, string>>({});
 
   const load = useCallback((signal: AbortSignal) => {
     setLoading(true);
@@ -248,6 +229,17 @@ export default function FundsPage() {
         <button
           type="button"
           className="etf-utility-button"
+          aria-label="重新读取 ETF 审计数据"
+          title="重新读取 ETF 审计数据"
+          disabled={loading}
+          onClick={() => setRefreshKey((key) => key + 1)}
+        >
+          <RefreshCw aria-hidden="true" className={loading ? "spin" : ""} />
+          {loading ? "刷新中" : "刷新数据"}
+        </button>
+        <button
+          type="button"
+          className="etf-utility-button"
           onClick={resetPage}
         >
           复位
@@ -262,41 +254,6 @@ export default function FundsPage() {
       </div>
 
       <header className="etf-reference-header">
-        <section className="etf-hot-polls" aria-label="今日站队投票">
-          <div className="etf-hot-poll-line">
-            <strong>
-              <Flame aria-hidden="true" />
-              今日站队
-            </strong>
-            {TOP_POLLS.map((poll, pollIndex) => (
-              <div className="etf-poll-topic" key={poll.id}>
-                {pollIndex > 0 && <i aria-hidden="true" />}
-                <span>{poll.question}</span>
-                {poll.options.map((option) => {
-                  const selected = pollVotes[poll.id] === option.value;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className={selected ? "active" : ""}
-                      aria-pressed={selected}
-                      onClick={() =>
-                        setPollVotes((current) => ({
-                          ...current,
-                          [poll.id]: option.value,
-                        }))
-                      }
-                    >
-                      {option.label}
-                      <b>{option.count + (selected ? 1 : 0)}</b>
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-        </section>
-
         <div className="etf-brand-line">
           Fund Advisor · ETF 可信数据与审计研究终端
         </div>

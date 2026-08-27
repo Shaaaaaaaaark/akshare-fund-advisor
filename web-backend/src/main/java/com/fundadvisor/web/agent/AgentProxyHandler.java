@@ -2,6 +2,7 @@ package com.fundadvisor.web.agent;
 
 import com.fundadvisor.web.config.BffProperties;
 import java.net.URI;
+import java.util.Locale;
 import java.util.Set;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpHeaders;
@@ -82,8 +83,11 @@ public class AgentProxyHandler {
         });
         MediaType contentType = response.getHeaders().getContentType();
         if (contentType != null && MediaType.TEXT_EVENT_STREAM.includes(contentType)) {
-            builder.header("X-Accel-Buffering", "no");
-            builder.header(HttpHeaders.CACHE_CONTROL, "no-cache");
+            // 覆盖式设置：上游若已带同名头，追加会产生 "no, no" 这类重复值，导致禁用缓冲失效。
+            builder.headers(headers -> {
+                headers.set("X-Accel-Buffering", "no");
+                headers.set(HttpHeaders.CACHE_CONTROL, "no-cache");
+            });
         }
         Flux<DataBuffer> body = response.getBody() == null ? Flux.empty() : response.getBody();
         return builder.body(BodyInserters.fromDataBuffers(body));
@@ -104,6 +108,6 @@ public class AgentProxyHandler {
     }
 
     private static boolean isHopByHop(String headerName) {
-        return HOP_BY_HOP_HEADERS.contains(headerName.toLowerCase());
+        return HOP_BY_HOP_HEADERS.contains(headerName.toLowerCase(Locale.ROOT));
     }
 }

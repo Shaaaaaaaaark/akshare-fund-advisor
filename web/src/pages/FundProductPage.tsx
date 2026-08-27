@@ -53,6 +53,14 @@ const RATING_LABELS: Record<string, string> = {
   morningstar: "晨星评级",
   five_star_count: "五星评级家数",
 };
+// 标签只能跟随后端 metric_basis，不得由前端改写口径。
+const METRIC_BASIS_LABELS: Record<string, string> = {
+  accumulated_nav: "累计净值",
+  unit_nav: "单位净值",
+  exchange_qfq_daily: "场内收盘价（前复权）",
+  exchange_unadjusted_daily_sina: "场内收盘价（未复权）",
+};
+const NEUTRAL_LATEST_VALUE_LABEL = "最新指标值";
 
 type ProductYears = 1 | 3 | 5;
 
@@ -354,7 +362,7 @@ function ProductSummary({
   return (
     <section className="fund-summary-band" aria-label="基金摘要">
       <SummaryItem
-        label="累计净值"
+        label={latestValueLabel(analysis?.metric_basis)}
         value={displayNumber(metrics?.latest_value)}
         note={metrics?.latest_date ?? "数据日期不可用"}
       />
@@ -382,6 +390,14 @@ function ProductSummary({
       />
     </section>
   );
+}
+
+function latestValueLabel(basis: string | null | undefined): string {
+  const normalized = basis?.trim();
+  if (!normalized) {
+    return NEUTRAL_LATEST_VALUE_LABEL;
+  }
+  return METRIC_BASIS_LABELS[normalized] ?? NEUTRAL_LATEST_VALUE_LABEL;
 }
 
 function SummaryItem({
@@ -562,57 +578,124 @@ function ProfileContent({ data }: { data: FundProfileData }) {
 
 function TradingContent({ data }: { data: FundStatusData }) {
   const availability = data.availability;
-  const offExchange = availability.off_exchange;
   if (!availability.confirmed) {
     return (
-      <div className="fund-section-body">
-        <p className="fund-section-note">
-          {availability.message || "当前无法确认该基金的交易状态。"}
-        </p>
-      </div>
+      <TradingNote
+        message={availability.message || "当前无法确认该基金的交易状态。"}
+      />
     );
   }
+  const mode = availability.mode?.trim() || null;
+  const exchange = availability.exchange ?? null;
+  const offExchange = availability.off_exchange ?? null;
+  const showExchange =
+    mode === "exchange" || (mode === null && !offExchange && !!exchange);
+  const showOffExchange =
+    mode === "off_exchange" || (mode === null && !!offExchange);
+
+  if (showExchange) {
+    return exchange ? (
+      <ExchangeTradingBlock data={exchange} />
+    ) : (
+      <TradingNote message="后端标记为场内交易口径，但未返回场内交易明细，当前无法确认。" />
+    );
+  }
+  if (showOffExchange) {
+    return offExchange ? (
+      <OffExchangeTradingBlock data={offExchange} />
+    ) : (
+      <TradingNote message="后端标记为场外申赎口径，但未返回申赎明细，当前无法确认。" />
+    );
+  }
+  return (
+    <TradingNote
+      message={
+        availability.message ||
+        "后端未返回交易口径（场内/场外），当前无法确认交易与申赎状态。"
+      }
+    />
+  );
+}
+
+type FundExchangeStatus = NonNullable<
+  FundStatusData["availability"]["exchange"]
+>;
+type FundOffExchangeStatus = NonNullable<
+  FundStatusData["availability"]["off_exchange"]
+>;
+
+function ExchangeTradingBlock({ data }: { data: FundExchangeStatus }) {
   return (
     <div className="fund-section-body">
       <div className="fund-stat-grid fund-trading-grid">
         <DataPoint
-          label="申购状态"
-          value={offExchange?.subscription_status || "—"}
+          label="来源申购状态"
+          value={data.source_subscription_status || "—"}
         />
         <DataPoint
-          label="赎回状态"
-          value={offExchange?.redemption_status || "—"}
+          label="来源赎回状态"
+          value={data.source_redemption_status || "—"}
         />
+        <DataPoint label="交易时段" value={data.market_session || "—"} />
+        <DataPoint
+          label="标准时段开放"
+          value={displayFlag(data.standard_market_open_now)}
+        />
+        <DataPoint
+          label="可提交标准时段委托"
+          value={displayFlag(data.can_submit_standard_session_order)}
+        />
+        <DataPoint label="当前可买入" value={displayFlag(data.can_buy_now)} />
+        <DataPoint label="当前可卖出" value={displayFlag(data.can_sell_now)} />
+      </div>
+      {data.note && <p className="fund-section-note">{data.note}</p>}
+    </div>
+  );
+}
+
+function OffExchangeTradingBlock({ data }: { data: FundOffExchangeStatus }) {
+  return (
+    <div className="fund-section-body">
+      <div className="fund-stat-grid fund-trading-grid">
+        <DataPoint label="申购状态" value={data.subscription_status || "—"} />
+        <DataPoint label="赎回状态" value={data.redemption_status || "—"} />
         <DataPoint
           label="购买起点"
           value={
-            offExchange?.minimum_purchase_cny == null
+            data.minimum_purchase_cny == null
               ? "—"
-              : `${String(offExchange.minimum_purchase_cny)} 元`
+              : `${String(data.minimum_purchase_cny)} 元`
           }
         />
         <DataPoint
           label="日累计限额"
           value={
-            offExchange?.daily_limit_cny == null
+            data.daily_limit_cny == null
               ? "未返回有效限额"
-              : `${String(offExchange.daily_limit_cny)} 元`
+              : `${String(data.daily_limit_cny)} 元`
           }
         />
-        <DataPoint
-          label="申购费"
-          value={displayPercent(offExchange?.purchase_fee_pct)}
-        />
-        <DataPoint
-          label="下一开放日"
-          value={offExchange?.next_open_date || "—"}
-        />
+        <DataPoint label="申购费" value={displayPercent(data.purchase_fee_pct)} />
+        <DataPoint label="下一开放日" value={data.next_open_date || "—"} />
       </div>
-      {offExchange?.note && (
-        <p className="fund-section-note">{offExchange.note}</p>
-      )}
+      {data.note && <p className="fund-section-note">{data.note}</p>}
     </div>
   );
+}
+
+function TradingNote({ message }: { message: string }) {
+  return (
+    <div className="fund-section-body">
+      <p className="fund-section-note">{message}</p>
+    </div>
+  );
+}
+
+function displayFlag(value: boolean | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "—";
+  }
+  return value ? "是" : "否";
 }
 
 function RatingContent({ data }: { data: FundRatingData }) {

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
 class DashboardControllerTest {
@@ -97,6 +98,35 @@ class DashboardControllerTest {
                     .expectStatus().isBadRequest();
             assertThat(caller.calls).isEmpty();
         }
+    }
+
+    @Test
+    void invalidParametersReturnJsonDetailSoTheFrontendCanRenderIt() {
+        client.get()
+                .uri("/api/dashboard/funds/510300?years=10")
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
+                .expectBody()
+                .jsonPath("$.detail").isEqualTo("years must be 1, 3 or 5");
+
+        client.get()
+                .uri("/api/dashboard/funds/search")
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
+                .expectBody()
+                .jsonPath("$.detail").isEqualTo("query is required");
+
+        client.get()
+                .uri("/api/dashboard/overview/unknown")
+                .exchange()
+                .expectStatus().isNotFound()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
+                .expectBody()
+                .jsonPath("$.detail").isEqualTo("overview module not found");
+
+        assertThat(caller.calls).isEmpty();
     }
 
     @Test

@@ -16,11 +16,25 @@ public record BffProperties(
         Duration dataTimeout,
         OverviewTargets overview) {
 
+    /** 取数超时下界：配成 0 或负数会让所有取数立即超时。 */
+    static final int MIN_DATA_TIMEOUT_SECONDS = 1;
+
+    public BffProperties {
+        if (dataTimeout == null || dataTimeout.getSeconds() < MIN_DATA_TIMEOUT_SECONDS) {
+            throw new IllegalArgumentException(
+                    "dataTimeout must be at least " + MIN_DATA_TIMEOUT_SECONDS + "s");
+        }
+    }
+
     public static BffProperties fromEnvironment() {
         Map<String, String> env = System.getenv();
         int concurrency = intValue(env, "DASHBOARD_CONCURRENCY", 4);
         if (concurrency < 1) {
             concurrency = 1;
+        }
+        int dataTimeoutSeconds = intValue(env, "DATA_API_TIMEOUT_SECONDS", 90);
+        if (dataTimeoutSeconds < MIN_DATA_TIMEOUT_SECONDS) {
+            dataTimeoutSeconds = MIN_DATA_TIMEOUT_SECONDS;
         }
         return new BffProperties(
                 stringValue(env, "DATA_API_URL", "http://data-api:8003"),
@@ -32,7 +46,7 @@ public record BffProperties(
                         List.of("沪深300", "中证500", "中证1000", "上证50", "创业板50", "中证800")),
                 intValue(env, "DASHBOARD_INDEX_YEARS", 10),
                 concurrency,
-                Duration.ofSeconds(intValue(env, "DATA_API_TIMEOUT_SECONDS", 90)),
+                Duration.ofSeconds(dataTimeoutSeconds),
                 new OverviewTargets(
                         stringValue(env, "DASHBOARD_OVERVIEW_INDEX", "沪深300"),
                         stringValue(env, "DASHBOARD_OVERVIEW_ETF", "510310"),
