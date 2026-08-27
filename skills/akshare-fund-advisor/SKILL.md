@@ -106,7 +106,7 @@ bash "$SKILL_DIR/scripts/run.sh" rating --fund "000001"
 bash "$SKILL_DIR/scripts/run.sh" audit
 ```
 
-除非用户明确指定观察周期，否则基金分析使用 3 年、指数估值图使用 10 年。独立使用说明见 [USAGE.md](USAGE.md)，系统设计见 [DESIGN.md](DESIGN.md)；指标定义与专业解释必须阅读 [references/professional_metrics.md](references/professional_metrics.md)；详细接口映射见 [references/akshare_api.md](references/akshare_api.md)；指数图表必须继续阅读并遵循 [references/valuation_chart.md](references/valuation_chart.md)；接口审计方法与历史记录见 [references/interface_audit.md](references/interface_audit.md)。
+除非用户明确指定观察周期，否则基金分析使用 3 年、指数估值图使用 10 年。独立使用说明见 [USAGE.md](USAGE.md)，系统设计见 [DESIGN.md](DESIGN.md)；指标定义与专业解释必须阅读 [references/professional_metrics.md](references/professional_metrics.md)；接口映射、上游来源、字段口径与审计规则见 [references/akshare_api.md](references/akshare_api.md)；指数图表必须继续阅读并遵循 [references/valuation_chart.md](references/valuation_chart.md)。
 Baostock/efinance 交叉校验的许可、口径、实测结果和生产边界见
 [references/source_cross_validation.md](references/source_cross_validation.md)。
 

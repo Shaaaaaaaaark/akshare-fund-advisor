@@ -37,7 +37,7 @@ React Web
 部分 legacy 数据调用仍在 Agent Skill 内部脚本中，按 Roadmap 逐步迁移到 `data_core`。
 Skill 只作为 Agent 能力包装和内部调试边界，不是数据来源层。
 
-原 Go BFF 已由 Java BFF 替换。主干只保留 Java Web 后端，不维护 Go/Java 双栈。
+网页后端只保留 Java 实现，不维护第二套 BFF 语言栈。
 
 ### 目标 Agent 架构
 
@@ -390,29 +390,9 @@ Web MCP 只有三个工具：`web_search`、`web_fetch`、`document_read`。其�
 
 ## 11. 部署与验证
 
-Compose 包含五个运行服务：
+Compose 包含五个运行服务，只有 `web-backend` 对外暴露，`data-api`、`agent-api`、
+`fund-advisor-mcp`、`web-research-mcp` 仅在容器网络内可见。启动命令见 `README.md`，
+Python/Java/Skill 的完整验证命令见 `AGENTS.md`。
 
-```text
-web-backend       # Java Spring Boot，对外暴露
-data-api          # Python，仅容器网络
-agent-api         # Python，仅容器网络
-fund-advisor-mcp  # Python，仅容器网络
-web-research-mcp  # Python，仅容器网络
-```
-
-Python 全量检查：
-
-```bash
-docker compose -f deploy/compose/compose.yaml --profile test build test
-docker compose -f deploy/compose/compose.yaml run --rm test
-```
-
-Java BFF 检查：
-
-```bash
-docker run --rm -v "$PWD/web-backend":/workspace -w /workspace \
-  eclipse-temurin:21-jdk ./mvnw verify
-```
-
-Docker 相关改动还需验证五服务健康、Data API、MCP 工具发现、Java 到 Data API 取数和
-Java 到 Agent SSE 闭环。
+Docker 相关改动必须验证：五服务健康、Data API 健康、Fund/Web MCP 工具发现、Java 到
+Data API 取数、Java 到 Agent SSE 闭环。

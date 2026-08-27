@@ -8,20 +8,11 @@
 
 ## 当前状态
 
-| 模块 | 状态 | 说明 |
-| --- | --- | --- |
-| Agent Skill | 已实现 | Agent 技能包装和内部调试脚本；目标架构中不承担数据来源层定位 |
-| Data API | 已实现 | 数据面板专用 REST，复用审计数据核心，不依赖 Agent/MCP 协议 |
-| Fund Advisor MCP | 已实现 | 十个市场事实工具 |
-| Web Research MCP | 已实现 | 三个非数值背景工具 |
-| LangGraph Agent | 已实现 | 固定图、工具白名单、FactRef、结构化研究综合和门禁 |
-| Agent API | 已实现 | FastAPI、SSE 和有界进程内会话 |
-| React Web | MVP 已实现 | 跨模块总览、指数、ETF、主动基金、股票单标、Agent 页和 ETF Agent 抽屉 |
-| Web BFF | 已迁移 | Java 21 + Spring Boot WebFlux，负责静态托管、Dashboard 聚合和 Agent SSE 代理 |
+产品 MVP 已可运行：首页聚合指数、ETF、主动基金和股票代表标的，各详情页与 Agent 均可
+进入，网页后端为 Java 21 + Spring Boot WebFlux。研究动态、候选筛选、通用
+`PageContext` 和精细交互作为后续增强。
 
-产品 MVP 已可运行：首页聚合指数、ETF、主动基金和股票代表标的；各详情页与 Agent
-均可进入。研究动态、候选筛选、通用 `PageContext` 和精细交互作为后续增强。
-具体进度以 [Roadmap](docs/ROADMAP.md) 为准。
+模块级实现状态、优先级和完成标准统一维护在 [Roadmap](docs/ROADMAP.md)。
 
 ## 架构
 
@@ -32,18 +23,11 @@ React Web
      `-- Agent SSE 代理 -> Agent API (Python) -> LangGraph -> MCP / Agent Skill
 ```
 
-职责边界：
+职责边界：Python 承担全部金融计算与审计（`data_core`、Data API、Agent、MCP、Agent
+Skill）；Java 网页后端只做取数聚合、静态托管和 Agent SSE 代理；React 只渲染结构化结果。
+三者都不得生成、补齐或改写市场事实。
 
-- **data_core**：目标数据核心，负责 provider 调用、Schema 校验、审计和确定性指标。
-- **Agent Skill**：Agent 技能包装和内部调试脚本，不作为数据来源层。
-- **Data API**：为数据面板提供普通 REST 接口，不包含模型、会话或 MCP 协议。
-- **Fund MCP**：提供强类型工具、超时、缓存和 `ToolEnvelope`，不改写数据核心数值。
-- **Web MCP**：提供非数值背景，固定 `numeric_allowed=false`。
-- **Agent**：执行固定研究流程、错误分支和输出门禁。
-- **Java 网页后端**：取数聚合、静态托管和 SSE 代理，不做金融计算。
-- **React**：渲染结构化数据和 Agent 结果，不生成市场事实。
-
-详细边界见 [整体架构](docs/ARCHITECTURE.md)。
+组件职责、协议契约、错误语义和安全边界见 [整体架构](docs/ARCHITECTURE.md)。
 
 ## 已实现能力
 
@@ -103,40 +87,21 @@ fund-advisor-mcp  # Python，仅容器网络
 web-research-mcp  # Python，仅容器网络
 ```
 
-`web-backend` 已切换到 Java 实现，服务名、端口和外部 API 与迁移前保持一致。
+只有 `web-backend` 对外暴露，其余四个服务仅在容器网络内可见。
 
 ## 验证
 
-Python 全量检查：
-
-```bash
-docker compose -f deploy/compose/compose.yaml --profile test build test
-docker compose -f deploy/compose/compose.yaml run --rm test
-```
-
-Java BFF 检查：
-
-```bash
-docker run --rm -v "$PWD/web-backend":/workspace -w /workspace \
-  eclipse-temurin:21-jdk ./mvnw verify
-```
-
-Docker 相关改动还需验证五个服务健康、Data API、MCP 工具发现、Dashboard 取数和 Agent
-SSE 闭环。
-
-## 当前任务
-
-当前顺序见 [Roadmap](docs/ROADMAP.md)：稳定 Java BFF 迁移后的 MVP，继续收敛
-`data_core`，并实现 `fund_screen` / `stock_screen`。
-
-组合分析、回测、数据库、Redis、RAG、多 Agent 和自动交易当前不立项。
+Python 全量检查、Java BFF `mvnw verify`、Skill 单测和真实接口审计的完整命令统一维护在
+[AGENTS.md](AGENTS.md#验证)。
 
 ## 文档
 
-- [整体架构](docs/ARCHITECTURE.md)
-- [Roadmap](docs/ROADMAP.md)
-- [文档索引](docs/README.md)
-- [Skill 使用与数据口径](skills/akshare-fund-advisor/README.md)
+- [整体架构](docs/ARCHITECTURE.md)：组件边界、协议契约、错误语义、安全边界
+- [Roadmap](docs/ROADMAP.md)：实现状态、优先级、完成标准
+- [AGENTS.md](AGENTS.md)：开发约束、验证命令、提交前检查
+- [Skill 调用规范](skills/akshare-fund-advisor/SKILL.md)：模型调用顺序与禁止事项
+- [Skill 安装与命令](skills/akshare-fund-advisor/USAGE.md)：独立安装、命令示例、错误码
+- [安全策略](SECURITY.md)：漏洞报告、密钥、Web 与 Agent 安全
 
 ## 免责声明
 

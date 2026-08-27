@@ -314,3 +314,56 @@ sh -n "$SKILL_DIR/scripts/setup.sh"
 ```
 
 接口或字段发生变化时，更新代码和文档后必须重新运行 `audit`。不得用 Mock 审计结果替代真实接口验证。
+
+## 15. 目录结构
+
+```text
+skills/akshare-fund-advisor/   # 纯数据层，可独立拷贝
+├── SKILL.md                 # 模型调用顺序、回答格式和禁止事项
+├── DESIGN.md                # 系统设计、数据源、指标与策略
+├── USAGE.md                 # 独立安装、命令、排错与目录结构
+├── requirements.txt         # 锁定的运行依赖
+├── scripts/
+│   ├── fund_advisor.py      # 内部脚本、数据访问、校验、指标与策略规则
+│   ├── audit_quality_interfaces.py # 候选筛选接口 discovery audit
+│   ├── audit_source_providers.py   # 多源代表性真实接口审计
+│   ├── source_validation.py # 可选 Provider 和确定性 Comparator
+│   ├── run.sh               # 选择虚拟环境并启动内部脚本
+│   └── setup.sh             # 创建虚拟环境并安装锁定依赖
+├── tests/
+│   └── test_fund_advisor.py # 指标、降级、审计与错误输出回归测试
+└── references/
+    ├── akshare_api.md       # 接口、上游、字段、公式与审计契约
+    ├── professional_metrics.md     # 专业指标解释
+    ├── valuation_chart.md   # 指数估值图数据与渲染契约
+    ├── quality_interface_audit.md  # 财务、行业和基金质量候选接口审计
+    └── source_cross_validation.md  # 多源许可、接口、实测和接入边界
+```
+
+MCP 与 LangGraph Agent 源码位于仓库级源码根（不随 Skill 拷贝）：
+
+```text
+src/
+├── fund_advisor_data_core/  # 目标数据核心：provider、审计、Schema、确定性指标
+├── fund_advisor_data_api/   # 数据面板专用 REST API
+├── fund_advisor_mcp/        # config、fund/ 市场事实 MCP、web/ 背景 MCP
+├── fund_advisor_agent/      # LangGraph 固定状态图、FactRef 与门禁
+└── fund_advisor_app/        # Agent API、SSE 和临时会话
+```
+
+## 16. 相关文档
+
+- Skill 调用规范：[SKILL.md](SKILL.md)
+- 系统设计与指标层：[DESIGN.md](DESIGN.md)
+- 接口与审计契约：[references/akshare_api.md](references/akshare_api.md)
+- 指标解释：[references/professional_metrics.md](references/professional_metrics.md)
+- 估值图契约：[references/valuation_chart.md](references/valuation_chart.md)
+- 候选接口审计：[references/quality_interface_audit.md](references/quality_interface_audit.md)
+- 多源交叉校验：[references/source_cross_validation.md](references/source_cross_validation.md)
+- 仓库整体架构：[../../docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)
+
+## 免责声明
+
+本工具仅用于金融信息分析与研究，不构成投资建议。数据来自 AKShare 对应的公开上游，可能
+受网络、反爬与上游状态影响。接口失败会明确提示“当前无法确认”，不会被解释为停牌、暂停
+申购或休市。投资有风险，决策需谨慎。

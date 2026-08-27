@@ -75,12 +75,12 @@ LangChain Agent、ReAct、数据库 checkpoint、长期 Memory 或多 Agent。
 | `../../src/fund_advisor_mcp/` | Fund/Web MCP 配置、Client、Adapter 与 Server |
 | `../../src/fund_advisor_agent/` | 固定 LangGraph、FactRef 和关联门禁 |
 | `../../src/fund_advisor_app/` | Agent API、SSE 和临时会话 |
-| `references/akshare_api.md` | 接口、字段和公式契约 |
+| `references/akshare_api.md` | 接口、上游、字段、公式和审计契约 |
 | `references/professional_metrics.md` | 专业指标解释 |
 | `references/valuation_chart.md` | 指数估值图数据和渲染契约 |
-| `references/interface_audit.md` | 真实接口审计方法和历史记录 |
+| `references/quality_interface_audit.md` | 财务、行业和基金质量候选接口审计 |
 | `references/source_cross_validation.md` | 多源许可、接口、实测结果和接入边界 |
-| `USAGE.md` | 独立安装、命令和排错说明 |
+| `USAGE.md` | 独立安装、命令、排错和目录结构 |
 
 ## 3. 命令模型
 

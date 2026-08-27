@@ -13,7 +13,7 @@
 | Fund MCP / Web MCP | 已实现 |
 | Fixed LangGraph Agent | 已实现 |
 | FastAPI Agent API / SSE / 有界临时会话 | 已实现 |
-| Java BFF | 已实现，替换原 Go BFF，保持外部 HTTP/SSE 契约 |
+| Java BFF | 已实现，保持外部 HTTP/SSE 契约 |
 | React 总览、指数、ETF、主动基金、股票和 Agent 页 | MVP 已实现 |
 | Pi-style Agent Harness | 设计完成，尚未实现 |
 | `fund_screen` / `stock_screen` | 接口审计完成，工具未实现 |
@@ -23,15 +23,15 @@
 
 ### P0：稳定 Java BFF
 
-`web-backend/` 已切换为 Java 21 + Spring Boot WebFlux，后续只保留该实现：
+`web-backend/` 使用 Java 21 + Spring Boot WebFlux：
 
-1. 保持 Dashboard、SSE、静态资源和错误契约与迁移前兼容；
+1. 保持 Dashboard、SSE、静态资源和错误契约稳定；
 2. 保持 Data API `WebClient`、完整 `ToolEnvelope` 原样透传和全局并发 Bulkhead；
 3. 保持 Overview、Index、ETF、主动基金和股票接口稳定；
 4. 保持 Agent SSE 流式代理、SPA fallback 和 `/health`；
 5. 持续用 Maven `verify`、Compose 测试和 Web/API 黑盒闭环验证。
 
-主干不保留 Go/Java 双栈，不改变前端 API 或 Python 服务契约。
+不改变前端 API 或 Python 服务契约。
 
 ### P1：保持 MVP 稳定
 

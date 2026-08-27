@@ -6,44 +6,23 @@
 ## 项目方向
 
 项目首先用于面试展示可信 Agent 工程，同时提供基金、指数、ETF 和 A 股数据分析供个人
-研究参考。
+研究参考。本项目优先保证金融事实忠实度，其次才是功能覆盖和语言表现。
 
-当前优先级：
+当前优先级、后续顺序和暂不立项范围只维护在 `docs/ROADMAP.md`，本文不再复制一份。
 
-1. 稳定 Java 21 + Spring Boot WebFlux BFF，保持 HTTP/JSON/SSE 黑盒契约不变；
-2. 保持投研数据工作台 MVP 稳定：指数、ETF、主动基金产品档案、股票单标价格/PE/PB
-   和 Agent 均已可运行，细节增强按 `docs/ROADMAP.md` 排队；
-3. 按已审计接口推进基金与股票候选筛选，并保持 Web、Agent API、MCP、LangGraph、
-   金融门禁和 Ark 结构化模型回归稳定。
+## 定位约束
 
-当前不优先：
+模块级实现状态以 `docs/ROADMAP.md` 为唯一来源。以下是不随进度变化的定位约束：
 
-- 组合分析和回测；
-- PostgreSQL、Redis、Elasticsearch；
-- 多 Agent、RAG、向量库和长期记忆；
-- 自动交易和收益预测。
+- Agent Skill 只做 Agent 技能包装和内部调试脚本，不承担数据来源层定位；
+- 数据面板不经过 Agent、LangGraph 或 MCP 协议取数，直连 Data API；
+- 目标数据核心是 `src/fund_advisor_data_core/`，legacy Skill 数据逻辑逐步向其收敛；
+- 产品方向已收敛为 Web；网页后端用 Java 21 + Spring Boot WebFlux，Data API、Agent、
+  MCP 和 Agent Skill 保留 Python；
+- Compose 只对外暴露 Java 网页后端。
 
-## 实现状态
-
-- Agent Skill 包装和内部调试脚本已实现；目标架构中 Skill 只服务 Agent，不承担数据
-  来源层定位。
-- Fund MCP 和 Web MCP 的命名空间、入口、配置和测试接线已完成。
-- 独立 Data API 已实现，数据面板不经过 Agent、LangGraph 或 MCP 协议取数。
-- LangGraph Agent 固定图、MCP Client、FactRef、结构化研究综合和门禁已实现。
-- FastAPI Agent API、SSE、有界临时会话和 React 对话页已实现。
-- Compose 包含 Java 网页后端、Data API、Agent API 和两个 MCP 共五个服务；对外仅暴露
-  Java 网页后端。
-- Java BFF 已实现指数、基金搜索、ETF、主动基金四块聚合和股票单标取数、
-  ToolEnvelope 原样透传、Agent SSE 反向代理、React 静态托管和 `/health`。
-- 跨模块总览、指数看板、指数详情、PE/PB 历史双图、ETF 五联图终端、主动基金产品
-  档案、股票单标价格/PE/PB、ETF Agent 抽屉和独立 Agent 页已实现；研究动态尚未实现。
-- 产品方向已收敛为 Web；目标网页后端用 Java 21 + Spring Boot WebFlux，Data API、
-  Agent、MCP 和 Agent Skill 保留 Python。
-- Ark thinking 模型的 Pydantic 结构化关联输出和门禁闭环已验证。
-- 基金和股票单标分析已接入研究/媒体文章与博主/社区公开链接的可选 Web 搜索。
-- 财务、行业和基金质量候选接口审计已完成；`stock_screen`、`fund_screen` 尚未实现。
-
-不得把后续组合能力写成“已实现”。
+不得把后续能力写成“已实现”：`stock_screen`、`fund_screen`、研究动态和通用
+`PageContext` 尚未实现。
 
 ## 事实来源
 
@@ -77,16 +56,9 @@
 
 ## 架构边界
 
-目标依赖方向：
-
-```text
-React Web
-  -> Java 网页后端（BFF）
-     |-- 数据面板 -> Data API (Python) -> data_core -> providers(AKShare/...)
-     `-- Agent SSE -> Agent API (Python) -> LangGraph
-                                      |-> Fund MCP -> data_core
-                                      `-> Web MCP -> 公网内容
-```
+目标依赖方向为 React Web → Java 网页后端 →（数据面板走 Data API → `data_core` →
+providers；Agent 走 Agent API → LangGraph → Fund MCP / Web MCP）。完整拓扑图见
+`docs/ARCHITECTURE.md`，本文只约束各目录的职责边界：
 
 - `src/fund_advisor_data_core/`：目标数据核心，负责数据源 provider、审计、Schema 和确定性指标。
 - `skills/akshare-fund-advisor/scripts/fund_advisor.py`：Agent Skill 内部脚本；当前 legacy
@@ -157,10 +129,21 @@ LangGraph 节点必须保持单一职责，节点间只通过 `AgentState` 传�
 
 ## 修改原则
 
+改动流程：
+
+1. 阅读本文和 `docs/ARCHITECTURE.md` 中相关章节；
+2. 明确改动属于 data_core、Data API、Fund/Web MCP、Agent、Java BFF、Web 还是 Skill；
+3. 先修改最小职责模块；
+4. 补充单元测试和必要的真实接口审计；
+5. 同步接口、指标、错误和状态文档。
+
+约束：
+
 - 优先复用现有 Schema、错误模型和指标函数。
 - 金融计算只能使用确定性函数。
 - 新增工具必须同步 Schema、Adapter、Server、工具数量和测试。
 - 新增市场数值必须同步接口来源、字段口径、时效和审计记录。
+- 不得用 Mock、模型记忆或网页摘要替代生产数据。
 - 不在 Agent 文本中复制计算逻辑。
 - 不改写用户未提交的无关修改。
 
@@ -194,9 +177,50 @@ export SKILL_DIR="$PWD/skills/akshare-fund-advisor"
 AKSHARE_FUND_VENV="$PWD/.venv-agent" bash "$SKILL_DIR/scripts/run.sh" audit
 ```
 
+Skill 单独改动时的稳定入口：
+
+```bash
+export SKILL_DIR="$PWD/skills/akshare-fund-advisor"
+"$SKILL_DIR/.venv/bin/python" -m unittest discover -s "$SKILL_DIR/tests" -v
+sh -n "$SKILL_DIR/scripts/run.sh"
+sh -n "$SKILL_DIR/scripts/setup.sh"
+```
+
+单元测试不访问真实网络。接口或字段变化后必须重新运行真实审计，不得用 Mock 结果替代：
+
+```bash
+bash "$SKILL_DIR/scripts/run.sh" audit
+```
+
+LangGraph 变更还必须覆盖节点、条件边、完整图路径和响应门禁。
+
+## 提交前检查
+
+- 没有提交密钥、持仓或私有文档；
+- 文档没有把待实现能力写成已实现；
+- 不存在、歧义、不支持、过期和上游失败没有混用；
+- 指标口径、接口契约和测试同步；
+- Agent 说明未新增数字或无证据因果关系。
+
 ## 文档同步
 
-- 项目入口和运行方式：`README.md`
-- 架构、契约、错误与安全边界：`docs/ARCHITECTURE.md`
-- 实现状态和优先级：`docs/ROADMAP.md`
-- Skill 接口和指标：Skill 目录及 `references/`
+单一来源约定，避免同一事实出现在多处：
+
+| 内容 | 唯一来源 |
+| --- | --- |
+| 项目简介、运行入口 | `README.md` |
+| 架构、契约、错误语义、安全边界 | `docs/ARCHITECTURE.md` |
+| 实现状态、优先级、完成标准 | `docs/ROADMAP.md` |
+| 开发约束、验证命令、提交前检查 | `AGENTS.md` |
+| Skill 调用规范 | `skills/akshare-fund-advisor/SKILL.md` |
+| Skill 安装、命令、排错 | `skills/akshare-fund-advisor/USAGE.md` |
+| Skill 设计、指标层、策略层 | `skills/akshare-fund-advisor/DESIGN.md` |
+| 接口契约、字段口径、审计规则 | `skills/akshare-fund-advisor/references/` |
+| 漏洞报告、密钥、Web/Agent 安全 | `SECURITY.md` |
+
+维护规则：
+
+- 字段级事实以 Pydantic/Java Schema 和测试为准；
+- Skill 需要可独立拷贝，其接口、指标和审计文档保留在 Skill 目录内；
+- 已完成工作的过程记录使用 Git，不新增总结、复盘或迁移记录文档；
+- 不新建与上表定位重复的文档。

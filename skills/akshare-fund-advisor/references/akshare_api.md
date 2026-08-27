@@ -1,6 +1,16 @@
 # AKShare 基金接口映射
 
-本文只记录 Skill 实际使用的接口和口径。AKShare 版本固定为 `1.18.64`，上游网站变更时应重新做真实数据冒烟测试。
+本文只记录 Skill 实际使用的接口、上游来源、口径和审计规则。AKShare 版本固定为
+`1.18.64`，上游网站变更时应重新做真实数据冒烟测试。
+
+审计原则：
+
+- 只调用真实接口，不使用 Mock、示例行情或硬编码市场数据；
+- 对照 AKShare 安装包源码核对函数签名、上游来源、参数和返回列；
+- 每次运行重新检查 Schema，并记录参数、行数、列名和 DataFrame SHA-256；
+- 接口失败如实记录；失败不等于零值、停牌、暂停申购或无行情；
+- 历史审计快照不代表当前接口健康度，生产回答只看本次请求的 `data_audit` 与
+  `data_warnings`。
 
 尚未进入生产的财务、行业和基金质量候选接口单独记录在
 [quality_interface_audit.md](quality_interface_audit.md)，不得把候选接口写成已实现能力。
@@ -12,24 +22,24 @@
 
 ## 接口
 
-| 用途 | AKShare 接口 | Skill 行为 |
-| --- | --- | --- |
-| 名称和代码搜索 | `fund_name_em()` | 搜索基金代码、简称、拼音缩写和拼音全称 |
-| 申购赎回状态 | `fund_purchase_em()` | 读取申购状态、赎回状态、下一开放日、起购额、限额和手续费 |
-| 基金基本资料 | `fund_info_ths()` | 读取投资类型、经理、费率、规模和业绩比较基准 |
-| 资产配置 | `fund_individual_detail_hold_xq()` | 读取报告期股票、债券、现金等仓位比例 |
-| 股票持仓 | `fund_portfolio_hold_em()` | 读取报告期持仓并计算前十大集中度；接口失败时明确缺失 |
-| 开放式基金历史 | `fund_open_fund_info_em()` | 普通基金优先使用累计净值，货币基金使用七日年化收益率 |
-| ETF 实时行情 | `fund_etf_spot_em()` | 读取价格、IOPV、成交额、买一和卖一，并自行统一溢价方向 |
-| ETF 历史行情 | `fund_etf_hist_em()` | ETF 专用东财接口，使用前复权日收盘价 |
-| ETF 历史备用 | `fund_etf_hist_sina()` | 东财接口失败时使用新浪未复权日行情和成交量额，并单独标注口径 |
-| LOF 历史行情 | `fund_lof_hist_em()` | LOF 必须使用专用接口，不能误用 ETF 接口 |
-| 宽基指数 PE | `stock_index_pe_lg()` | 对能可靠匹配的宽基指数计算滚动市盈率历史分位 |
-| 宽基指数 PB | `stock_index_pb_lg()` | 对能可靠匹配的宽基指数计算市净率历史分位 |
-| A 股代码名称 | `stock_info_a_code_name()` | 精确解析沪深 A 股代码和名称，名称多匹配时拒绝自动选择 |
-| A 股历史估值 | `stock_zh_valuation_baidu()` | 分别读取个股历史 PE TTM 和 PB，不计算综合估值 |
-| A 股历史价格 | `stock_zh_a_daily()` | 读取新浪前复权日收盘价，与 PE/PB 使用独立纵轴 |
-| 交易日历 | `tool_trade_date_hist_sina()` | 判断是否交易日；再按沪深市场标准日间时段判断 |
+| 用途 | AKShare 接口 | 上游 | Skill 行为 |
+| --- | --- | --- | --- |
+| 名称和代码搜索 | `fund_name_em()` | 东方财富 | 搜索基金代码、简称、拼音缩写和拼音全称 |
+| 申购赎回状态 | `fund_purchase_em()` | 东方财富 | 读取申购状态、赎回状态、下一开放日、起购额、限额和手续费 |
+| 基金基本资料 | `fund_info_ths()` | 同花顺 | 读取投资类型、经理、费率、规模和业绩比较基准；额外核对返回基金代码 |
+| 资产配置 | `fund_individual_detail_hold_xq()` | 雪球基金 | 读取报告期股票、债券、现金等仓位比例 |
+| 股票持仓 | `fund_portfolio_hold_em()` | 东方财富 | 读取报告期持仓并计算前十大集中度；接口失败时明确缺失 |
+| 开放式基金历史 | `fund_open_fund_info_em()` | 东方财富 | 普通基金优先使用累计净值，货币基金使用七日年化收益率 |
+| ETF 实时行情 | `fund_etf_spot_em()` | 东方财富 | 读取价格、IOPV、成交额、买一和卖一，并自行统一溢价方向 |
+| ETF 历史行情 | `fund_etf_hist_em()` | 东方财富 | ETF 专用东财接口，使用前复权日收盘价 |
+| ETF 历史备用 | `fund_etf_hist_sina()` | 新浪 | 东财接口失败时使用新浪未复权日行情和成交量额，并单独标注口径 |
+| LOF 历史行情 | `fund_lof_hist_em()` | 东方财富 | LOF 必须使用专用接口，不能误用 ETF 接口 |
+| 宽基指数 PE | `stock_index_pe_lg()` | 乐咕乐股 | 对能可靠匹配的宽基指数计算滚动市盈率历史分位 |
+| 宽基指数 PB | `stock_index_pb_lg()` | 乐咕乐股 | 对能可靠匹配的宽基指数计算市净率历史分位 |
+| A 股代码名称 | `stock_info_a_code_name()` | AKShare 聚合目录 | 精确解析沪深 A 股代码和名称，名称多匹配时拒绝自动选择 |
+| A 股历史估值 | `stock_zh_valuation_baidu()` | 百度股市通 | 分别读取个股历史 PE TTM 和 PB，不计算综合估值 |
+| A 股历史价格 | `stock_zh_a_daily()` | 新浪财经 | 读取新浪前复权日收盘价，与 PE/PB 使用独立纵轴 |
+| 交易日历 | `tool_trade_date_hist_sina()` | 新浪 | 判断是否交易日；再按沪深市场标准日间时段判断 |
 
 指数历史估值图另见 [valuation_chart.md](valuation_chart.md)。该功能只使用 AKShare 的指数 PE/PB 接口。
 
@@ -214,6 +224,7 @@ received_from_provider=AKShare DataFrame
 - 同一日期出现不同值立即失败，不自动选取、平均或覆盖。
 - 数值和日期解析失败的行可以剔除，但必须在 `data_quality` 中给出数量。
 - 不插值、不前向填充。
+- 资产配置和持仓集中度只代表报告期，不得解释为实时仓位。
 - 所有派生指标由脚本确定性计算并标注公式，模型不得修改。
 - ETF/LOF 东财历史接口可能被上游主动断开；失败必须进入错误或警告，不得构造行情补齐。
 - ETF 可回退到文档明确提供的 `fund_etf_hist_sina`，但必须把口径改为新浪未复权收盘价；LOF 不得借用 ETF 接口。
