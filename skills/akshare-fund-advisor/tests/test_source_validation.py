@@ -13,6 +13,23 @@ SPEC = importlib.util.spec_from_file_location("fund_advisor_source_test", SCRIPT
 fund_advisor = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(fund_advisor)
 source_validation = fund_advisor.source_validation
+SHANGHAI = ZoneInfo("Asia/Shanghai")
+
+
+def market_now():
+    """测试基准时钟：取运行当下的上海时间，与生产时效校验保持同一口径。"""
+    return datetime.now(SHANGHAI)
+
+
+def recent_trading_dates(periods):
+    """以运行当天为锚点回推的交易日序列。
+
+    生产代码用「当前真实时间」判定时效（窗口约 10 天），夹具日期一旦写死
+    就只能在写下后的十天内通过。这里改为动态回推：序列最后一日恒为不晚于
+    今天的最近一个工作日（周末最多回退 2 天），既稳定落在时效窗口内，也不
+    会出现未来日期导致的负数 age。
+    """
+    return pd.bdate_range(end=market_now().date(), periods=periods)
 
 
 def slow_provider(delay):
@@ -40,10 +57,10 @@ def canonical_prices(
     )
 
 
-def make_stock_advisor(ak):
+def make_stock_advisor(ak, now=None):
     advisor = fund_advisor.FundAdvisor.__new__(fund_advisor.FundAdvisor)
     advisor.ak = ak
-    advisor.now = datetime(2026, 8, 17, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    advisor.now = now or market_now()
     advisor.timeout_seconds = 1
     advisor.source_validation_sources = ("baostock",)
     advisor.sources = []
@@ -198,7 +215,7 @@ def test_source_validation_timeout_is_bounded_by_tool_budget():
 
 
 def test_stock_valuation_keeps_primary_price_when_baostock_disagrees():
-    dates = pd.bdate_range(end="2026-08-14", periods=120)
+    dates = recent_trading_dates(120)
     pe = pd.DataFrame({"date": dates, "value": [15.0] * 120})
     pb = pd.DataFrame({"date": dates, "value": [1.5] * 120})
     qfq = pd.DataFrame(
@@ -240,7 +257,7 @@ def test_stock_valuation_keeps_primary_price_when_baostock_disagrees():
 
     check_frame = canonical_prices(
         [value + 1.0 for value in unadjusted["close"]],
-        end="2026-08-14",
+        end=dates[-1],
     )
     provider_result = source_validation.ProviderFrame(
         source_name="Baostock",
@@ -278,7 +295,7 @@ def test_stock_valuation_keeps_primary_price_when_baostock_disagrees():
 
 
 def test_stock_valuation_survives_validation_source_failure():
-    dates = pd.bdate_range(end="2026-08-14", periods=120)
+    dates = recent_trading_dates(120)
     metric = pd.DataFrame({"date": dates, "value": [15.0] * 120})
     prices = pd.DataFrame(
         {
