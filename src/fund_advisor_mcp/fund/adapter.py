@@ -12,7 +12,11 @@ from typing import Any, Callable, Protocol
 from zoneinfo import ZoneInfo
 
 from fund_advisor_data_core.contracts import ToolEnvelope, ToolError, ToolName
-from fund_advisor_data_core.services import FundSearchService, FundStatusService
+from fund_advisor_data_core.services import (
+    ETFSupplementService,
+    FundSearchService,
+    FundStatusService,
+)
 from fund_advisor_mcp.config import AppConfig, get_config
 
 from .cache import EnvelopeCache, build_envelope_cache
@@ -62,6 +66,7 @@ class FundAdvisorToolAdapter:
         advisor_factory: Callable[[], Any] | None = None,
         fund_search_service: FundSearchRunner | None = None,
         fund_status_service: FundStatusRunner | None = None,
+        etf_supplement_service: ETFSupplementService | None = None,
         cache: EnvelopeCache | None = None,
     ) -> None:
         self._config = config or get_config()
@@ -70,6 +75,13 @@ class FundAdvisorToolAdapter:
         self._advisor_factory = advisor_factory or self._default_advisor_factory
         self._fund_search_service = fund_search_service or FundSearchService()
         self._fund_status_service = fund_status_service or FundStatusService()
+        self._etf_supplement_service = (
+            etf_supplement_service
+            if etf_supplement_service is not None
+            else ETFSupplementService()
+            if advisor_factory is None
+            else None
+        )
         self._executor = ThreadPoolExecutor(
             max_workers=self._config.mcp.concurrency,
             thread_name_prefix="fund-advisor-tool",
@@ -87,7 +99,7 @@ class FundAdvisorToolAdapter:
             separators=(",", ":"),
         )
         digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-        return f"{tool.value}:1.1:{digest}"
+        return f"{tool.value}:1.2:{digest}"
 
     @staticmethod
     def _ttl(tool: ToolName) -> int:
@@ -300,12 +312,75 @@ class FundAdvisorToolAdapter:
         return self._execute(
             ToolName.ETF_DASHBOARD,
             arguments,
-            lambda advisor: advisor.etf_dashboard(
-                request.fund,
-                request.years,
-                request.max_points,
+            lambda advisor: self._etf_dashboard_data(
+                advisor,
+                fund=request.fund,
+                years=request.years,
+                max_points=request.max_points,
             ),
         )
+
+    def _etf_dashboard_data(
+        self,
+        advisor: Any,
+        *,
+        fund: str,
+        years: int,
+        max_points: int,
+    ) -> dict[str, Any]:
+        data = advisor.etf_dashboard(fund, years, max_points)
+        if self._etf_supplement_service is None:
+            return data
+
+        recent_rows = data.get("recent_rows")
+        identity = data.get("identity")
+        if not isinstance(recent_rows, list) or not isinstance(identity, dict):
+            return data
+        trading_dates = [
+            str(row["date"])
+            for row in recent_rows
+            if isinstance(row, dict) and row.get("date")
+        ]
+        supplement = self._etf_supplement_service.recent(
+            str(identity.get("code") or fund),
+            trading_dates,
+        )
+        data["supplemental"] = supplement.data
+
+        share_by_date = {
+            row["date"]: row
+            for row in supplement.data["share"]["rows"]
+        }
+        financing_by_date = {
+            row["date"]: row
+            for row in supplement.data["financing"]["rows"]
+        }
+        for row in recent_rows:
+            if not isinstance(row, dict):
+                continue
+            row.update(share_by_date.get(str(row.get("date")), {}))
+            row.update(financing_by_date.get(str(row.get("date")), {}))
+
+        data["missing_or_not_reliably_available"] = supplement.data[
+            "unavailable_metrics"
+        ]
+        data_integrity = data.setdefault("data_integrity", {})
+        if isinstance(data_integrity, dict):
+            data_integrity["supplemental_source_interfaces"] = sorted(
+                {
+                    source["interface"]
+                    for source in supplement.sources
+                    if source.get("interface")
+                }
+            )
+
+        _extend_unique(getattr(advisor, "sources", None), supplement.sources)
+        _extend_unique(getattr(advisor, "data_audit", None), supplement.data_audit)
+        _extend_unique(
+            getattr(advisor, "data_warnings", None),
+            supplement.data_warnings,
+        )
+        return data
 
     def index_valuation(self, **kwargs: Any) -> ToolEnvelope:
         request = ValuationInput.model_validate(kwargs)
@@ -379,3 +454,14 @@ class FundAdvisorToolAdapter:
         name = ToolName(tool)
         method = getattr(self, name.value)
         return method(**arguments)
+
+
+def _extend_unique(
+    target: Any,
+    items: list[dict[str, Any] | str],
+) -> None:
+    if not isinstance(target, list):
+        return
+    for item in items:
+        if item not in target:
+            target.append(item)

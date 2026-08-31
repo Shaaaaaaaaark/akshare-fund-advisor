@@ -1,0 +1,310 @@
+/*
+ * ETF control contract. This file is imported after legacy page styles and is
+ * the only owner of top-toolbar dimensions, typography and responsive layout.
+ */
+.etf-dashboard-page {
+  --terminal-control-height: 38px;
+  --terminal-control-radius: 6px;
+  --terminal-control-gap: 8px;
+  --terminal-control-padding-x: 12px;
+  --terminal-control-font-size: 14px;
+  --terminal-control-border: #cfd6e0;
+  --terminal-control-bg: #ffffff;
+  --terminal-control-bg-hover: #f5f7fa;
+  --terminal-control-text: #303846;
+  --terminal-control-muted: #687180;
+  --terminal-control-primary: #245fe5;
+  --terminal-control-primary-hover: #1d4ed8;
+  --terminal-focus-ring: rgb(37 99 235 / 22%);
+}
+
+.etf-dashboard-page .etf-reference-header {
+  padding-right: 0;
+}
+
+.etf-dashboard-page .etf-title-line {
+  display: block;
+}
+
+.etf-dashboard-page .etf-command-row {
+  display: grid;
+  width: min(1760px, 100%);
+  margin: 12px auto 0;
+  grid-template-areas:
+    "actions"
+    "selectors";
+  gap: var(--terminal-control-gap);
+}
+
+.etf-dashboard-page .etf-global-controls {
+  position: static;
+  grid-area: actions;
+  display: flex;
+  width: auto;
+  max-width: 100%;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--terminal-control-gap);
+  overflow: visible;
+}
+
+.etf-dashboard-page .etf-global-controls > :nth-child(n) {
+  width: auto;
+  min-width: 0;
+}
+
+.etf-dashboard-page .etf-selector-toolbar {
+  position: static;
+  grid-area: selectors;
+  display: grid;
+  width: 100%;
+  margin: 0;
+  grid-template-columns: auto minmax(150px, 0.55fr) minmax(260px, 1fr);
+  align-items: center;
+  gap: var(--terminal-control-gap);
+}
+
+.etf-dashboard-page .terminal-control {
+  box-sizing: border-box;
+  display: inline-flex;
+  height: var(--terminal-control-height);
+  min-height: var(--terminal-control-height);
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 0 var(--terminal-control-padding-x);
+  color: var(--terminal-control-text);
+  font: 600 var(--terminal-control-font-size) / 1
+    -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  background: var(--terminal-control-bg);
+  border: 1px solid var(--terminal-control-border);
+  border-radius: var(--terminal-control-radius);
+  box-shadow: 0 1px 2px rgb(31 41 55 / 5%);
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.etf-dashboard-page .terminal-control:hover:not(:disabled) {
+  color: #182233;
+  background: var(--terminal-control-bg-hover);
+  border-color: #aeb8c7;
+}
+
+.etf-dashboard-page .terminal-control:focus-visible,
+.etf-dashboard-page .terminal-select-input:focus-visible {
+  outline: 0;
+  border-color: var(--terminal-control-primary);
+  box-shadow: 0 0 0 3px var(--terminal-focus-ring);
+}
+
+.etf-dashboard-page .terminal-control:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.etf-dashboard-page .terminal-control-primary {
+  color: #ffffff;
+  background: var(--terminal-control-primary);
+  border-color: var(--terminal-control-primary);
+}
+
+.etf-dashboard-page .terminal-control-primary:hover:not(:disabled) {
+  color: #ffffff;
+  background: var(--terminal-control-primary-hover);
+  border-color: var(--terminal-control-primary-hover);
+}
+
+.etf-dashboard-page .terminal-control-content {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  line-height: 1;
+}
+
+.etf-dashboard-page .terminal-control-content > svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  stroke-width: 1.9;
+}
+
+.etf-dashboard-page .terminal-select {
+  position: relative;
+  display: block;
+  min-width: 0;
+  height: var(--terminal-control-height);
+}
+
+.etf-dashboard-page .terminal-select-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--terminal-control-height);
+  padding: 0 36px 0 var(--terminal-control-padding-x);
+  overflow: hidden;
+  color: var(--terminal-control-text);
+  font: 500 var(--terminal-control-font-size) / normal
+    -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  appearance: none;
+  background: var(--terminal-control-bg);
+  border: 1px solid var(--terminal-control-border);
+  border-radius: var(--terminal-control-radius);
+  box-shadow: 0 1px 2px rgb(31 41 55 / 5%);
+  cursor: pointer;
+}
+
+.etf-dashboard-page .terminal-select-input:hover {
+  background: var(--terminal-control-bg-hover);
+  border-color: #aeb8c7;
+}
+
+.etf-dashboard-page .terminal-select-icon {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  width: 15px;
+  height: 15px;
+  color: var(--terminal-control-muted);
+  pointer-events: none;
+  transform: translateY(-50%);
+  stroke-width: 2;
+}
+
+.etf-dashboard-page .etf-list-toggle {
+  min-width: 108px;
+}
+
+.etf-dashboard-page .etf-agent-link {
+  min-width: 118px;
+}
+
+.theme-dark.etf-dashboard-page {
+  --terminal-control-border: #394353;
+  --terminal-control-bg: #171c25;
+  --terminal-control-bg-hover: #202735;
+  --terminal-control-text: #e6ebf2;
+  --terminal-control-muted: #9aa5b5;
+  --terminal-control-primary: #3974ef;
+  --terminal-control-primary-hover: #4b82f3;
+}
+
+@media (min-width: 761px) {
+  .etf-dashboard-page .etf-reference-header {
+    display: block;
+  }
+}
+
+@media (min-width: 1200px) {
+  .etf-dashboard-page .etf-command-row {
+    grid-template-areas: "selectors actions";
+    grid-template-columns: minmax(540px, 1fr) auto;
+    align-items: center;
+    column-gap: 14px;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 1199px) {
+  .etf-dashboard-page .etf-global-controls {
+    justify-content: flex-start;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 980px) {
+  .etf-dashboard-page .etf-reference-header {
+    padding-top: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .etf-dashboard-page .etf-command-row {
+    order: 2;
+    margin-top: 0;
+    gap: 6px;
+  }
+
+  .etf-dashboard-page .etf-title-line {
+    display: block;
+    width: 100%;
+  }
+
+  .etf-dashboard-page .etf-global-controls {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 6px;
+    overflow: visible;
+  }
+
+  .etf-dashboard-page
+    .etf-global-controls
+    > [data-terminal-control] {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .etf-dashboard-page
+    .etf-global-controls
+    > :nth-child(-n + 2) {
+    grid-column: span 3;
+  }
+
+  .etf-dashboard-page
+    .etf-global-controls
+    > :nth-child(n + 3) {
+    grid-column: span 2;
+  }
+
+  .etf-dashboard-page .terminal-control,
+  .etf-dashboard-page .terminal-select,
+  .etf-dashboard-page .terminal-select-input {
+    height: 34px;
+    min-height: 34px;
+  }
+
+  .etf-dashboard-page .terminal-control {
+    padding-right: 10px;
+    padding-left: 10px;
+    font-size: 12px;
+    box-shadow: none;
+  }
+
+  .etf-dashboard-page .etf-selector-toolbar {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .etf-dashboard-page .etf-selector-toolbar .terminal-select:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .etf-dashboard-page .terminal-select-input {
+    padding-right: 32px;
+    padding-left: 10px;
+    font-size: 12px;
+    box-shadow: none;
+  }
+
+  .etf-dashboard-page .terminal-select-icon {
+    right: 10px;
+    width: 14px;
+    height: 14px;
+  }
+
+  .etf-dashboard-page .etf-list-toggle,
+  .etf-dashboard-page .etf-agent-link {
+    min-width: max-content;
+  }
+}

@@ -801,6 +801,10 @@ class ETFDashboardTest(unittest.TestCase):
         self.assertEqual(result["summary"]["latest_turnover_yi_cny"], 0.0)
         self.assertEqual(result["summary"]["latest_volume_yi_units"], 0.0)
         self.assertEqual(len(result["recent_rows"]), 20)
+        self.assertEqual(
+            result["recent_rows"][-1]["turnover_percentile_pct"],
+            100.0,
+        )
         self.assertEqual(len(result["range_summaries"]), 3)
         self.assertEqual(result["data_quality"]["interpolation"], "none")
         self.assertEqual(result["data_quality"]["forward_fill"], "none")

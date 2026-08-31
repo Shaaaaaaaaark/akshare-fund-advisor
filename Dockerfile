@@ -15,10 +15,9 @@ WORKDIR /workspace
 
 COPY web-backend/pom.xml web-backend/mvnw web-backend/mvnw.cmd ./
 COPY web-backend/.mvn .mvn
-RUN ./mvnw -q -DskipTests dependency:go-offline
 
 COPY web-backend/src ./src
-RUN ./mvnw -q -DskipTests package
+RUN --mount=type=cache,target=/root/.m2 ./mvnw -q -DskipTests package
 
 
 FROM python:3.11-slim AS base

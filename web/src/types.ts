@@ -37,6 +37,22 @@ export interface Conversation {
   messages: ChatMessage[];
 }
 
+export type WatchlistEntityType = "index" | "etf" | "fund" | "stock";
+
+export interface WatchlistItem {
+  id: string;
+  entity_type: WatchlistEntityType;
+  entity_code: string;
+  display_name: string;
+  created_at: string;
+}
+
+export interface CreateWatchlistItem {
+  entity_type: WatchlistEntityType;
+  entity_code: string;
+  display_name: string;
+}
+
 export type DataStatus =
   | "available"
   | "partial"
@@ -456,8 +472,17 @@ export interface ETFRecentRow {
   close: number | null;
   daily_change_pct: number | null;
   turnover_yi_cny: number | null;
+  turnover_percentile_pct?: number | null;
   volume_yi_units: number | null;
   drawdown_pct: number | null;
+  total_shares?: number | null;
+  total_shares_yi_units?: number | null;
+  total_shares_change?: number | null;
+  total_shares_change_yi_units?: number | null;
+  financing_balance_cny?: number | null;
+  financing_balance_yi_cny?: number | null;
+  financing_balance_change_cny?: number | null;
+  financing_balance_change_yi_cny?: number | null;
 }
 
 export interface ETFMarketSnapshot {
@@ -472,6 +497,58 @@ export interface ETFMarketSnapshot {
   bid_1: number | null;
   ask_1: number | null;
   usable_for_current_decision: boolean;
+}
+
+export interface ETFShareSupplementRow {
+  date: string;
+  total_shares: number;
+  total_shares_yi_units: number;
+  previous_date: string | null;
+  total_shares_change: number | null;
+  total_shares_change_yi_units: number | null;
+}
+
+export interface ETFFinancingSupplementRow {
+  date: string;
+  financing_balance_cny: number;
+  financing_balance_yi_cny: number;
+  previous_date: string | null;
+  financing_balance_change_cny: number | null;
+  financing_balance_change_yi_cny: number | null;
+}
+
+export interface ETFSupplementSeries<T> {
+  status: "available" | "partial" | "unavailable";
+  source_observations: number;
+  actual_start_date: string | null;
+  latest_date: string | null;
+  unit: string;
+  scaled_unit: string;
+  latest: T | null;
+  rows: T[];
+  chart_series: Array<[string, number]>;
+  derived_formulas: Record<string, string>;
+}
+
+export interface ETFSupplementalData {
+  fund_code: string;
+  requested_trading_dates: string[];
+  share: ETFSupplementSeries<ETFShareSupplementRow>;
+  financing: ETFSupplementSeries<ETFFinancingSupplementRow>;
+  range_summaries: Array<{
+    key: string;
+    actual_start_date: string;
+    latest_date: string;
+    share_change_yi_units: number | null;
+    financing_net_change_yi_cny: number | null;
+  }>;
+  unavailable_metrics: string[];
+  data_integrity: {
+    ai_generated_market_data: boolean;
+    interpolation: string;
+    forward_fill: string;
+    coverage: string;
+  };
 }
 
 export interface ETFDashboardData {
@@ -498,6 +575,7 @@ export interface ETFDashboardData {
     current_drawdown_pct: number | null;
   };
   market_snapshot: ETFMarketSnapshot | null;
+  supplemental?: ETFSupplementalData;
   range_summaries: ETFRangeSummary[];
   charts: {
     price: ETFDashboardChart;
@@ -523,6 +601,31 @@ export interface ETFDetailResponse {
   fund: string;
   meta: DatasetMeta;
   envelope?: ToolEnvelope<ETFDashboardData>;
+}
+
+export type PanelInteractionKind =
+  | "hot_poll"
+  | "feedback"
+  | "feature_vote";
+
+export interface PanelTopicSummary {
+  counts: Record<string, number>;
+  selected_option: string | null;
+}
+
+export interface PanelInteractionSummary {
+  fund: string;
+  hot_polls: Record<string, PanelTopicSummary>;
+  feedback: PanelTopicSummary;
+  feature_vote: PanelTopicSummary;
+}
+
+export interface SubmitPanelInteraction {
+  kind: PanelInteractionKind;
+  topic_key: string;
+  option_key: string;
+  client_id: string;
+  fund: string;
 }
 
 export interface OverviewCapability {

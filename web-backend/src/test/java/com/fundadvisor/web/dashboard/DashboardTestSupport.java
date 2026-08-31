@@ -8,9 +8,11 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import reactor.core.publisher.Mono;
+import java.util.concurrent.Executor;
 
 final class DashboardTestSupport {
+
+    static final Executor DIRECT_EXECUTOR = Runnable::run;
 
     private DashboardTestSupport() {}
 
@@ -45,14 +47,14 @@ final class DashboardTestSupport {
         }
 
         @Override
-        public Mono<ToolEnvelope> callTool(String tool, Map<String, Object> arguments) {
+        public ToolEnvelope callTool(String tool, Map<String, Object> arguments) {
             calls.add(new Call(tool, arguments));
             RuntimeException failure = failures.get(tool);
             if (failure != null) {
-                return Mono.error(failure);
+                throw failure;
             }
             String raw = responses.getOrDefault(tool, rawEnvelope(tool, "{}"));
-            return Mono.just(envelope(mapper, raw));
+            return envelope(mapper, raw);
         }
     }
 

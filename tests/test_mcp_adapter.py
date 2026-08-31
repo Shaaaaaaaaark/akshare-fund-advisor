@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from fund_advisor_data_core.services import ETFSupplementResult
 from fund_advisor_mcp.fund.adapter import (
     FundAdvisorToolAdapter,
     ToolExecutionTimeout,
@@ -77,6 +78,17 @@ class FakeFundStatusService:
 
 
 class FakeAdvisor:
+    def __init__(self):
+        self.sources = [{"provider": "AKShare", "interface": "fund_name_em"}]
+        self.data_audit = [
+            {
+                "interface": "fund_name_em",
+                "validation": "passed",
+                "frame_sha256": "source-hash",
+            }
+        ]
+        self.data_warnings = []
+
     def search(self, query, _limit):
         _ = _limit
         return {
@@ -97,22 +109,63 @@ class FakeAdvisor:
                 "chart_max_points": max_points,
             },
             "summary": {"latest_close": 4.801},
+            "recent_rows": [
+                {"date": "2026-08-26"},
+                {"date": "2026-08-27"},
+            ],
+            "missing_or_not_reliably_available": ["ETF 历史总份额"],
+            "data_integrity": {"source_interface": "fund_etf_hist_em"},
         }
 
     def common_output(self):
         return {
             "queried_at": datetime.now(SHANGHAI),
-            "sources": [{"provider": "AKShare", "interface": "fund_name_em"}],
-            "data_audit": [
-                {
-                    "interface": "fund_name_em",
-                    "validation": "passed",
-                    "frame_sha256": "source-hash",
-                }
-            ],
-            "data_warnings": [],
+            "sources": self.sources,
+            "data_audit": self.data_audit,
+            "data_warnings": self.data_warnings,
             "data_policy": {"ai_may_generate_market_data": False},
         }
+
+
+class FakeETFSupplementService:
+    def recent(self, code, trading_dates):
+        assert code == "510300"
+        assert trading_dates == ["2026-08-26", "2026-08-27"]
+        return ETFSupplementResult(
+            data={
+                "share": {
+                    "rows": [
+                        {
+                            "date": "2026-08-27",
+                            "total_shares_yi_units": 120.5,
+                        }
+                    ]
+                },
+                "financing": {
+                    "rows": [
+                        {
+                            "date": "2026-08-27",
+                            "financing_balance_yi_cny": 3.5,
+                        }
+                    ]
+                },
+                "unavailable_metrics": ["净申购赎回金额"],
+            },
+            sources=[
+                {
+                    "provider": "AKShare",
+                    "interface": "fund_etf_scale_sse",
+                }
+            ],
+            data_audit=[
+                {
+                    "interface": "fund_etf_scale_sse",
+                    "validation": "passed",
+                    "frame_sha256": "supplement-hash",
+                }
+            ],
+            data_warnings=[],
+        )
 
 
 class FakeCrossValidationAdvisor:
@@ -231,6 +284,7 @@ def test_adapter_exposes_etf_dashboard_with_audit(test_config) -> None:
     adapter = FundAdvisorToolAdapter(
         test_config,
         advisor_factory=FakeAdvisor,
+        etf_supplement_service=FakeETFSupplementService(),
     )
 
     envelope = adapter.etf_dashboard(
@@ -245,7 +299,11 @@ def test_adapter_exposes_etf_dashboard_with_audit(test_config) -> None:
     assert data is not None
     assert data["summary"]["latest_close"] == 4.801
     assert data["lookback"]["chart_max_points"] == 600
+    assert data["recent_rows"][-1]["total_shares_yi_units"] == 120.5
+    assert data["recent_rows"][-1]["financing_balance_yi_cny"] == 3.5
+    assert data["missing_or_not_reliably_available"] == ["净申购赎回金额"]
     assert envelope.data_audit[0]["frame_sha256"] == "source-hash"
+    assert envelope.data_audit[1]["frame_sha256"] == "supplement-hash"
 
 
 def test_adapter_preserves_cross_validation_audit_and_warning(test_config) -> None:

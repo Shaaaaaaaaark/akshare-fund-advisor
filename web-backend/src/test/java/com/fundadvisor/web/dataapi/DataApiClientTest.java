@@ -1,7 +1,6 @@
 package com.fundadvisor.web.dataapi;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -13,7 +12,9 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
@@ -21,10 +22,7 @@ import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.Disposable;
-import reactor.core.publisher.Mono;
-import reactor.test.StepVerifier;
+import org.springframework.web.client.RestClient;
 
 class DataApiClientTest {
 
@@ -44,7 +42,7 @@ class DataApiClientTest {
                 2,
                 Duration.ofSeconds(3),
                 new BffProperties.OverviewTargets("沪深300", "510310", "000001", "600519"));
-        client = new DataApiClient(properties, WebClient.builder(), new ObjectMapper());
+        client = new DataApiClient(properties, RestClient.builder(), new ObjectMapper());
     }
 
     @AfterEach
@@ -67,9 +65,8 @@ class DataApiClientTest {
                         """));
 
         ToolEnvelope envelope = client.callTool(
-                        "index_valuation",
-                        Map.of("index", "沪深300", "years", 10, "max_points", 600))
-                .block(Duration.ofSeconds(5));
+                "index_valuation",
+                Map.of("index", "沪深300", "years", 10, "max_points", 600));
 
         RecordedRequest request = server.takeRequest();
         String decodedPath = URLDecoder.decode(request.getPath(), StandardCharsets.UTF_8);
@@ -97,24 +94,19 @@ class DataApiClientTest {
 
     @Test
     void rejectsUnknownTool() {
-        assertThatThrownBy(() -> client.callTool("unknown_operation", Map.of()).block(Duration.ofSeconds(3)))
+        assertThatThrownBy(() -> client.callTool("unknown_operation", Map.of()))
                 .hasMessageContaining("unsupported dashboard data operation");
     }
 
     @Test
-    void invalidArgumentsStayInsideTheReactiveErrorSignal() {
-        // 装配期不得同步抛出，否则上层 onErrorResume 降级分支被绕过，直接 500。
-        assertThatCode(() -> client.callTool("fund_search", Map.of("limit", 5))).doesNotThrowAnyException();
-
-        StepVerifier.create(client.callTool("fund_search", Map.of("limit", 5)))
-                .expectErrorSatisfies(error -> assertThat(error)
-                        .isInstanceOf(IllegalArgumentException.class)
-                        .hasMessageContaining("data api argument query is required"))
-                .verify(Duration.ofSeconds(5));
+    void invalidArgumentsFailBeforeCallingTheDataApi() {
+        assertThatThrownBy(() -> client.callTool("fund_search", Map.of("limit", 5)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("data api argument query is required");
     }
 
     @Test
-    void bulkheadRejectsImmediatelyInsteadOfBlockingTheEventLoop() throws Exception {
+    void bulkheadRejectsImmediatelyInsteadOfQueuingRequests() throws Exception {
         BffProperties singleSlot = new BffProperties(
                 stripTrailingSlash(server.url("/").toString()),
                 "http://agent-api",
@@ -124,27 +116,26 @@ class DataApiClientTest {
                 1,
                 Duration.ofSeconds(3),
                 new BffProperties.OverviewTargets("沪深300", "510310", "000001", "600519"));
-        DataApiClient limited = new DataApiClient(singleSlot, WebClient.builder(), new ObjectMapper());
+        DataApiClient limited = new DataApiClient(singleSlot, RestClient.builder(), new ObjectMapper());
         server.enqueue(new MockResponse()
                 .setHeader("Content-Type", "application/json")
                 .setBody(DashboardRawEnvelopes.raw("fund_profile"))
                 .setBodyDelay(1, TimeUnit.SECONDS));
 
-        Mono<ToolEnvelope> first = limited.callTool("fund_profile", Map.of("fund", "000001"));
-        CountDownLatch inFlight = new CountDownLatch(1);
-        Disposable subscription = first.doOnSubscribe(sub -> inFlight.countDown()).subscribe();
-        assertThat(inFlight.await(3, TimeUnit.SECONDS)).isTrue();
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            Future<ToolEnvelope> first =
+                    executor.submit(() -> limited.callTool("fund_profile", Map.of("fund", "000001")));
+            assertThat(server.takeRequest(3, TimeUnit.SECONDS)).isNotNull();
 
-        long start = System.nanoTime();
-        StepVerifier.create(limited.callTool("fund_profile", Map.of("fund", "000001")))
-                .expectErrorSatisfies(error -> assertThat(error)
-                        .isInstanceOf(IllegalStateException.class)
-                        .hasMessageContaining("UPSTREAM_ERROR"))
-                .verify(Duration.ofSeconds(3));
-        long elapsedMillis = Duration.ofNanos(System.nanoTime() - start).toMillis();
+            long start = System.nanoTime();
+            assertThatThrownBy(() -> limited.callTool("fund_profile", Map.of("fund", "000001")))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("UPSTREAM_ERROR");
+            long elapsedMillis = Duration.ofNanos(System.nanoTime() - start).toMillis();
 
-        assertThat(elapsedMillis).isLessThan(1000L);
-        subscription.dispose();
+            assertThat(elapsedMillis).isLessThan(1000L);
+            assertThat(first.get(3, TimeUnit.SECONDS)).isNotNull();
+        }
     }
 
     private void assertRoute(String tool, Map<String, Object> arguments, String path, String query) {
@@ -152,7 +143,7 @@ class DataApiClientTest {
                 .setHeader("Content-Type", "application/json")
                 .setBody(DashboardRawEnvelopes.raw(tool)));
 
-        client.callTool(tool, arguments).block(Duration.ofSeconds(5));
+        client.callTool(tool, arguments);
 
         try {
             String actual = URLDecoder.decode(server.takeRequest().getPath(), StandardCharsets.UTF_8);

@@ -2625,6 +2625,216 @@
   line-height: 18px;
 }
 
+.watchlist-page {
+  padding: 18px 16px 30px;
+}
+
+.watchlist-heading,
+.watchlist-form,
+.watchlist-table,
+.watchlist-error {
+  width: min(1120px, 100%);
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.watchlist-heading>strong {
+  align-self: center;
+  color: #596271;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.watchlist-form {
+  display: grid;
+  grid-template-columns: 140px minmax(180px, 0.7fr) minmax(220px, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 12px;
+  background: #ffffff;
+  border: 1px solid #d9dee6;
+  border-radius: 6px;
+}
+
+.watchlist-form label {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.watchlist-form label>span {
+  color: #667180;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.watchlist-form input,
+.watchlist-form select {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  color: #202733;
+  background: #ffffff;
+  border: 1px solid #cfd5de;
+  border-radius: 5px;
+  outline: none;
+}
+
+.watchlist-form input:focus,
+.watchlist-form select:focus {
+  border-color: #6f93e8;
+  box-shadow: 0 0 0 2px rgb(37 99 235 / 10%);
+}
+
+.watchlist-form button {
+  display: inline-flex;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 14px;
+  color: #ffffff;
+  font-weight: 650;
+  background: #2563eb;
+  border: 1px solid #2563eb;
+  border-radius: 5px;
+}
+
+.watchlist-form button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.watchlist-error {
+  margin-bottom: 12px;
+  padding: 9px 11px;
+  color: #913f3f;
+  font-size: 12px;
+  background: #fff5f5;
+  border: 1px solid #efcaca;
+  border-radius: 5px;
+}
+
+.watchlist-table {
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #d9dee6;
+  border-radius: 6px;
+}
+
+.watchlist-table>header,
+.watchlist-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 110px 180px 76px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.watchlist-table>header {
+  color: #717b88;
+  font-size: 11px;
+  font-weight: 700;
+  background: #f6f8fa;
+  border-bottom: 1px solid #dfe4e9;
+}
+
+.watchlist-row {
+  min-height: 58px;
+  border-bottom: 1px solid #e8ebef;
+}
+
+.watchlist-row:last-child {
+  border-bottom: 0;
+}
+
+.watchlist-row>div:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.watchlist-row strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.watchlist-row code,
+.watchlist-row>span,
+.watchlist-row time {
+  color: #697382;
+  font-size: 11px;
+}
+
+.watchlist-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.watchlist-actions a,
+.watchlist-actions button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  padding: 0;
+  color: #596271;
+  background: #ffffff;
+  border: 1px solid #d9dee6;
+  border-radius: 5px;
+}
+
+.watchlist-actions a:hover {
+  color: #2563eb;
+  border-color: #8eacf0;
+}
+
+.watchlist-actions button:hover {
+  color: #a33f3f;
+  border-color: #dda8a8;
+}
+
+.watchlist-actions svg {
+  width: 14px;
+  height: 14px;
+}
+
+.watchlist-empty {
+  margin: 0;
+  padding: 44px 16px;
+  color: #7b8492;
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .watchlist-form {
+    grid-template-columns: 1fr;
+  }
+
+  .watchlist-table>header {
+    display: none;
+  }
+
+  .watchlist-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .watchlist-row time {
+    grid-column: 1;
+  }
+
+  .watchlist-actions {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+}
+
 /* 指数详情摘要条：前三格是普通块级流（内容从 padding-top 开始），
    而 .summary-asof 用 align-content:center 垂直居中，导致第四格标签
    比前三格低一截。统一改为顶部对齐并固定标签行高。 */

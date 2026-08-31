@@ -4,9 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fundadvisor.web.config.BffProperties;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class DashboardServiceTest {
@@ -55,9 +60,9 @@ class DashboardServiceTest {
                 DashboardTestSupport.rawEnvelope(
                         DashboardService.FUND_STATUS_TOOL,
                         "{\"availability\":{\"source_report_date\":\"2026-08-18\"}}"));
-        DashboardService service = new DashboardService(caller, mapper, DashboardTestSupport.properties());
+        DashboardService service = service(caller);
 
-        FundProductResponse response = service.fundProduct("000001", 5).block(Duration.ofSeconds(3));
+        FundProductResponse response = service.fundProduct("000001", 5);
 
         assertThat(response).isNotNull();
         assertThat(response.status()).isEqualTo(DataStatus.AVAILABLE);
@@ -101,9 +106,9 @@ class DashboardServiceTest {
                 DashboardTestSupport.rawEnvelope(DashboardService.FUND_RATING_TOOL, "{}"),
                 DashboardService.FUND_STATUS_TOOL,
                 DashboardTestSupport.rawEnvelope(DashboardService.FUND_STATUS_TOOL, "{}"));
-        DashboardService service = new DashboardService(caller, mapper, DashboardTestSupport.properties());
+        DashboardService service = service(caller);
 
-        FundProductResponse response = service.fundProduct("000001", 3).block(Duration.ofSeconds(3));
+        FundProductResponse response = service.fundProduct("000001", 3);
 
         assertThat(response).isNotNull();
         assertThat(response.status()).isEqualTo(DataStatus.STALE);
@@ -119,9 +124,9 @@ class DashboardServiceTest {
         caller.failures = Map.of(
                 DashboardService.INDEX_VALUATION_TOOL,
                 new IllegalStateException("data api index_valuation http 503: upstream down"));
-        DashboardService service = new DashboardService(caller, mapper, DashboardTestSupport.properties());
+        DashboardService service = service(caller);
 
-        IndexDetail response = service.indexDetail("沪深300", 10, 300).block(Duration.ofSeconds(3));
+        IndexDetail response = service.indexDetail("沪深300", 10, 300);
 
         assertThat(response).isNotNull();
         assertThat(response.envelope()).isNull();
@@ -139,9 +144,9 @@ class DashboardServiceTest {
         caller.failures = Map.of(
                 DashboardService.FUND_ANALYZE_TOOL,
                 new IllegalStateException("timeout \"quoted\" 中文"));
-        DashboardService service = new DashboardService(caller, mapper, DashboardTestSupport.properties());
+        DashboardService service = service(caller);
 
-        FundProductResponse response = service.fundProduct("000001", 3).block(Duration.ofSeconds(3));
+        FundProductResponse response = service.fundProduct("000001", 3);
 
         assertThat(response).isNotNull();
         assertThat(response.status()).isEqualTo(DataStatus.PARTIAL);
@@ -159,13 +164,63 @@ class DashboardServiceTest {
                 "{\"lookback\":{\"latest_date\":\"2026-08-18\"},"
                         + "\"summary\":{\"stock_price\":{\"current\":1420.00001}}}");
         caller.responses = Map.of(DashboardService.STOCK_VALUATION_TOOL, stockRaw);
-        DashboardService service = new DashboardService(caller, mapper, DashboardTestSupport.properties());
+        DashboardService service = service(caller);
 
-        StockDetail response = service.stockDetail("600519", 5, 300).block(Duration.ofSeconds(3));
+        StockDetail response = service.stockDetail("600519", 5, 300);
 
         assertThat(response).isNotNull();
         assertThat(response.meta().asOf()).isEqualTo("2026-08-18");
         assertThat(response.envelope()).isEqualTo(stockRaw);
         assertThat(response.envelope()).contains("\"current\":1420.00001");
+    }
+
+    @Test
+    void indexAggregationSubmitsCallsInConfiguredBatches() {
+        AtomicInteger active = new AtomicInteger();
+        AtomicInteger maximum = new AtomicInteger();
+        var caller = new com.fundadvisor.web.dataapi.DashboardToolCaller() {
+            @Override
+            public com.fundadvisor.web.facts.ToolEnvelope callTool(
+                    String tool,
+                    Map<String, Object> arguments) {
+                int current = active.incrementAndGet();
+                maximum.accumulateAndGet(current, Math::max);
+                try {
+                    Thread.sleep(25);
+                    return DashboardTestSupport.envelope(
+                            mapper,
+                            DashboardTestSupport.rawEnvelope(tool, "{}"));
+                } catch (InterruptedException exc) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(exc);
+                } finally {
+                    active.decrementAndGet();
+                }
+            }
+        };
+        BffProperties properties = new BffProperties(
+                "http://data-api",
+                "http://agent-api",
+                Path.of("web/dist"),
+                List.of("a", "b", "c", "d", "e"),
+                10,
+                2,
+                Duration.ofSeconds(90),
+                new BffProperties.OverviewTargets("a", "510310", "000001", "600519"));
+
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            IndicesResponse response = new DashboardService(caller, mapper, properties, executor).indices();
+
+            assertThat(response.rows()).hasSize(5);
+            assertThat(maximum).hasValueLessThanOrEqualTo(2);
+        }
+    }
+
+    private DashboardService service(DashboardTestSupport.RecordingCaller caller) {
+        return new DashboardService(
+                caller,
+                mapper,
+                DashboardTestSupport.properties(),
+                DashboardTestSupport.DIRECT_EXECUTOR);
     }
 }

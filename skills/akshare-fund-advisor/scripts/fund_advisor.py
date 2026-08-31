@@ -1111,6 +1111,17 @@ def etf_dashboard_range_summaries(
     return summaries
 
 
+def series_value_percentile(
+    values: pd.Series,
+    current: Any,
+) -> Optional[float]:
+    numeric = pd.to_numeric(values, errors="coerce").dropna()
+    current_value = optional_float(current)
+    if numeric.empty or current_value is None:
+        return None
+    return rounded((numeric.le(current_value).sum() / len(numeric)) * 100)
+
+
 def calculate_yield_metrics(
     frame: pd.DataFrame,
     date_column: str,
@@ -3687,6 +3698,10 @@ class FundAdvisor:
                 "close": rounded(row.close, 4),
                 "daily_change_pct": rounded(row.daily_change_pct),
                 "turnover_yi_cny": rounded(row.turnover_yi_cny, 4),
+                "turnover_percentile_pct": series_value_percentile(
+                    dashboard_frame["turnover_yi_cny"],
+                    row.turnover_yi_cny,
+                ),
                 "volume_yi_units": rounded(row.volume_yi_units, 4),
                 "drawdown_pct": rounded(row.drawdown_pct),
             }
@@ -3749,6 +3764,9 @@ class FundAdvisor:
                     "(当日收盘价 / 观察窗口内截至当日运行峰值 - 1) * 100"
                 ),
                 "turnover_yi_cny": "成交额 / 100000000",
+                "turnover_percentile_pct": (
+                    "小于等于当日成交额的观察窗口交易日数 / 有效交易日数 * 100"
+                ),
                 "volume_yi_units": "成交量 / 100000000",
                 "range_price_return_pct": (
                     "(窗口末收盘价 / 窗口首收盘价 - 1) * 100"

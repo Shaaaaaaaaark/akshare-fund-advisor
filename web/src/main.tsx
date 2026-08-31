@@ -7,6 +7,7 @@ import "./etf-dashboard.css";
 import "./fund-product.css";
 import "./stock-detail.css";
 import "./styles.css";
+import "./etf-design-system.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

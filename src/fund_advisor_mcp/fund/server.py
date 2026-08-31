@@ -59,7 +59,7 @@ def etf_dashboard(
     years: int = 3,
     max_points: int = 600,
 ) -> dict[str, Any]:
-    """Return audited ETF price, turnover, volume, change and drawdown series."""
+    """Return audited ETF history plus bounded exchange share and margin snapshots."""
     return _dump(
         get_adapter().etf_dashboard(
             fund=fund,

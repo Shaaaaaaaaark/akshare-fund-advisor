@@ -11,6 +11,9 @@ interface ETFLinkedChartsProps {
   showTooltip: boolean;
 }
 
+const UI_FONT_FAMILY =
+  '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
 const PANELS = [
   { key: "price", title: "日线价格走势", color: "#2563eb", type: "line" },
   { key: "turnover", title: "日度 ETF 成交额", color: "#6b8fdc", type: "bar" },
@@ -162,6 +165,9 @@ function buildOption(
   return {
     animation: false,
     backgroundColor: palette.background,
+    textStyle: {
+      fontFamily: UI_FONT_FAMILY,
+    },
     title: titles,
     grid,
     axisPointer: {
@@ -174,7 +180,11 @@ function buildOption(
       axisPointer: { type: "cross" },
       borderColor: palette.line,
       backgroundColor: palette.tooltip,
-      textStyle: { color: palette.text, fontSize: 10 },
+      textStyle: {
+        color: palette.text,
+        fontFamily: UI_FONT_FAMILY,
+        fontSize: 10,
+      },
     },
     xAxis,
     yAxis,
@@ -193,7 +203,11 @@ function buildOption(
         backgroundColor: palette.zoom,
         fillerColor: "rgba(37, 99, 235, 0.16)",
         handleStyle: { color: "#2563eb" },
-        textStyle: { color: palette.muted, fontSize: 9 },
+        textStyle: {
+          color: palette.muted,
+          fontFamily: UI_FONT_FAMILY,
+          fontSize: 9,
+        },
       },
     ],
     visualMap: {

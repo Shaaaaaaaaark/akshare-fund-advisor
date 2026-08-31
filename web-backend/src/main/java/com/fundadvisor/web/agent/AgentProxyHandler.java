@@ -1,27 +1,32 @@
 package com.fundadvisor.web.agent;
 
-import com.fundadvisor.web.config.BffProperties;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.Enumeration;
 import java.util.Locale;
 import java.util.Set;
-import org.springframework.core.io.buffer.DataBuffer;
+
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.BodyInserters;
-import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.server.ServerRequest;
-import org.springframework.web.reactive.function.server.ServerResponse;
-import org.springframework.web.util.UriComponentsBuilder;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
-@Component
+import com.fundadvisor.web.config.BffProperties;
+
+import jakarta.servlet.http.HttpServletRequest;
+
+@Controller
 public class AgentProxyHandler {
 
+    private static final int MAX_REQUEST_BYTES = 1024 * 1024;
     private static final Set<String> HOP_BY_HOP_HEADERS = Set.of(
             "connection",
             "keep-alive",
@@ -35,79 +40,112 @@ public class AgentProxyHandler {
             "content-length");
 
     private final String agentApiUrl;
-    private final WebClient webClient;
+    private final HttpClient httpClient;
 
-    public AgentProxyHandler(BffProperties properties, WebClient.Builder builder) {
-        this.agentApiUrl = properties.agentApiUrl();
-        this.webClient = builder.build();
+    public AgentProxyHandler(BffProperties properties) {
+        this.agentApiUrl = stripTrailingSlash(properties.agentApiUrl());
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .build();
     }
 
-    public Mono<ServerResponse> proxy(ServerRequest request) {
-        WebClient.RequestBodySpec upstream = webClient
-                .method(request.method())
-                .uri(upstreamUri(request));
-        request.headers().asHttpHeaders().forEach((name, values) -> {
-            if (!isHopByHop(name)) {
-                upstream.header(name, values.toArray(String[]::new));
-            }
-        });
-
-        Mono<ServerResponse> responseMono;
-        if (hasRequestBody(request.method())) {
-            responseMono = request.bodyToMono(byte[].class)
-                    .defaultIfEmpty(new byte[0])
-                    .flatMap(body -> body.length == 0
-                            ? exchange(upstream)
-                            : exchange(upstream.bodyValue(body)));
-        } else {
-            responseMono = exchange(upstream);
+    @RequestMapping({ "/api/chat/**", "/api/sessions", "/api/sessions/**" })
+    public ResponseEntity<StreamingResponseBody> proxy(HttpServletRequest request) {
+        long contentLength = request.getContentLengthLong();
+        if (contentLength > MAX_REQUEST_BYTES) {
+            return ResponseEntity.status(413).build();
         }
 
-        return responseMono;
+        try {
+            byte[] requestBody = hasRequestBody(request.getMethod())
+                    ? request.getInputStream().readAllBytes()
+                    : new byte[0];
+            if (requestBody.length > MAX_REQUEST_BYTES) {
+                return ResponseEntity.status(413).build();
+            }
+
+            HttpRequest.Builder upstream = HttpRequest.newBuilder(upstreamUri(request))
+                    .method(
+                            request.getMethod(),
+                            requestBody.length == 0
+                                    ? HttpRequest.BodyPublishers.noBody()
+                                    : HttpRequest.BodyPublishers.ofByteArray(requestBody));
+            copyRequestHeaders(request, upstream);
+
+            HttpResponse<InputStream> response = httpClient.send(
+                    upstream.build(),
+                    HttpResponse.BodyHandlers.ofInputStream());
+            HttpHeaders headers = copyResponseHeaders(response);
+            StreamingResponseBody body = output -> {
+                try (InputStream input = response.body()) {
+                    byte[] buffer = new byte[8192];
+                    int read;
+                    while ((read = input.read(buffer)) >= 0) {
+                        output.write(buffer, 0, read);
+                        output.flush();
+                    }
+                }
+            };
+
+            return ResponseEntity.status(response.statusCode())
+                    .headers(headers)
+                    .body(body);
+        } catch (InterruptedException exc) {
+            Thread.currentThread().interrupt();
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_GATEWAY,
+                    "agent request interrupted",
+                    exc);
+        } catch (IOException | IllegalArgumentException exc) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_GATEWAY,
+                    "agent api unavailable",
+                    exc);
+        }
     }
 
-    private Mono<ServerResponse> exchange(WebClient.RequestHeadersSpec<?> upstream) {
-        return upstream
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, response -> Mono.empty())
-                .toEntityFlux(DataBuffer.class)
-                .flatMap(this::toServerResponse);
-    }
-
-    private Mono<ServerResponse> toServerResponse(ResponseEntity<Flux<DataBuffer>> response) {
-        ServerResponse.BodyBuilder builder = ServerResponse.status(response.getStatusCode());
-        response.getHeaders().forEach((name, values) -> {
+    private void copyRequestHeaders(HttpServletRequest request, HttpRequest.Builder upstream) {
+        Enumeration<String> names = request.getHeaderNames();
+        while (names != null && names.hasMoreElements()) {
+            String name = names.nextElement();
             if (!isHopByHop(name)) {
-                builder.header(name, values.toArray(String[]::new));
+                Enumeration<String> values = request.getHeaders(name);
+                while (values.hasMoreElements()) {
+                    upstream.header(name, values.nextElement());
+                }
+            }
+        }
+    }
+
+    private HttpHeaders copyResponseHeaders(HttpResponse<InputStream> response) {
+        HttpHeaders headers = new HttpHeaders();
+        response.headers().map().forEach((name, values) -> {
+            if (!isHopByHop(name)) {
+                headers.put(name, values);
             }
         });
-        MediaType contentType = response.getHeaders().getContentType();
+        MediaType contentType = headers.getContentType();
         if (contentType != null && MediaType.TEXT_EVENT_STREAM.includes(contentType)) {
-            // 覆盖式设置：上游若已带同名头，追加会产生 "no, no" 这类重复值，导致禁用缓冲失效。
-            builder.headers(headers -> {
-                headers.set("X-Accel-Buffering", "no");
-                headers.set(HttpHeaders.CACHE_CONTROL, "no-cache");
-            });
+            headers.set("X-Accel-Buffering", "no");
+            headers.setCacheControl("no-cache");
         }
-        Flux<DataBuffer> body = response.getBody() == null ? Flux.empty() : response.getBody();
-        return builder.body(BodyInserters.fromDataBuffers(body));
+        return headers;
     }
 
-    private URI upstreamUri(ServerRequest request) {
-        return UriComponentsBuilder.fromUriString(agentApiUrl)
-                .replacePath(request.uri().getRawPath())
-                .replaceQuery(request.uri().getRawQuery())
-                .build(true)
-                .toUri();
+    private URI upstreamUri(HttpServletRequest request) {
+        String query = request.getQueryString();
+        return URI.create(agentApiUrl + request.getRequestURI() + (query == null ? "" : "?" + query));
     }
 
-    private static boolean hasRequestBody(HttpMethod method) {
-        return method == HttpMethod.POST
-                || method == HttpMethod.PUT
-                || method == HttpMethod.PATCH;
+    private static boolean hasRequestBody(String method) {
+        return "POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method);
     }
 
     private static boolean isHopByHop(String headerName) {
         return HOP_BY_HOP_HEADERS.contains(headerName.toLowerCase(Locale.ROOT));
+    }
+
+    private static String stripTrailingSlash(String value) {
+        return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
     }
 }

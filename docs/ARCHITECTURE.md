@@ -26,6 +26,8 @@ React Web
      |     -> Python Data API
      |        -> data_core / legacy Skill bridge
      |           -> providers(AKShare/...)
+     |-- 自选列表 -> MySQL
+     |-- 面板接入限流 -> Redis
      |
      `-- Agent SSE proxy
            -> Python Agent API
@@ -88,7 +90,7 @@ Agent Harness -> Tool Gateway -> Fund/Web MCP
 | 组件 | 负责 | 不负责 |
 | --- | --- | --- |
 | React Web | 展示数据、图表、状态和 Agent 事件 | 金融计算、补点、直连 Python |
-| Java BFF | 静态托管、REST 聚合、有界并发、超时、SSE 代理 | 金融计算、审计改写、模型调用 |
+| Java BFF | 静态托管、REST 聚合、自选列表、接入限流、有界并发、超时、SSE 代理 | 金融计算、审计改写、模型调用 |
 | Data API | 面板专用 REST、参数校验、返回完整信封 | Agent、会话、MCP 协议 |
 | `data_core` | Provider、实体解析、Schema、确定性指标、审计 | HTTP、MCP、Agent 编排 |
 | Fund MCP | 市场事实工具、Schema、超时和信封 | 改写 `data_core` 数值 |
@@ -106,33 +108,41 @@ Agent Harness -> Tool Gateway -> Fund/Web MCP
 | --- | --- |
 | 运行时 | Java 21 LTS |
 | 框架 | Spring Boot 3.5.x |
-| HTTP | Spring WebFlux + Reactor Netty |
-| 内部客户端 | `WebClient` |
+| HTTP | Spring MVC + Tomcat + Java 虚拟线程 |
+| 内部客户端 | `RestClient`；SSE 使用 JDK `HttpClient` 流式转发 |
 | JSON | Jackson `JsonNode` + `@JsonRawValue` |
 | 参数校验 | Jakarta Bean Validation |
-| 并发门禁 | Resilience4j Reactor Bulkhead |
+| 持久化 | MyBatis + MySQL + HikariCP + Flyway |
+| 短期协调 | Redis + Lettuce |
+| 并发门禁 | Resilience4j Bulkhead |
 | 健康检查 | Spring Boot Actuator |
 | 构建 | Maven Wrapper |
-| 测试 | JUnit 5、WebTestClient、MockWebServer |
+| 测试 | JUnit 5、MockMvc、MockWebServer |
 
-不引入 Spring Cloud Gateway、Feign、Lombok、数据库、Redis 或 MQ。BFF 只有固定路由和
-聚合逻辑，直接使用 WebFlux 比引入完整网关平台更容易审计。Spring Boot 使用 3.5
-版本线，实施时在 `pom.xml` 固定具体 patch，不使用动态版本。
+不引入 Spring Cloud Gateway、Feign、Lombok 或 MQ。MySQL 只保存自选列表、匿名面板
+投票/反馈等产品元数据，
+Redis 只用于面板接入限流等短期协调状态，不保存裸市场字段或 Agent 长期记忆。Spring
+Boot 使用 3.5 版本线，实施时在 `pom.xml` 固定具体 patch，不使用动态版本。
 
 关键实现规则：
 
 1. Data API 响应先保留原始 JSON 字符串，再解析只读 `JsonNode` 提取
    `DatasetMeta`；只有解析成功后，外层响应才通过 `@JsonRawValue` 嵌入完整信封，
    避免改写数值精度、字段和错误。
-2. Agent SSE 使用 `WebClient` 读取 `Flux<DataBuffer>` 并逐块写回下游，不聚合完整响应；
-   客户端断开必须取消上游订阅。
+2. Agent SSE 使用 Servlet 异步响应和 JDK `HttpClient` 逐块写回下游，不聚合完整响应；
+   客户端断开必须关闭上游响应流。
 3. 普通 Data API 调用预算保持 90 秒，Java Dashboard 普通接口保持 95 秒左右的服务端
    预算；Overview/产品聚合按调用批次计算预算，前端继续使用 100/200 秒上限。
-4. 所有 Data API 调用共享一个全局 Bulkhead，默认并发 4；Controller 不得绕过该门禁。
+4. 所有 Data API 调用共享一个进程内 Bulkhead，默认并发 4；Controller 不得绕过该门禁。
 5. 非法 `years`、`max_points`、`limit` 和路径参数在 Java HTTP 边界返回 400，不调用
    Python。
-6. React 构建产物打入 Spring Boot 静态资源；非 API 路径支持 SPA fallback，缺失静态
-   资源返回真实 404。
+6. React 构建产物打入 Spring Boot 静态资源；已注册的前端路由支持 SPA fallback，缺失
+   静态资源返回真实 404。
+7. 自选列表最多保存 100 个标的；它是用户输入的产品元数据，不证明标的存在。进入详情后
+   仍由 Data API 解析实体并给出 `NOT_FOUND`、`AMBIGUOUS` 或上游错误。
+8. Redis 限流故障时 fail-open 并记录告警，Data API 自身仍需保留容量门禁。
+9. 面板投票与反馈使用浏览器生成的匿名 UUID 幂等写入 MySQL；同一客户端对同一主题只
+   保留一个选择，不保存市场数值、持仓或对话内容。
 
 最终目录：
 
@@ -149,6 +159,13 @@ web-backend/
     dashboard/DashboardController.java
     dashboard/DashboardService.java
     dashboard/model/
+    watchlist/WatchlistController.java
+    watchlist/WatchlistService.java
+    watchlist/WatchlistMapper.java
+    interaction/PanelInteractionController.java
+    interaction/PanelInteractionService.java
+    interaction/PanelInteractionMapper.java
+    ratelimit/DashboardRateLimitFilter.java
     agent/AgentProxyHandler.java
     web/SpaFallbackHandler.java
   src/main/resources/
@@ -170,6 +187,14 @@ React -> Java Dashboard API -> Data API -> data_core -> providers
 - 每个数据块保留完整 `ToolEnvelope`、独立状态、日期、warning 和审计引用；
 - `fund_screening`、`stock_screening` 在工具完成前必须为 `not_implemented`。
 
+ETF 补充指标由 `data_core` 在 `etf_dashboard` 信封内提供：
+
+- 上交所 ETF 总份额与沪深 ETF 融资余额最多读取最近 7 个主行情真实交易日；
+- 每个交易日快照独立校验 Schema、代码和日期，并记录 `frame_sha256`；
+- 只有相邻两个交易日都通过审计时才计算份额变化或融资净新增；
+- 深交所份额接口缺少可核验统计日期，净申赎、成分融资、长期分位和机构持仓没有稳定
+  生产来源时保持 `unavailable`。
+
 主要 BFF 接口：
 
 ```text
@@ -181,6 +206,11 @@ GET /api/dashboard/funds/search
 GET /api/dashboard/funds/{fund}
 GET /api/dashboard/funds/{fund}/product
 GET /api/dashboard/stocks/{stock}
+GET /api/watchlist
+POST /api/watchlist
+DELETE /api/watchlist/{id}
+GET /api/panel/interactions
+POST /api/panel/interactions
 ```
 
 ### Agent
@@ -380,19 +410,21 @@ Web MCP 只有三个工具：`web_search`、`web_fetch`、`document_read`。其�
 
 - Agent 会话只在进程内保存最近消息、上一轮实体和意图；
 - Data API 与 MCP 使用进程内完整信封 TTL 缓存；
-- 不启用 PostgreSQL、Redis、MQ、数据库 checkpoint 或长期记忆。
+- MySQL 保存单用户自选列表和匿名面板投票/反馈，不保存市场事实；
+- Redis 保存面板固定窗口限流计数，不保存市场事实；
+- 不启用 MQ、数据库 checkpoint 或长期记忆。
 
 目标扩展仅在有测量证据时启用：
 
-- Redis：网关限流、Run 状态、取消信号、短事件缓冲；
+- Redis：在现有限流之外增加 Run 状态、取消信号或短事件缓冲；
 - Redis 缓存只能保存完整 `ToolEnvelope`，不能保存裸市场字段；
 - Redis Stream/MQ：只在长任务需要排队、恢复、重试或多 worker 时引入。
 
 ## 11. 部署与验证
 
-Compose 包含五个运行服务，只有 `web-backend` 对外暴露，`data-api`、`agent-api`、
-`fund-advisor-mcp`、`web-research-mcp` 仅在容器网络内可见。启动命令见 `README.md`，
-Python/Java/Skill 的完整验证命令见 `AGENTS.md`。
+Compose 包含七个运行服务，只有 `web-backend` 对外暴露，MySQL、Redis、`data-api`、
+`agent-api`、`fund-advisor-mcp`、`web-research-mcp` 仅在容器网络内可见。启动命令见
+`README.md`，Python/Java/Skill 的完整验证命令见 `AGENTS.md`。
 
-Docker 相关改动必须验证：五服务健康、Data API 健康、Fund/Web MCP 工具发现、Java 到
+Docker 相关改动必须验证：七服务健康、Data API 健康、Fund/Web MCP 工具发现、Java 到
 Data API 取数、Java 到 Agent SSE 闭环。

@@ -1,13 +1,17 @@
 import type {
+  CreateWatchlistItem,
   ETFDetailResponse,
   FundProductResponse,
   FundSearchResponse,
   IndexDetailResponse,
   IndicesResponse,
   OverviewResponse,
+  PanelInteractionSummary,
   StockDetailResponse,
   StreamEvent,
   StreamEventName,
+  SubmitPanelInteraction,
+  WatchlistItem,
 } from "./types";
 
 const EVENT_NAMES = new Set<StreamEventName>([
@@ -20,6 +24,11 @@ const EVENT_NAMES = new Set<StreamEventName>([
 const DASHBOARD_TIMEOUT_MS = 100_000;
 const DASHBOARD_AGGREGATE_TIMEOUT_MS = 200_000;
 const SEARCH_TIMEOUT_MS = 20_000;
+const etfDetailRequests = new Map<string, Promise<ETFDetailResponse>>();
+const panelInteractionRequests = new Map<
+  string,
+  Promise<PanelInteractionSummary>
+>();
 
 interface StreamChatOptions {
   message: string;
@@ -113,9 +122,26 @@ export async function fetchETFDetail(
   signal?: AbortSignal,
 ): Promise<ETFDetailResponse> {
   const params = new URLSearchParams({ years: "3", max_points: "600" });
+  const key = `${fund}?${params}`;
+  let request = etfDetailRequests.get(key);
+  if (!request) {
+    request = requestETFDetail(fund, params);
+    etfDetailRequests.set(key, request);
+    void request.then(
+      () => etfDetailRequests.delete(key),
+      () => etfDetailRequests.delete(key),
+    );
+  }
+  return waitForSharedRequest(request, signal);
+}
+
+async function requestETFDetail(
+  fund: string,
+  params: URLSearchParams,
+): Promise<ETFDetailResponse> {
   const response = await fetchWithTimeout(
     `/api/dashboard/funds/${encodeURIComponent(fund)}?${params}`,
-    { signal },
+    {},
     DASHBOARD_TIMEOUT_MS,
   );
   if (!response.ok) {
@@ -159,6 +185,103 @@ export async function fetchStockDetail(
     throw new Error(await responseError(response));
   }
   return (await response.json()) as StockDetailResponse;
+}
+
+export async function fetchWatchlist(
+  signal?: AbortSignal,
+): Promise<WatchlistItem[]> {
+  const response = await fetchWithTimeout(
+    "/api/watchlist",
+    { signal },
+    SEARCH_TIMEOUT_MS,
+  );
+  if (!response.ok) {
+    throw new Error(await responseError(response));
+  }
+  return (await response.json()) as WatchlistItem[];
+}
+
+export async function createWatchlistItem(
+  item: CreateWatchlistItem,
+): Promise<WatchlistItem> {
+  const response = await fetchWithTimeout(
+    "/api/watchlist",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(item),
+    },
+    SEARCH_TIMEOUT_MS,
+  );
+  if (!response.ok) {
+    throw new Error(await responseError(response));
+  }
+  return (await response.json()) as WatchlistItem;
+}
+
+export async function deleteWatchlistItem(id: string): Promise<void> {
+  const response = await fetchWithTimeout(
+    `/api/watchlist/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+    SEARCH_TIMEOUT_MS,
+  );
+  if (!response.ok) {
+    throw new Error(await responseError(response));
+  }
+}
+
+export async function fetchPanelInteractions(
+  clientId: string,
+  fund: string,
+  signal?: AbortSignal,
+): Promise<PanelInteractionSummary> {
+  const params = new URLSearchParams({
+    client_id: clientId,
+    fund,
+  });
+  const key = params.toString();
+  let request = panelInteractionRequests.get(key);
+  if (!request) {
+    request = requestPanelInteractions(params);
+    panelInteractionRequests.set(key, request);
+    void request.then(
+      () => panelInteractionRequests.delete(key),
+      () => panelInteractionRequests.delete(key),
+    );
+  }
+  return waitForSharedRequest(request, signal);
+}
+
+async function requestPanelInteractions(
+  params: URLSearchParams,
+): Promise<PanelInteractionSummary> {
+  const response = await fetchWithTimeout(
+    `/api/panel/interactions?${params}`,
+    {},
+    SEARCH_TIMEOUT_MS,
+  );
+  if (!response.ok) {
+    throw new Error(await responseError(response));
+  }
+  return (await response.json()) as PanelInteractionSummary;
+}
+
+export async function submitPanelInteraction(
+  interaction: SubmitPanelInteraction,
+): Promise<PanelInteractionSummary> {
+  const response = await fetchWithTimeout(
+    "/api/panel/interactions",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(interaction),
+    },
+    SEARCH_TIMEOUT_MS,
+  );
+  if (!response.ok) {
+    throw new Error(await responseError(response));
+  }
+  return (await response.json()) as PanelInteractionSummary;
 }
 
 export async function streamChat({
@@ -257,6 +380,32 @@ async function responseError(response: Response): Promise<string> {
     // Fall back to the HTTP status when the response is not JSON.
   }
   return `请求失败（HTTP ${response.status}）`;
+}
+
+function waitForSharedRequest<T>(
+  request: Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (!signal) {
+    return request;
+  }
+  if (signal.aborted) {
+    return Promise.reject(new DOMException("请求已取消", "AbortError"));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(new DOMException("请求已取消", "AbortError"));
+    signal.addEventListener("abort", abort, { once: true });
+    void request.then(
+      (value) => {
+        signal.removeEventListener("abort", abort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", abort);
+        reject(error);
+      },
+    );
+  });
 }
 
 async function fetchWithTimeout(

@@ -13,11 +13,12 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 @Service
 public class DashboardService {
@@ -37,195 +38,210 @@ public class DashboardService {
     private final DashboardToolCaller caller;
     private final ObjectMapper mapper;
     private final BffProperties properties;
+    private final Executor taskExecutor;
 
-    public DashboardService(DashboardToolCaller caller, ObjectMapper mapper, BffProperties properties) {
+    public DashboardService(
+            DashboardToolCaller caller,
+            ObjectMapper mapper,
+            BffProperties properties,
+            Executor taskExecutor) {
         this.caller = caller;
         this.mapper = mapper;
         this.properties = properties;
+        this.taskExecutor = taskExecutor;
     }
 
-    public Mono<IndicesResponse> indices() {
-        return Flux.fromIterable(properties.indexUniverse())
-                .flatMapSequential(this::indexRow, properties.concurrency())
-                .collectList()
-                .map(rows -> {
-                    List<DataStatus> statuses = rows.stream().map(row -> row.meta().status()).toList();
-                    rows.sort(Comparator.comparingInt(row -> statusRank(row.meta().status())));
-                    return new IndicesResponse(rollUp(statuses), rows);
-                });
+    public IndicesResponse indices() {
+        List<IndexRow> rows = invokeAll(properties.indexUniverse().stream()
+                .<Supplier<IndexRow>>map(index -> () -> indexRow(index))
+                .toList());
+        List<DataStatus> statuses = rows.stream().map(row -> row.meta().status()).toList();
+        rows.sort(Comparator.comparingInt(row -> statusRank(row.meta().status())));
+        return new IndicesResponse(rollUp(statuses), rows);
     }
 
-    public Mono<IndexDetail> indexDetail(String index, int years, int maxPoints) {
+    public IndexDetail indexDetail(String index, int years, int maxPoints) {
         int resolvedYears = years == 0 ? properties.indexYears() : years;
         Map<String, Object> arguments = maxPoints > 0
                 ? Map.of("index", index, "years", resolvedYears, "max_points", maxPoints)
                 : Map.of("index", index, "years", resolvedYears);
-        return caller.callTool(INDEX_VALUATION_TOOL, arguments)
-                .map(envelope -> {
-                    String asOf = envelope.ok() ? indexAsOf(envelope.data()) : "";
-                    return new IndexDetail(
-                            index,
-                            envelopeMeta(envelope, INDEX_VALUATION_TOOL, asOf),
-                            envelope.rawJson());
-                })
-                .onErrorResume(error -> Mono.just(new IndexDetail(
-                        index,
-                        transportFailureMeta(INDEX_VALUATION_TOOL, error),
-                        null)));
+        try {
+            ToolEnvelope envelope = caller.callTool(INDEX_VALUATION_TOOL, arguments);
+            String asOf = envelope.ok() ? indexAsOf(envelope.data()) : "";
+            return new IndexDetail(
+                    index,
+                    envelopeMeta(envelope, INDEX_VALUATION_TOOL, asOf),
+                    envelope.rawJson());
+        } catch (RuntimeException error) {
+            return new IndexDetail(index, transportFailureMeta(INDEX_VALUATION_TOOL, error), null);
+        }
     }
 
-    public Mono<FundSearchResponse> fundSearch(String query, int limit) {
-        return caller.callTool(FUND_SEARCH_TOOL, Map.of("query", query, "limit", limit))
-                .map(envelope -> new FundSearchResponse(
-                        query,
-                        envelopeMeta(envelope, FUND_SEARCH_TOOL, ""),
-                        envelope.rawJson()))
-                .onErrorResume(error -> Mono.just(new FundSearchResponse(
-                        query,
-                        transportFailureMeta(FUND_SEARCH_TOOL, error),
-                        null)));
+    public FundSearchResponse fundSearch(String query, int limit) {
+        try {
+            ToolEnvelope envelope = caller.callTool(FUND_SEARCH_TOOL, Map.of("query", query, "limit", limit));
+            return new FundSearchResponse(
+                    query,
+                    envelopeMeta(envelope, FUND_SEARCH_TOOL, ""),
+                    envelope.rawJson());
+        } catch (RuntimeException error) {
+            return new FundSearchResponse(query, transportFailureMeta(FUND_SEARCH_TOOL, error), null);
+        }
     }
 
-    public Mono<ETFDetail> etfDetail(String fund, int years, int maxPoints) {
-        return caller.callTool(
-                        ETF_DASHBOARD_TOOL,
-                        Map.of("fund", fund, "years", years, "max_points", maxPoints))
-                .map(envelope -> {
-                    String asOf = envelope.ok() ? textAt(envelope.data(), "summary", "latest_date") : "";
-                    return new ETFDetail(
-                            fund,
-                            envelopeMeta(envelope, ETF_DASHBOARD_TOOL, asOf),
-                            envelope.rawJson());
-                })
-                .onErrorResume(error -> Mono.just(new ETFDetail(
-                        fund,
-                        transportFailureMeta(ETF_DASHBOARD_TOOL, error),
-                        null)));
+    public ETFDetail etfDetail(String fund, int years, int maxPoints) {
+        try {
+            ToolEnvelope envelope = caller.callTool(
+                    ETF_DASHBOARD_TOOL,
+                    Map.of("fund", fund, "years", years, "max_points", maxPoints));
+            String asOf = envelope.ok() ? textAt(envelope.data(), "summary", "latest_date") : "";
+            return new ETFDetail(
+                    fund,
+                    envelopeMeta(envelope, ETF_DASHBOARD_TOOL, asOf),
+                    envelope.rawJson());
+        } catch (RuntimeException error) {
+            return new ETFDetail(fund, transportFailureMeta(ETF_DASHBOARD_TOOL, error), null);
+        }
     }
 
-    public Mono<FundOverview> fundOverview(String fund, int years) {
-        return caller.callTool(FUND_ANALYZE_TOOL, Map.of("fund", fund, "years", years))
-                .map(envelope -> new FundOverview(
-                        fund,
-                        envelopeMeta(envelope, FUND_ANALYZE_TOOL, fundProductAsOf(FUND_ANALYZE_TOOL, envelope.data())),
-                        envelope.rawJson()))
-                .onErrorResume(error -> Mono.just(new FundOverview(
-                        fund,
-                        transportFailureMeta(FUND_ANALYZE_TOOL, error),
-                        null)));
+    public FundOverview fundOverview(String fund, int years) {
+        try {
+            ToolEnvelope envelope = caller.callTool(FUND_ANALYZE_TOOL, Map.of("fund", fund, "years", years));
+            return new FundOverview(
+                    fund,
+                    envelopeMeta(envelope, FUND_ANALYZE_TOOL, fundProductAsOf(FUND_ANALYZE_TOOL, envelope.data())),
+                    envelope.rawJson());
+        } catch (RuntimeException error) {
+            return new FundOverview(fund, transportFailureMeta(FUND_ANALYZE_TOOL, error), null);
+        }
     }
 
-    public Mono<FundProductResponse> fundProduct(String fund, int years) {
-        Mono<FundProductSection> analysis = fundProductSection(
-                FUND_ANALYZE_TOOL,
-                Map.of("fund", fund, "years", years));
-        Mono<FundProductSection> profile = fundProductSection(
-                FUND_PROFILE_TOOL,
-                Map.of("fund", fund));
-        Mono<FundProductSection> rating = fundProductSection(
-                FUND_RATING_TOOL,
-                Map.of("fund", fund));
-        Mono<FundProductSection> tradingStatus = fundProductSection(
-                FUND_STATUS_TOOL,
-                Map.of("fund", fund));
-
-        return Mono.zip(analysis, profile, rating, tradingStatus)
-                .map(tuple -> {
-                    FundProductSections sections = new FundProductSections(
-                            tuple.getT1(),
-                            tuple.getT2(),
-                            tuple.getT3(),
-                            tuple.getT4());
-                    DataStatus status = rollUp(List.of(
-                            sections.analysis().meta().status(),
-                            sections.profile().meta().status(),
-                            sections.rating().meta().status(),
-                            sections.tradingStatus().meta().status()));
-                    return new FundProductResponse(fund, status, sections);
-                });
+    public FundProductResponse fundProduct(String fund, int years) {
+        List<FundProductSection> values = invokeAll(List.of(
+                () -> fundProductSection(FUND_ANALYZE_TOOL, Map.of("fund", fund, "years", years)),
+                () -> fundProductSection(FUND_PROFILE_TOOL, Map.of("fund", fund)),
+                () -> fundProductSection(FUND_RATING_TOOL, Map.of("fund", fund)),
+                () -> fundProductSection(FUND_STATUS_TOOL, Map.of("fund", fund))));
+        FundProductSections sections = new FundProductSections(
+                values.get(0),
+                values.get(1),
+                values.get(2),
+                values.get(3));
+        DataStatus status = rollUp(List.of(
+                sections.analysis().meta().status(),
+                sections.profile().meta().status(),
+                sections.rating().meta().status(),
+                sections.tradingStatus().meta().status()));
+        return new FundProductResponse(fund, status, sections);
     }
 
-    public Mono<StockDetail> stockDetail(String stock, int years, int maxPoints) {
-        return caller.callTool(
-                        STOCK_VALUATION_TOOL,
-                        Map.of("stock", stock, "years", years, "max_points", maxPoints))
-                .map(envelope -> new StockDetail(
-                        stock,
-                        envelopeMeta(envelope, STOCK_VALUATION_TOOL, stockAsOf(envelope.data())),
-                        envelope.rawJson()))
-                .onErrorResume(error -> Mono.just(new StockDetail(
-                        stock,
-                        transportFailureMeta(STOCK_VALUATION_TOOL, error),
-                        null)));
+    public StockDetail stockDetail(String stock, int years, int maxPoints) {
+        try {
+            ToolEnvelope envelope = caller.callTool(
+                    STOCK_VALUATION_TOOL,
+                    Map.of("stock", stock, "years", years, "max_points", maxPoints));
+            return new StockDetail(
+                    stock,
+                    envelopeMeta(envelope, STOCK_VALUATION_TOOL, stockAsOf(envelope.data())),
+                    envelope.rawJson());
+        } catch (RuntimeException error) {
+            return new StockDetail(stock, transportFailureMeta(STOCK_VALUATION_TOOL, error), null);
+        }
     }
 
-    public Mono<OverviewResponse> overview() {
+    public OverviewResponse overview() {
         BffProperties.OverviewTargets targets = properties.overview();
-        return Mono.zip(
-                        indexDetail(targets.index(), 10, 300),
-                        etfDetail(targets.etf(), 3, 300),
-                        fundOverview(targets.fund(), 3),
-                        stockDetail(targets.stock(), 5, 300))
-                .map(tuple -> {
-                    OverviewCapability notImplemented = new OverviewCapability(
-                            DataStatus.NOT_IMPLEMENTED,
-                            "候选筛选工具尚未实现");
-                    DataStatus status = rollUp(List.of(
-                            tuple.getT1().meta().status(),
-                            tuple.getT2().meta().status(),
-                            tuple.getT3().meta().status(),
-                            tuple.getT4().meta().status()));
-                    return new OverviewResponse(
-                            status,
-                            tuple.getT1(),
-                            tuple.getT2(),
-                            tuple.getT3(),
-                            tuple.getT4(),
-                            notImplemented,
-                            notImplemented);
-                });
+        CompletableFuture<IndexDetail> indexFuture =
+                submit(() -> indexDetail(targets.index(), 10, 300));
+        CompletableFuture<ETFDetail> etfFuture =
+                submit(() -> etfDetail(targets.etf(), 3, 300));
+        CompletableFuture<FundOverview> fundFuture =
+                submit(() -> fundOverview(targets.fund(), 3));
+        CompletableFuture<StockDetail> stockFuture =
+                submit(() -> stockDetail(targets.stock(), 5, 300));
+        IndexDetail index = indexFuture.join();
+        ETFDetail etf = etfFuture.join();
+        FundOverview fund = fundFuture.join();
+        StockDetail stock = stockFuture.join();
+        OverviewCapability notImplemented = new OverviewCapability(
+                DataStatus.NOT_IMPLEMENTED,
+                "候选筛选工具尚未实现");
+        DataStatus status = rollUp(List.of(
+                index.meta().status(),
+                etf.meta().status(),
+                fund.meta().status(),
+                stock.meta().status()));
+        return new OverviewResponse(
+                status,
+                index,
+                etf,
+                fund,
+                stock,
+                notImplemented,
+                notImplemented);
     }
 
-    private Mono<IndexRow> indexRow(String index) {
-        return caller.callTool(INDEX_VALUATION_TOOL, Map.of("index", index, "years", properties.indexYears()))
-                .map(envelope -> {
-                    DatasetMeta meta = envelopeMeta(envelope, INDEX_VALUATION_TOOL, "");
-                    JsonNode peTtm = null;
-                    JsonNode pb = null;
-                    JsonNode latestPoint = null;
-                    String asOf = "";
-                    if (envelope.ok()) {
-                        JsonNode data = envelope.data();
-                        peTtm = nodeAt(data, "summary", "pe_ttm");
-                        pb = nodeAt(data, "summary", "pb");
-                        latestPoint = nodeAt(data, "charts", "index_points", "current");
-                        asOf = indexAsOf(data);
-                        meta = new DatasetMeta(
-                                asOf,
-                                meta.queriedAt(),
-                                meta.status(),
-                                meta.sourceTools(),
-                                meta.auditRefs(),
-                                meta.warnings(),
-                                meta.error());
-                    }
-                    return new IndexRow(index, meta, peTtm, pb, latestPoint);
-                })
-                .onErrorResume(error -> Mono.just(new IndexRow(
-                        index,
-                        transportFailureMeta(INDEX_VALUATION_TOOL, error),
-                        null,
-                        null,
-                        null)));
+    private IndexRow indexRow(String index) {
+        try {
+            ToolEnvelope envelope = caller.callTool(
+                    INDEX_VALUATION_TOOL,
+                    Map.of("index", index, "years", properties.indexYears()));
+            DatasetMeta meta = envelopeMeta(envelope, INDEX_VALUATION_TOOL, "");
+            JsonNode peTtm = null;
+            JsonNode pb = null;
+            JsonNode latestPoint = null;
+            String asOf = "";
+            if (envelope.ok()) {
+                JsonNode data = envelope.data();
+                peTtm = nodeAt(data, "summary", "pe_ttm");
+                pb = nodeAt(data, "summary", "pb");
+                latestPoint = nodeAt(data, "charts", "index_points", "current");
+                asOf = indexAsOf(data);
+                meta = new DatasetMeta(
+                        asOf,
+                        meta.queriedAt(),
+                        meta.status(),
+                        meta.sourceTools(),
+                        meta.auditRefs(),
+                        meta.warnings(),
+                        meta.error());
+            }
+            return new IndexRow(index, meta, peTtm, pb, latestPoint);
+        } catch (RuntimeException error) {
+            return new IndexRow(
+                    index,
+                    transportFailureMeta(INDEX_VALUATION_TOOL, error),
+                    null,
+                    null,
+                    null);
+        }
     }
 
-    private Mono<FundProductSection> fundProductSection(String tool, Map<String, Object> arguments) {
-        return caller.callTool(tool, arguments)
-                .map(envelope -> new FundProductSection(
-                        envelopeMeta(envelope, tool, fundProductAsOf(tool, envelope.data())),
-                        envelope.rawJson()))
-                .onErrorResume(error -> Mono.just(
-                        new FundProductSection(transportFailureMeta(tool, error), null)));
+    private FundProductSection fundProductSection(String tool, Map<String, Object> arguments) {
+        try {
+            ToolEnvelope envelope = caller.callTool(tool, arguments);
+            return new FundProductSection(
+                    envelopeMeta(envelope, tool, fundProductAsOf(tool, envelope.data())),
+                    envelope.rawJson());
+        } catch (RuntimeException error) {
+            return new FundProductSection(transportFailureMeta(tool, error), null);
+        }
+    }
+
+    private <T> List<T> invokeAll(List<Supplier<T>> tasks) {
+        List<T> results = new ArrayList<>(tasks.size());
+        for (int start = 0; start < tasks.size(); start += properties.concurrency()) {
+            int end = Math.min(start + properties.concurrency(), tasks.size());
+            List<CompletableFuture<T>> batch = tasks.subList(start, end).stream()
+                    .map(task -> CompletableFuture.supplyAsync(task, taskExecutor))
+                    .toList();
+            batch.stream().map(CompletableFuture::join).forEach(results::add);
+        }
+        return results;
+    }
+
+    private <T> CompletableFuture<T> submit(Supplier<T> task) {
+        return CompletableFuture.supplyAsync(task, taskExecutor);
     }
 
     private DatasetMeta envelopeMeta(ToolEnvelope envelope, String tool, String asOf) {
@@ -240,7 +256,8 @@ public class DashboardService {
     }
 
     private DatasetMeta transportFailureMeta(String tool, Throwable error) {
-        log.warn("data api {} transport failure: {}", tool, describe(error), error);
+        log.warn("data api {} transport failure: {}", tool, describe(error));
+        log.debug("data api {} transport failure details", tool, error);
         return new DatasetMeta(
                 "",
                 OffsetDateTime.now(ZoneOffset.UTC).toString(),

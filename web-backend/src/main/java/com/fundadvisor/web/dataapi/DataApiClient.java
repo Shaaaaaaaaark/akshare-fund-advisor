@@ -7,53 +7,63 @@ import com.fundadvisor.web.facts.ToolEnvelope;
 import io.github.resilience4j.bulkhead.Bulkhead;
 import io.github.resilience4j.bulkhead.BulkheadConfig;
 import io.github.resilience4j.bulkhead.BulkheadFullException;
-import io.github.resilience4j.reactor.bulkhead.operator.BulkheadOperator;
+import java.io.IOException;
 import java.net.URI;
+import java.net.http.HttpClient;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.util.StreamUtils;
+import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriBuilder;
-import reactor.core.publisher.Mono;
 
 @Component
 public class DataApiClient implements DashboardToolCaller {
 
-    private final WebClient webClient;
+    private final RestClient restClient;
     private final ObjectMapper mapper;
     private final Bulkhead bulkhead;
-    private final Duration timeout;
 
-    public DataApiClient(BffProperties properties, WebClient.Builder builder, ObjectMapper mapper) {
-        this.webClient = builder.baseUrl(properties.dataApiUrl()).build();
+    public DataApiClient(BffProperties properties, RestClient.Builder builder, ObjectMapper mapper) {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(5))
+                .build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(properties.dataTimeout());
+        this.restClient = builder
+                .baseUrl(properties.dataApiUrl())
+                .requestFactory(requestFactory)
+                .build();
         this.mapper = mapper;
         this.bulkhead = Bulkhead.of(
                 "dashboard-data-api",
                 BulkheadConfig.custom()
                         .maxConcurrentCalls(properties.concurrency())
-                        // 必须为 0：resilience4j 的响应式 Bulkhead 走阻塞式 tryAcquire，
-                        // 任何正数等待时间都会阻塞 Netty 事件循环。排队等待交给请求超时预算控制。
                         .maxWaitDuration(Duration.ZERO)
                         .build());
-        this.timeout = properties.dataTimeout();
     }
 
     @Override
-    public Mono<ToolEnvelope> callTool(String tool, Map<String, Object> arguments) {
-        // Mono.defer：uri(Function) 在装配期执行 route()，非法参数必须走响应式错误信号而不是同步抛出。
-        return Mono.defer(() -> webClient
+    public ToolEnvelope callTool(String tool, Map<String, Object> arguments) {
+        try {
+            return Bulkhead.decorateSupplier(bulkhead, () -> restClient
                         .get()
                         .uri(uriBuilder -> route(uriBuilder, tool, arguments))
                         .accept(MediaType.APPLICATION_JSON)
-                        .exchangeToMono(response -> response.bodyToMono(String.class)
-                                .defaultIfEmpty("")
-                                .flatMap(body -> decode(tool, response.statusCode(), body))))
-                .timeout(timeout)
-                .transformDeferred(BulkheadOperator.of(bulkhead))
-                .onErrorMap(BulkheadFullException.class, exc -> new IllegalStateException(
-                        "data api " + tool + " UPSTREAM_ERROR: concurrency limit reached", exc));
+                        .exchange((request, response) -> decode(
+                                tool,
+                                response.getStatusCode(),
+                                StreamUtils.copyToString(response.getBody(), StandardCharsets.UTF_8))))
+                    .get();
+        } catch (BulkheadFullException exc) {
+            throw new IllegalStateException(
+                    "data api " + tool + " UPSTREAM_ERROR: concurrency limit reached",
+                    exc);
+        }
     }
 
     URI route(UriBuilder builder, String tool, Map<String, Object> arguments) {
@@ -87,15 +97,15 @@ public class DataApiClient implements DashboardToolCaller {
         };
     }
 
-    private Mono<ToolEnvelope> decode(String tool, HttpStatusCode status, String body) {
+    private ToolEnvelope decode(String tool, HttpStatusCode status, String body) throws IOException {
         if (!status.is2xxSuccessful()) {
-            return Mono.error(new IllegalStateException(
-                    "data api " + tool + " http " + status.value() + ": " + truncate(body, 200)));
+            throw new IllegalStateException(
+                    "data api " + tool + " http " + status.value() + ": " + truncate(body, 200));
         }
         try {
-            return Mono.just(ToolEnvelope.parse(body, mapper));
+            return ToolEnvelope.parse(body, mapper);
         } catch (JsonProcessingException | IllegalArgumentException exc) {
-            return Mono.error(new IllegalStateException("decode data api " + tool + " envelope", exc));
+            throw new IllegalStateException("decode data api " + tool + " envelope", exc);
         }
     }
 

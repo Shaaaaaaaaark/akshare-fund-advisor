@@ -1,33 +1,37 @@
 package com.fundadvisor.web.web;
 
-import com.fundadvisor.web.agent.AgentProxyHandler;
-import org.springframework.context.annotation.Bean;
+import com.fundadvisor.web.config.BffProperties;
+import java.time.Duration;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.web.reactive.function.server.RequestPredicates;
-import org.springframework.web.reactive.function.server.RouterFunction;
-import org.springframework.web.reactive.function.server.RouterFunctions;
-import org.springframework.web.reactive.function.server.ServerRequest;
-import org.springframework.web.reactive.function.server.ServerResponse;
+import org.springframework.web.servlet.config.annotation.AsyncSupportConfigurer;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Configuration
-public class WebRoutes {
+public class WebRoutes implements WebMvcConfigurer {
 
-    @Bean
-    RouterFunction<ServerResponse> routes(
-            AgentProxyHandler agentProxy,
-            SpaFallbackHandler spaFallback) {
-        return RouterFunctions.route()
-                .route(RequestPredicates.path("/api/chat/**"), agentProxy::proxy)
-                .route(RequestPredicates.path("/api/sessions"), agentProxy::proxy)
-                .route(RequestPredicates.path("/api/sessions/**"), agentProxy::proxy)
-                .route(RequestPredicates.GET("/**").and(this::isSpaPath), spaFallback::handle)
-                .build();
+    private final BffProperties properties;
+
+    public WebRoutes(BffProperties properties) {
+        this.properties = properties;
     }
 
-    private boolean isSpaPath(ServerRequest request) {
-        String path = request.path();
-        return !path.equals("/health")
-                && !path.startsWith("/api/")
-                && !path.startsWith("/actuator/");
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        String assetsLocation = properties.staticDir()
+                .toAbsolutePath()
+                .normalize()
+                .resolve("assets")
+                .toUri()
+                .toString();
+        String location = assetsLocation.endsWith("/") ? assetsLocation : assetsLocation + "/";
+        registry.addResourceHandler("/assets/**")
+                .addResourceLocations(location)
+                .setCachePeriod((int) Duration.ofDays(365).toSeconds());
+    }
+
+    @Override
+    public void configureAsyncSupport(AsyncSupportConfigurer configurer) {
+        configurer.setDefaultTimeout(Duration.ofMinutes(15).toMillis());
     }
 }

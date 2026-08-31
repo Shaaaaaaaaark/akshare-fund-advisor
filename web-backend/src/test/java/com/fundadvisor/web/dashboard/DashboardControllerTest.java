@@ -1,37 +1,44 @@
 package com.fundadvisor.web.dashboard;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.reactive.server.WebTestClient;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class DashboardControllerTest {
 
     private DashboardTestSupport.RecordingCaller caller;
-    private WebTestClient client;
+    private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         ObjectMapper mapper = new ObjectMapper();
         caller = new DashboardTestSupport.RecordingCaller(mapper);
-        DashboardService service = new DashboardService(caller, mapper, DashboardTestSupport.properties());
-        client = WebTestClient.bindToController(new DashboardController(service, DashboardTestSupport.properties()))
+        DashboardService service = new DashboardService(
+                caller,
+                mapper,
+                DashboardTestSupport.properties(),
+                DashboardTestSupport.DIRECT_EXECUTOR);
+        mockMvc = MockMvcBuilders.standaloneSetup(
+                        new DashboardController(service, DashboardTestSupport.properties()))
                 .build();
     }
 
     @Test
-    void fundProductRoutesToFourProductTools() {
-        client.get()
-                .uri("/api/dashboard/funds/000001/product?years=5")
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody()
-                .jsonPath("$.fund").isEqualTo("000001")
-                .jsonPath("$.status").isEqualTo("available");
+    void fundProductRoutesToFourProductTools() throws Exception {
+        mockMvc.perform(get("/api/dashboard/funds/000001/product").param("years", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fund").value("000001"))
+                .andExpect(jsonPath("$.status").value("available"));
 
         assertThat(caller.calls)
                 .extracting(DashboardTestSupport.Call::tool)
@@ -49,11 +56,11 @@ class DashboardControllerTest {
     }
 
     @Test
-    void etfRouteStaysSeparateFromFundProductRoute() {
-        client.get()
-                .uri("/api/dashboard/funds/510300?years=3&max_points=800")
-                .exchange()
-                .expectStatus().isOk();
+    void etfRouteStaysSeparateFromFundProductRoute() throws Exception {
+        mockMvc.perform(get("/api/dashboard/funds/510300")
+                        .param("years", "3")
+                        .param("max_points", "800"))
+                .andExpect(status().isOk());
 
         assertThat(caller.calls).hasSize(1);
         DashboardTestSupport.Call call = caller.calls.getFirst();
@@ -65,78 +72,62 @@ class DashboardControllerTest {
     }
 
     @Test
-    void invalidFundParametersReturnBadRequestWithoutCallingDataApi() {
+    void invalidFundParametersReturnBadRequestWithoutCallingDataApi() throws Exception {
         for (String query : List.of("years=invalid", "years=10", "max_points=invalid", "max_points=20")) {
             caller.calls.clear();
-            client.get()
-                    .uri("/api/dashboard/funds/510300?" + query)
-                    .exchange()
-                    .expectStatus().isBadRequest();
+            mockMvc.perform(get("/api/dashboard/funds/510300?" + query))
+                    .andExpect(status().isBadRequest());
             assertThat(caller.calls).isEmpty();
         }
     }
 
     @Test
-    void invalidIndexParametersReturnBadRequestWithoutCallingDataApi() {
+    void invalidIndexParametersReturnBadRequestWithoutCallingDataApi() throws Exception {
         for (String query : List.of("years=invalid", "years=1", "max_points=invalid", "max_points=20")) {
             caller.calls.clear();
-            client.get()
-                    .uri("/api/dashboard/indices/%E6%B2%AA%E6%B7%B1300?" + query)
-                    .exchange()
-                    .expectStatus().isBadRequest();
+            mockMvc.perform(get("/api/dashboard/indices/{index}", "沪深300").queryParam(
+                            query.substring(0, query.indexOf('=')),
+                            query.substring(query.indexOf('=') + 1)))
+                    .andExpect(status().isBadRequest());
             assertThat(caller.calls).isEmpty();
         }
     }
 
     @Test
-    void invalidStockParametersReturnBadRequestWithoutCallingDataApi() {
+    void invalidStockParametersReturnBadRequestWithoutCallingDataApi() throws Exception {
         for (String query : List.of("years=invalid", "years=20", "max_points=invalid", "max_points=20")) {
             caller.calls.clear();
-            client.get()
-                    .uri("/api/dashboard/stocks/600519?" + query)
-                    .exchange()
-                    .expectStatus().isBadRequest();
+            mockMvc.perform(get("/api/dashboard/stocks/600519?" + query))
+                    .andExpect(status().isBadRequest());
             assertThat(caller.calls).isEmpty();
         }
     }
 
     @Test
-    void invalidParametersReturnJsonDetailSoTheFrontendCanRenderIt() {
-        client.get()
-                .uri("/api/dashboard/funds/510300?years=10")
-                .exchange()
-                .expectStatus().isBadRequest()
-                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
-                .expectBody()
-                .jsonPath("$.detail").isEqualTo("years must be 1, 3 or 5");
+    void invalidParametersReturnJsonDetailSoTheFrontendCanRenderIt() throws Exception {
+        mockMvc.perform(get("/api/dashboard/funds/510300").param("years", "10"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.detail").value("years must be 1, 3 or 5"));
 
-        client.get()
-                .uri("/api/dashboard/funds/search")
-                .exchange()
-                .expectStatus().isBadRequest()
-                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
-                .expectBody()
-                .jsonPath("$.detail").isEqualTo("query is required");
+        mockMvc.perform(get("/api/dashboard/funds/search"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.detail").value("query is required"));
 
-        client.get()
-                .uri("/api/dashboard/overview/unknown")
-                .exchange()
-                .expectStatus().isNotFound()
-                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
-                .expectBody()
-                .jsonPath("$.detail").isEqualTo("overview module not found");
+        mockMvc.perform(get("/api/dashboard/overview/unknown"))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.detail").value("overview module not found"));
 
         assertThat(caller.calls).isEmpty();
     }
 
     @Test
-    void overviewModuleRefreshUsesConfiguredTarget() {
-        client.get()
-                .uri("/api/dashboard/overview/fund")
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody()
-                .jsonPath("$.fund").isEqualTo("000001");
+    void overviewModuleRefreshUsesConfiguredTarget() throws Exception {
+        mockMvc.perform(get("/api/dashboard/overview/fund"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fund").value("000001"));
 
         assertThat(caller.calls).hasSize(1);
         assertThat(caller.calls.getFirst().tool()).isEqualTo(DashboardService.FUND_ANALYZE_TOOL);

@@ -17,7 +17,7 @@
 - Agent Skill 只做 Agent 技能包装和内部调试脚本，不承担数据来源层定位；
 - 数据面板不经过 Agent、LangGraph 或 MCP 协议取数，直连 Data API；
 - 目标数据核心是 `src/fund_advisor_data_core/`，legacy Skill 数据逻辑逐步向其收敛；
-- 产品方向已收敛为 Web；网页后端用 Java 21 + Spring Boot WebFlux，Data API、Agent、
+- 产品方向已收敛为 Web；网页后端用 Java 21 + Spring Boot MVC，Data API、Agent、
   MCP 和 Agent Skill 保留 Python；
 - Compose 只对外暴露 Java 网页后端。
 
@@ -69,20 +69,22 @@ providers；Agent 走 Agent API → LangGraph → Fund MCP / Web MCP）。完整
 - `src/fund_advisor_mcp/web/`：非数值背景 MCP，固定 `numeric_allowed=false`。
 - `src/fund_advisor_agent/`：只做固定图编排、工具路由、关联说明和输出校验。
 - `src/fund_advisor_app/`：Python Agent API、SSE 和临时会话。
-- Java 网页后端：Dashboard BFF、静态托管、Agent SSE 代理，只取数聚合，不做任何
-  金融计算或审计改写；边界见 `docs/ARCHITECTURE.md`。
+- Java 网页后端：Dashboard BFF、自选列表、接入限流、静态托管、Agent SSE 代理，只取数
+  聚合和管理产品元数据，不做任何金融计算或审计改写；边界见 `docs/ARCHITECTURE.md`。
 - `web/`：React 界面，不实现业务计算或金融事实生成。
 
-语言分工：Java 只做网页后端（调用 Data API、有界并发聚合、超时、静态托管、SSE
-代理）；Python 保留 Data API、Agent、MCP、Agent Skill 和全部金融计算与审计。Java BFF
+语言分工：Java 只做网页后端（调用 Data API、虚拟线程有界并发聚合、MySQL 产品元数据、
+Redis 接入限流、静态托管和 SSE 代理）；Python 保留 Data API、Agent、MCP、Agent Skill
+和全部金融计算与审计。Java BFF
 不得直接实现 AKShare 接口，不得重算、改写、四舍五入、插值或合成任何净值、价格、
 PE、PB、收益率、回撤、分位、限额或交易状态，必须原样透传 `ToolEnvelope` 的
 `data_audit`、`frame_sha256`、warnings 和错误码。
 
-Java BFF 固定使用 Java 21、Spring Boot WebFlux、Maven、WebClient、Jackson、
-Bean Validation、Actuator 和 JUnit 5。当前不引入 Spring Cloud Gateway、Feign、Lombok、
-数据库、Redis 或 MQ。所有 Data API 调用共享全局并发门禁，Agent SSE 必须逐块转发，
-不得缓冲完整响应。
+Java BFF 固定使用 Java 21、Spring Boot MVC、Tomcat 虚拟线程、Maven、`RestClient`、
+Jackson、Bean Validation、MyBatis、MySQL、Flyway、Redis、Actuator 和 JUnit 5。当前不
+引入 Spring Cloud Gateway、Feign、Lombok 或 MQ。所有 Data API 调用共享进程内并发
+门禁，Agent SSE 必须逐块转发，不得缓冲完整响应。MySQL 只保存自选列表等产品元数据；
+Redis 只承担接入限流等短期协调状态，不得将裸市场数值或对话摘要写入二者并作为金融事实。
 
 源码层级顺依赖方向：仓库级 `src/` 存放 Data API、data_core、Agent 与 MCP，
 `skills/akshare-fund-advisor/` 只保留 Agent Skill 包装、内部脚本与说明，可独立拷贝。
@@ -90,9 +92,9 @@ Bean Validation、Actuator 和 JUnit 5。当前不引入 Spring Cloud Gateway、
 LangGraph 只使用 `StateGraph` 和显式条件边。不得恢复 LangChain Agent、开放式 ReAct、
 动态工具规划、数据库 checkpoint、长期记忆或多 Agent。
 
-Web 必须通过 Agent API 调用研究能力，不复制图编排或金融计算。会话只允许保存进程内
-的最近消息、上一轮实体和意图；不得把对话历史升级为市场事实，不得引入数据库或跨会话
-记忆。
+Web 必须通过 Agent API 调用研究能力，不复制图编排或金融计算。Agent 会话只允许保存
+进程内的最近消息、上一轮实体和意图；不得把对话历史升级为市场事实，不得把 MySQL
+产品数据或 Redis 短期状态用作跨会话 Agent 记忆。
 
 ## Agent 关联说明
 
@@ -146,6 +148,11 @@ LangGraph 节点必须保持单一职责，节点间只通过 `AgentState` 传�
 - 不得用 Mock、模型记忆或网页摘要替代生产数据。
 - 不在 Agent 文本中复制计算逻辑。
 - 不改写用户未提交的无关修改。
+- ETF 终端顶部按钮、链接和下拉框必须复用
+  `web/src/components/TerminalControls.tsx`；高度、圆角、内边距、字体和焦点态只允许在
+  `web/src/etf-design-system.css` 的令牌与共享规则中修改，页面组件不得另写一套。
+- 修改 ETF 工具栏后必须在浏览器中检查控件等高、按钮文字中心偏差不超过 1px、页面无
+  横向溢出，并覆盖桌面、中等宽度和移动端布局。
 
 ## 验证
 
@@ -164,7 +171,15 @@ docker run --rm -v "$PWD/web-backend":/workspace -w /workspace \
   eclipse-temurin:21-jdk ./mvnw verify
 ```
 
-Docker 相关改动仍须重新运行 Compose 测试、五个服务健康检查、Data API 健康与
+ETF 顶部工具栏变更还必须执行样式所有权检查和六个视口的布局契约测试：
+
+```bash
+cd web
+npm run build
+npm run test:ui
+```
+
+Docker 相关改动仍须重新运行 Compose 测试、七个服务健康检查、Data API 健康与
 Fund/Web MCP 工具发现和 Web/API 闭环，并验证 Java→Data API 取数与 Java→Agent SSE
 连通。
 

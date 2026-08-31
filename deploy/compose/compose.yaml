@@ -19,13 +19,25 @@ services:
         condition: service_healthy
       data-api:
         condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       WEB_BACKEND_ADDR: ":8080"
       DATA_API_URL: http://data-api:8003
       AGENT_API_URL: http://agent-api:8000
+      MYSQL_URL: jdbc:mysql://mysql:3306/fund_advisor?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC
+      MYSQL_USER: fund_advisor
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-fund_advisor_dev}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
       DASHBOARD_INDEX_UNIVERSE: "沪深300,中证500,中证1000,上证50,创业板50,中证800"
       DASHBOARD_INDEX_YEARS: "10"
       DASHBOARD_CONCURRENCY: "4"
+      DASHBOARD_RATE_LIMIT_ENABLED: "true"
+      DASHBOARD_RATE_LIMIT_REQUESTS: "120"
+      DASHBOARD_RATE_LIMIT_WINDOW_SECONDS: "60"
       DASHBOARD_OVERVIEW_INDEX: "沪深300"
       DASHBOARD_OVERVIEW_ETF: "510310"
       DASHBOARD_OVERVIEW_FUND: "000001"
@@ -166,6 +178,43 @@ services:
     expose:
       - "8002"
 
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: fund_advisor
+      MYSQL_USER: fund_advisor
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-fund_advisor_dev}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-fund_advisor_root_dev}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    expose:
+      - "3306"
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    expose:
+      - "6379"
+
   test:
     profiles: ["test"]
     image: fund-advisor-test:local
@@ -173,3 +222,7 @@ services:
       context: ../..
       dockerfile: Dockerfile
       target: test
+
+volumes:
+  mysql-data:
+  redis-data:

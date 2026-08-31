@@ -1,6 +1,12 @@
 package com.fundadvisor.web.agent;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fundadvisor.web.config.BffProperties;
 import java.nio.file.Path;
@@ -13,15 +19,14 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.reactive.server.WebTestClient;
-import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.server.RequestPredicates;
-import org.springframework.web.reactive.function.server.RouterFunctions;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class AgentProxyHandlerTest {
 
     private MockWebServer server;
-    private WebTestClient client;
+    private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -36,11 +41,8 @@ class AgentProxyHandlerTest {
                 2,
                 Duration.ofSeconds(3),
                 new BffProperties.OverviewTargets("沪深300", "510310", "000001", "600519"));
-        AgentProxyHandler handler = new AgentProxyHandler(properties, WebClient.builder());
-        client = WebTestClient.bindToRouterFunction(RouterFunctions.route()
-                        .route(RequestPredicates.path("/api/chat/**"), handler::proxy)
-                        .build())
-                .build();
+        AgentProxyHandler handler = new AgentProxyHandler(properties);
+        mockMvc = MockMvcBuilders.standaloneSetup(handler).build();
     }
 
     @AfterEach
@@ -54,15 +56,15 @@ class AgentProxyHandlerTest {
                 .setHeader("Content-Type", "text/event-stream")
                 .setBody("event: status\ndata: {\"message\":\"ok\"}\n\n"));
 
-        client.post()
-                .uri("/api/chat/stream")
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue("{\"message\":\"分析 000001\",\"session_id\":null}")
-                .exchange()
-                .expectStatus().isOk()
-                .expectHeader().valueEquals("X-Accel-Buffering", "no")
-                .expectBody(String.class)
-                .value(body -> assertThat(body).contains("event: status"));
+        MvcResult pending = mockMvc.perform(post("/api/chat/stream")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"分析 000001\",\"session_id\":null}"))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        mockMvc.perform(asyncDispatch(pending))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Accel-Buffering", "no"))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: status")));
 
         RecordedRequest request = server.takeRequest();
         assertThat(request.getPath()).isEqualTo("/api/chat/stream");
@@ -70,21 +72,22 @@ class AgentProxyHandlerTest {
     }
 
     @Test
-    void sseBufferingHeadersOverrideUpstreamValuesInsteadOfDuplicating() {
+    void sseBufferingHeadersOverrideUpstreamValuesInsteadOfDuplicating() throws Exception {
         server.enqueue(new MockResponse()
                 .setHeader("Content-Type", "text/event-stream")
                 .setHeader("X-Accel-Buffering", "no")
                 .setHeader("Cache-Control", "no-cache")
                 .setBody("event: done\ndata: {}\n\n"));
 
-        client.post()
-                .uri("/api/chat/stream")
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue("{\"message\":\"hi\",\"session_id\":null}")
-                .exchange()
-                .expectStatus().isOk()
-                .expectHeader().valueEquals("X-Accel-Buffering", "no")
-                .expectHeader().valueEquals("Cache-Control", "no-cache");
+        MvcResult pending = mockMvc.perform(post("/api/chat/stream")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"hi\",\"session_id\":null}"))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        mockMvc.perform(asyncDispatch(pending))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Accel-Buffering", "no"))
+                .andExpect(header().string("Cache-Control", "no-cache"));
     }
 
     private static String stripTrailingSlash(String value) {
