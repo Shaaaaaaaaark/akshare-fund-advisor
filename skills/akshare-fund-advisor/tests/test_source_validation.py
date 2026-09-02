@@ -340,3 +340,201 @@ def test_stock_valuation_survives_validation_source_failure():
         warning.get("code") == "SOURCE_UNAVAILABLE"
         for warning in advisor.data_warnings
     )
+
+
+def test_etf_dashboard_cross_validates_unadjusted_close_without_replacing_chart():
+    dates = recent_trading_dates(120)
+    qfq_values = [4.0 + item / 100 for item in range(120)]
+    unadjusted_values = [3.0 + item / 100 for item in range(120)]
+    eastmoney = pd.DataFrame(
+        {
+            "日期": dates,
+            "开盘": qfq_values,
+            "收盘": qfq_values,
+            "最高": qfq_values,
+            "最低": qfq_values,
+            "成交量": [100000] * 120,
+            "成交额": [1000000.0] * 120,
+            "涨跌幅": [0.1] * 120,
+        }
+    )
+    sina = pd.DataFrame(
+        {
+            "date": dates,
+            "open": unadjusted_values,
+            "high": unadjusted_values,
+            "low": unadjusted_values,
+            "close": unadjusted_values,
+            "volume": [100000] * 120,
+            "amount": [1000000.0] * 120,
+        }
+    )
+
+    class FakeAK:
+        __version__ = "1.18.64"
+
+        @staticmethod
+        def fund_etf_hist_em(**_kwargs):
+            return eastmoney
+
+        @staticmethod
+        def fund_etf_hist_sina(**_kwargs):
+            return sina
+
+    advisor = make_stock_advisor(FakeAK())
+    advisor._profile_cache = {}
+    advisor.resolve = lambda _query: {
+        "code": "510300",
+        "name": "沪深300ETF华泰柏瑞",
+        "type": "指数型-股票",
+    }
+    advisor._fund_profile = lambda _fund: {"benchmark": "沪深300指数"}
+    advisor._etf_spot = lambda _fund: None
+    check_frame = canonical_prices(
+        unadjusted_values,
+        end=dates[-1],
+        code="510300",
+    )
+    provider_result = source_validation.ProviderFrame(
+        source_name="Baostock",
+        provider_version="0.9.3",
+        interface="baostock.query_history_k_data_plus",
+        upstream="Baostock 自有数据服务",
+        documentation_url=source_validation.BAOSTOCK_DOC,
+        parameters={"code": "sh.510300"},
+        metric_basis="none_daily_close",
+        frame=check_frame,
+    )
+
+    with patch.object(
+        source_validation.BaostockProvider,
+        "fetch_stock_daily",
+        return_value=provider_result,
+    ):
+        result = advisor.etf_dashboard("510300", years=1, max_points=50)
+
+    assert result["metric_basis"] == "exchange_qfq_daily"
+    assert result["summary"]["latest_close"] == round(qfq_values[-1], 4)
+    assert result["tracking_index"]["index_code"] == "000300"
+    assert result["source_validation"]["status"] == "passed"
+    assert result["source_validation"]["sources"][0]["source"] == "Baostock"
+    assert {
+        item.get("role")
+        for item in advisor.data_audit
+        if item.get("role")
+    } >= {
+        "cross_validation_primary",
+        "cross_validation_source",
+        "cross_validation_comparison",
+    }
+
+
+def test_etf_dashboard_cross_validates_latest_nav_across_upstreams():
+    dates = recent_trading_dates(80)
+    latest_date = dates[-1].date().isoformat()
+    prices = [4.0 + item / 100 for item in range(80)]
+    history = pd.DataFrame(
+        {
+            "日期": dates,
+            "开盘": prices,
+            "收盘": prices,
+            "最高": prices,
+            "最低": prices,
+            "成交量": [100000] * 80,
+            "成交额": [1000000.0] * 80,
+            "涨跌幅": [0.1] * 80,
+        }
+    )
+    eastmoney_nav = pd.DataFrame(
+        {
+            "基金代码": ["510300"],
+            "基金简称": ["沪深300ETF"],
+            "类型": ["指数型-股票"],
+            f"{latest_date}-单位净值": [4.5568],
+            f"{latest_date}-累计净值": [2.408],
+            "增长值": [0.01],
+            "增长率": ["0.2%"],
+            "市价": [4.55],
+            "折价率": ["0.1%"],
+        }
+    )
+    ths_nav = pd.DataFrame(
+        {
+            "基金代码": ["510300"],
+            "基金名称": ["沪深300ETF"],
+            "当前-单位净值": [4.5568],
+            "当前-累计净值": [2.408],
+            "最新-交易日": [latest_date],
+            "最新-单位净值": [4.5568],
+            "最新-累计净值": [2.408],
+            "查询日期": [latest_date],
+        }
+    )
+
+    class FakeAK:
+        __version__ = "1.18.64"
+
+        @staticmethod
+        def fund_etf_hist_em(**_kwargs):
+            return history
+
+        @staticmethod
+        def fund_etf_fund_daily_em():
+            return eastmoney_nav
+
+        @staticmethod
+        def fund_etf_spot_ths(**_kwargs):
+            return ths_nav
+
+    advisor = make_stock_advisor(FakeAK())
+    advisor.source_validation_sources = ()
+    advisor._profile_cache = {}
+    advisor.resolve = lambda _query: {
+        "code": "510300",
+        "name": "沪深300ETF华泰柏瑞",
+        "type": "指数型-股票",
+    }
+    advisor._fund_profile = lambda _fund: {"benchmark": "沪深300指数"}
+    advisor._etf_spot = lambda _fund: None
+
+    result = advisor.etf_dashboard("510300", years=1, max_points=50)
+
+    validation = result["source_validation"]
+    assert validation["status"] == "passed"
+    assert validation["sources"][0]["source"] == "东方财富/同花顺"
+    assert validation["sources"][0]["status"] == "passed"
+    assert validation["sources"][0]["summary"]["absolute_diff"] == 0.0
+    assert {
+        item.get("role")
+        for item in advisor.data_audit
+        if item.get("role")
+    } >= {
+        "cross_validation_primary",
+        "cross_validation_source",
+        "cross_validation_comparison",
+    }
+
+
+def test_etf_source_validation_aggregate_preserves_partial_failure() -> None:
+    result = fund_advisor.FundAdvisor._aggregate_etf_source_validation(
+        [
+            {
+                "status": "unavailable",
+                "scope": "ETF 未复权日收盘价",
+                "sources": [{"source": "Baostock", "status": "unavailable"}],
+            },
+            {
+                "status": "passed",
+                "scope": "ETF 最新单位净值",
+                "sources": [
+                    {"source": "东方财富/同花顺", "status": "passed"}
+                ],
+            },
+        ]
+    )
+
+    assert result["status"] == "warning"
+    assert [item["status"] for item in result["sources"]] == [
+        "unavailable",
+        "passed",
+    ]

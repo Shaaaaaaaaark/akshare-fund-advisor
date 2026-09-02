@@ -59,7 +59,7 @@ def etf_dashboard(
     years: int = 3,
     max_points: int = 600,
 ) -> dict[str, Any]:
-    """Return audited ETF history plus bounded exchange share and margin snapshots."""
+    """Return audited ETF history, source checks, shares, and ETF/component margin."""
     return _dump(
         get_adapter().etf_dashboard(
             fund=fund,
@@ -105,6 +105,12 @@ def stock_valuation(
 def fund_compare(funds: list[str], years: int = 3) -> dict[str, Any]:
     """Compare two to five funds while preserving their metric bases."""
     return _dump(get_adapter().fund_compare(funds=funds, years=years))
+
+
+@mcp.tool()
+def qdii_purchase_board() -> dict[str, Any]:
+    """List QDII/overseas funds that are limited or suspended, grouped by theme."""
+    return _dump(get_adapter().qdii_purchase_board())
 
 
 @mcp.tool()

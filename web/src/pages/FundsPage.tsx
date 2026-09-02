@@ -6,6 +6,7 @@ import {
   CalendarRange,
   CircleHelp,
   Flame,
+  Globe,
   GripVertical,
   Layers3,
   LayoutDashboard,
@@ -16,7 +17,7 @@ import {
   RefreshCw,
   RotateCcw,
   Sun,
-  X,
+  X
 } from "lucide-react";
 import {
   type CSSProperties,
@@ -39,6 +40,7 @@ import {
 import { warningText } from "../components/display";
 import ETFLinkedCharts from "../components/ETFLinkedCharts";
 import ETFPriceShareChart from "../components/ETFPriceShareChart";
+import QDIIBoardDialog from "../components/QDIIBoardDialog";
 import ResearchAgentDialog from "../components/ResearchAgentDialog";
 import StatusBadge from "../components/StatusBadge";
 import {
@@ -100,7 +102,8 @@ type TableSortKey =
   | "volume_yi_units"
   | "drawdown_pct"
   | "total_shares_change_yi_units"
-  | "financing_balance_change_yi_cny";
+  | "financing_balance_change_yi_cny"
+  | "component_financing_balance_change_yi_cny";
 
 interface TableSort {
   key: TableSortKey;
@@ -129,6 +132,7 @@ export default function FundsPage() {
     storedBoolean("fund-advisor.etf.dark-mode", false),
   );
   const [agentOpen, setAgentOpen] = useState(false);
+  const [qdiiOpen, setQdiiOpen] = useState(false);
   const [listOpen, setListOpen] = useState(() =>
     storedBoolean("fund-advisor.etf.list-open", false),
   );
@@ -570,6 +574,15 @@ export default function FundsPage() {
             </TerminalLink>
             <TerminalButton
               className="etf-utility-button"
+              aria-haspopup="dialog"
+              aria-expanded={qdiiOpen}
+              onClick={() => setQdiiOpen(true)}
+            >
+              <Globe aria-hidden="true" />
+              QDII限额榜
+            </TerminalButton>
+            <TerminalButton
+              className="etf-utility-button"
               aria-label="重新读取 ETF 审计数据"
               title="重新读取 ETF 审计数据"
               disabled={loading}
@@ -652,6 +665,7 @@ export default function FundsPage() {
         fundName={data?.identity.name}
         onClose={() => setAgentOpen(false)}
       />
+      <QDIIBoardDialog open={qdiiOpen} onClose={() => setQdiiOpen(false)} />
     </main>
   );
 }
@@ -1234,6 +1248,24 @@ function ETFContent({
               <strong>当前未接入</strong>
               <span>{data.missing_or_not_reliably_available.join("、")}</span>
             </div>
+            {data.source_validation &&
+              data.source_validation.status !== "disabled" && (
+                <div>
+                  <strong>多源校验</strong>
+                  <span>
+                    {data.source_validation.scope} ·{" "}
+                    {sourceValidationLabel(data.source_validation.status)}
+                  </span>
+                  <code>
+                    {data.source_validation.sources
+                      .map(
+                        (source) =>
+                          `${source.source}:${source.status}`,
+                      )
+                      .join(" · ") || "校验源当前不可用"}
+                  </code>
+                </div>
+              )}
             <div>
               <strong>来源与审计</strong>
               <span>
@@ -1398,7 +1430,7 @@ function ETFContent({
               <strong>待接入</strong>
             </div>
             <div>
-              <span>ETF融资净新增</span>
+              <span>ETF融资余额变动</span>
               <strong
                 className={tone(
                   supplementalRange?.financing_net_change_yi_cny,
@@ -1413,8 +1445,24 @@ function ETFContent({
               </strong>
             </div>
             <div>
-              <span>成分融资净新增</span>
-              <strong>待接入</strong>
+              <span>成分融资余额变动</span>
+              <strong
+                className={tone(
+                  supplementalRange
+                    ?.component_financing_net_change_yi_cny,
+                )}
+              >
+                {supplementalRange
+                  ? componentFinancingValue(
+                    supplementalRange
+                      .component_financing_net_change_yi_cny,
+                    supplemental?.component_financing.latest
+                      ?.reported_component_count,
+                    supplemental?.component_financing.latest
+                      ?.constituent_count,
+                  )
+                  : "当前区间不可用"}
+              </strong>
             </div>
           </section>
           <div className="etf-trend-table-wrap">
@@ -1487,7 +1535,7 @@ function ETFContent({
                     onHelp={setHelpKey}
                   />
                   <ETFSortableHeader
-                    label="ETF融资净新增"
+                    label="ETF融资余额变动"
                     sortKey="financing_balance_change_yi_cny"
                     sort={tableSort}
                     onSort={setTableSort}
@@ -1499,8 +1547,11 @@ function ETFContent({
                     helpKey="etf_financing_percentile"
                     onHelp={setHelpKey}
                   />
-                  <ETFStaticHeader
-                    label="成分融资净新增"
+                  <ETFSortableHeader
+                    label="成分融资余额变动"
+                    sortKey="component_financing_balance_change_yi_cny"
+                    sort={tableSort}
+                    onSort={setTableSort}
                     helpKey="constituent_financing_change"
                     onHelp={setHelpKey}
                   />
@@ -1554,7 +1605,7 @@ function ETFContent({
                       value="待接入"
                     />
                     <TrendCell
-                      label="ETF融资净新增"
+                      label="ETF融资余额变动"
                       value={signed(
                         row.financing_balance_change_yi_cny,
                         " 亿元",
@@ -1564,7 +1615,17 @@ function ETFContent({
                       )}
                     />
                     <TrendCell label="ETF融资分位" value="待接入" />
-                    <TrendCell label="成分融资净新增" value="待接入" />
+                    <TrendCell
+                      label="成分融资余额变动"
+                      value={componentFinancingValue(
+                        row.component_financing_balance_change_yi_cny,
+                        row.component_financing_reported_count,
+                        row.component_financing_constituent_count,
+                      )}
+                      className={tone(
+                        row.component_financing_balance_change_yi_cny,
+                      )}
+                    />
                     <TrendCell label="成分融资分位" value="待接入" />
                   </tr>
                 ))}
@@ -1773,7 +1834,7 @@ const METRIC_HELP: Record<string, { title: string; body: string }> = {
     body: "依赖净申赎金额和底层指数成交额两个同日、同口径序列，当前不计算。",
   },
   etf_financing_change: {
-    title: "ETF 融资净新增",
+    title: "ETF 融资余额变动",
     body: "ETF 当日融资余额减去前一相邻审计交易日融资余额，单位为亿元。",
   },
   etf_financing_percentile: {
@@ -1781,12 +1842,12 @@ const METRIC_HELP: Record<string, { title: string; body: string }> = {
     body: "当前只读取最近最多 7 个真实交易日，样本不足以计算历史分位。",
   },
   constituent_financing_change: {
-    title: "成分融资净新增",
-    body: "需要先精确确认底层指数和当期成分，再逐证券汇总融资余额；当前尚未接入该完整链路。",
+    title: "成分融资余额变动",
+    body: "仅在 ETF 精确映射到底层指数时，按中证指数官网最新成份快照汇总沪深交易所逐证券融资余额，再与前一相邻审计交易日比较。未在交易所明细中返回的证券不补零。",
   },
   constituent_financing_percentile: {
     title: "成分融资分位",
-    body: "依赖完整、可审计的成分股融资历史序列，当前尚未接入。",
+    body: "当前只读取最近最多 7 个真实交易日，样本不足以形成稳定历史分位。",
   },
 };
 
@@ -1907,6 +1968,17 @@ function isExchangeTradedETF(item: FundIdentity): boolean {
   return name.includes("ETF") && !name.includes("联接");
 }
 
+function sourceValidationLabel(
+  status: "disabled" | "passed" | "warning" | "unavailable",
+): string {
+  return {
+    disabled: "未启用",
+    passed: "校验通过",
+    warning: "存在校验告警",
+    unavailable: "校验源不可用",
+  }[status];
+}
+
 function metric(value: number | null | undefined, unit: string): string {
   return value === null || value === undefined ? "—" : `${String(value)}${unit}`;
 }
@@ -1920,6 +1992,24 @@ function signed(value: number | null | undefined, unit: string): string {
     return "—";
   }
   return `${value > 0 ? "+" : ""}${String(value)}${unit}`;
+}
+
+function componentFinancingValue(
+  value: number | null | undefined,
+  reportedCount: number | null | undefined,
+  constituentCount: number | null | undefined,
+): string {
+  const amount = signed(value, " 亿元");
+  if (
+    amount === "—" ||
+    reportedCount === null ||
+    reportedCount === undefined ||
+    constituentCount === null ||
+    constituentCount === undefined
+  ) {
+    return amount;
+  }
+  return `${amount} · 覆盖 ${reportedCount}/${constituentCount}`;
 }
 
 function tone(value: number | null | undefined): string {

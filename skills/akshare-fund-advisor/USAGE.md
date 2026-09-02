@@ -224,9 +224,10 @@ Schema、日期、缺失、质量检查和内容哈希；不会筛选资产或�
   --timeout-seconds 10
 ```
 
-A 股交叉校验默认关闭。生产启用时设置
-`AKSHARE_FUND_SOURCE_VALIDATION=baostock`；校验源只产生 audit/warning，不覆盖主值。
-efinance 只用于一次性审计环境，不在默认依赖中。
+A 股和 ETF 未复权收盘价交叉校验在独立 Skill 中默认关闭。启用时设置
+`AKSHARE_FUND_SOURCE_VALIDATION=baostock`；仓库 Compose 的 Data API 和 Fund MCP
+默认已启用。校验源只产生 audit/warning，不覆盖主值。efinance 只用于一次性审计环境，
+不在默认依赖中。
 
 ## 11. 通用审计字段
 

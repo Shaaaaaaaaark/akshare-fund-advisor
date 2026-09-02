@@ -190,10 +190,15 @@ React -> Java Dashboard API -> Data API -> data_core -> providers
 ETF 补充指标由 `data_core` 在 `etf_dashboard` 信封内提供：
 
 - 上交所 ETF 总份额与沪深 ETF 融资余额最多读取最近 7 个主行情真实交易日；
+- ETF 精确映射到受支持宽基指数时，从中证指数官网读取带日期的最新成份快照，再汇总
+  沪深交易所同日逐证券融资余额；结果同时返回成份总数、明细命中数和覆盖率；
 - 每个交易日快照独立校验 Schema、代码和日期，并记录 `frame_sha256`；
-- 只有相邻两个交易日都通过审计时才计算份额变化或融资净新增；
-- 深交所份额接口缺少可核验统计日期，净申赎、成分融资、长期分位和机构持仓没有稳定
-  生产来源时保持 `unavailable`。
+- 只有相邻两个交易日都通过审计时才计算份额变化或融资余额变动；
+- Compose 默认启用 Baostock，对 AKShare 新浪 ETF 未复权日收盘价执行按日内连接的
+  交叉校验；校验结果只进入 audit/warning，不覆盖、平均或修正主行情；
+- ETF 最新单位净值另按精确代码和同一日期比较东方财富与同花顺结果，作为独立校验链；
+- 深交所份额接口缺少可核验统计日期，净申赎现金额、融资长期分位和机构实时持仓没有
+  稳定生产来源时保持 `unavailable`。
 
 主要 BFF 接口：
 
@@ -206,6 +211,7 @@ GET /api/dashboard/funds/search
 GET /api/dashboard/funds/{fund}
 GET /api/dashboard/funds/{fund}/product
 GET /api/dashboard/stocks/{stock}
+GET /api/dashboard/boards/qdii-purchase
 GET /api/watchlist
 POST /api/watchlist
 DELETE /api/watchlist/{id}

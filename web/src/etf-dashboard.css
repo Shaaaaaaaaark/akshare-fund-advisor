@@ -3669,6 +3669,214 @@ body.etf-trend-expanded {
   color: #eef2f7;
 }
 
+.etf-qdii-dialog {
+  display: flex;
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  flex-direction: column;
+  color: var(--etf-text);
+  background: var(--etf-surface);
+  border: 1px solid var(--etf-border);
+  border-radius: 8px;
+  box-shadow: 0 20px 48px rgb(31 41 55 / 24%);
+}
+
+.etf-qdii-dialog > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--etf-border);
+}
+
+.etf-qdii-dialog h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.etf-qdii-dialog h2 svg {
+  width: 18px;
+  height: 18px;
+}
+
+.etf-qdii-subtitle {
+  display: block;
+  margin-top: 4px;
+  color: var(--etf-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.etf-qdii-dialog > header button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  color: var(--etf-muted);
+  background: transparent;
+  border: 1px solid var(--etf-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.etf-qdii-body {
+  padding: 14px 16px;
+  overflow-y: auto;
+}
+
+.etf-qdii-hint {
+  margin: 8px 0;
+  color: var(--etf-muted);
+}
+
+.etf-qdii-error {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  color: #b42318;
+  background: rgb(180 35 24 / 8%);
+  border: 1px solid rgb(180 35 24 / 24%);
+  border-radius: 6px;
+}
+
+.etf-qdii-error button {
+  align-self: flex-start;
+  padding: 4px 12px;
+  color: #fff;
+  background: var(--terminal-control-primary, #245fe5);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.etf-qdii-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-bottom: 12px;
+  margin-bottom: 8px;
+  border-bottom: 1px dashed var(--etf-border);
+  color: var(--etf-muted);
+  font-size: 12px;
+}
+
+.etf-qdii-summary b {
+  color: var(--etf-text);
+  font-size: 14px;
+}
+
+.etf-qdii-category {
+  margin: 14px 0;
+}
+
+.etf-qdii-category h3 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.etf-qdii-category h3 small {
+  color: var(--etf-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.etf-qdii-tier {
+  margin-bottom: 10px;
+}
+
+.etf-qdii-tier-label {
+  display: inline-block;
+  margin-bottom: 4px;
+  padding: 1px 8px;
+  color: var(--etf-muted);
+  background: var(--etf-surface-muted, #f5f7fa);
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.etf-qdii-tier table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.etf-qdii-tier th,
+.etf-qdii-tier td {
+  padding: 5px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--etf-border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.etf-qdii-tier td:nth-child(2) {
+  max-width: 320px;
+}
+
+.etf-qdii-tier th:last-child,
+.etf-qdii-tier td:last-child {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.etf-qdii-notes {
+  margin: 14px 0 8px;
+  padding-left: 18px;
+  color: var(--etf-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.etf-qdii-audit {
+  display: block;
+  color: var(--etf-muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.theme-dark .etf-qdii-dialog {
+  color: #eef2f7;
+  background: #151a23;
+  border-color: #303949;
+}
+
+.theme-dark .etf-qdii-dialog > header,
+.theme-dark .etf-qdii-dialog > header button,
+.theme-dark .etf-qdii-tier th,
+.theme-dark .etf-qdii-tier td,
+.theme-dark .etf-qdii-summary,
+.theme-dark .etf-qdii-category h3 {
+  border-color: #303949;
+}
+
+.theme-dark .etf-qdii-dialog h2,
+.theme-dark .etf-qdii-summary b {
+  color: #eef2f7;
+}
+
+.theme-dark .etf-qdii-tier-label {
+  background: #1e2633;
+}
+
+@media (max-width: 760px) {
+  .etf-qdii-tier td:nth-child(2) {
+    max-width: 150px;
+  }
+}
+
 @media (max-width: 760px) {
   .etf-chart-actions {
     flex-wrap: wrap;

@@ -104,6 +104,10 @@ class FakeAdvisor:
             "ok": True,
             "action": "etf_dashboard",
             "identity": {"code": fund, "name": "示例ETF"},
+            "tracking_index": {
+                "name": "沪深300",
+                "index_code": "000300",
+            },
             "lookback": {
                 "requested_years": years,
                 "chart_max_points": max_points,
@@ -128,9 +132,13 @@ class FakeAdvisor:
 
 
 class FakeETFSupplementService:
-    def recent(self, code, trading_dates):
+    def recent(self, code, trading_dates, *, tracking_index=None):
         assert code == "510300"
         assert trading_dates == ["2026-08-26", "2026-08-27"]
+        assert tracking_index == {
+            "name": "沪深300",
+            "index_code": "000300",
+        }
         return ETFSupplementResult(
             data={
                 "share": {
@@ -146,6 +154,17 @@ class FakeETFSupplementService:
                         {
                             "date": "2026-08-27",
                             "financing_balance_yi_cny": 3.5,
+                        }
+                    ]
+                },
+                "component_financing": {
+                    "rows": [
+                        {
+                            "date": "2026-08-27",
+                            "financing_balance_yi_cny": 9800.0,
+                            "financing_balance_change_yi_cny": 12.5,
+                            "reported_component_count": 300,
+                            "coverage_pct": 100.0,
                         }
                     ]
                 },
@@ -301,6 +320,16 @@ def test_adapter_exposes_etf_dashboard_with_audit(test_config) -> None:
     assert data["lookback"]["chart_max_points"] == 600
     assert data["recent_rows"][-1]["total_shares_yi_units"] == 120.5
     assert data["recent_rows"][-1]["financing_balance_yi_cny"] == 3.5
+    assert (
+        data["recent_rows"][-1]["component_financing_balance_yi_cny"]
+        == 9800.0
+    )
+    assert (
+        data["recent_rows"][-1][
+            "component_financing_balance_change_yi_cny"
+        ]
+        == 12.5
+    )
     assert data["missing_or_not_reliably_available"] == ["净申购赎回金额"]
     assert envelope.data_audit[0]["frame_sha256"] == "source-hash"
     assert envelope.data_audit[1]["frame_sha256"] == "supplement-hash"

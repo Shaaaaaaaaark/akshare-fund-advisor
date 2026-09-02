@@ -37,7 +37,10 @@ React 只渲染结构化结果。三者都不得生成、补齐或改写市场�
 - 基金搜索、产品档案、评级、申赎状态、历史收益、波动和回撤。
 - ETF/LOF 历史价格或净值、实时价格、IOPV 和统一方向的溢价率。
 - ETF 价格、成交额、成交量、涨跌幅和回撤五联历史图，以及最近交易日排序表。
-- 上交所 ETF 最近 7 日份额、沪深 ETF 最近 7 日融资余额及相邻交易日变化；每个快照独立审计。
+- 上交所 ETF 最近 7 日份额、沪深 ETF 最近 7 日融资余额及相邻交易日变化；精确匹配
+  底层宽基指数时同步汇总最新成份股融资余额和覆盖率。
+- ETF/A 股未复权收盘价支持 Baostock 独立交叉校验，ETF 单位净值另由东方财富与同花顺
+  同日交叉校验；校验只追加审计和 warning，不覆盖 AKShare 主源。
 - 指数 PE TTM、PB、历史分位和历史曲线数据。
 - A 股 PE TTM、PB 和前复权价格历史曲线。
 - 两到五只基金的同口径比较和不可比提示。
@@ -54,6 +57,8 @@ React 只渲染结构化结果。三者都不得生成、补齐或改写市场�
   - `GET /api/dashboard/funds/{fund}/product?years=1|3|5`
 - Dashboard 股票单标 API：
   - `GET /api/dashboard/stocks/{stock}?years=1|3|5|10&max_points=`
+- Dashboard QDII/海外限额榜 API：
+  - `GET /api/dashboard/boards/qdii-purchase`
 - Java 自选列表 API：
   - `GET /api/watchlist`
   - `POST /api/watchlist`

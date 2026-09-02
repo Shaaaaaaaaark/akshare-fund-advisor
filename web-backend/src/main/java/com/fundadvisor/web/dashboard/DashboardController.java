@@ -136,6 +136,11 @@ public class DashboardController {
         return ResponseEntity.ok(dashboard.stockDetail(stock, parsedYears, parsedMaxPoints));
     }
 
+    @GetMapping("/api/dashboard/boards/qdii-purchase")
+    public ResponseEntity<?> qdiiPurchaseBoard() {
+        return ResponseEntity.ok(dashboard.qdiiPurchaseBoard());
+    }
+
     private static Integer parseOptionalInt(String raw, int fallback, String _message) {
         if (raw == null || raw.isBlank()) {
             return fallback;

@@ -30,6 +30,20 @@ class ETFFinancingRow(BaseModel):
     financing_balance_change_yi_cny: float | None
 
 
+class ETFConstituentFinancingRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    date: date
+    financing_balance_cny: float = Field(ge=0)
+    financing_balance_yi_cny: float = Field(ge=0)
+    previous_date: date | None
+    financing_balance_change_cny: float | None
+    financing_balance_change_yi_cny: float | None
+    constituent_count: int = Field(gt=0)
+    reported_component_count: int = Field(ge=0)
+    coverage_pct: float = Field(ge=0, le=100)
+
+
 class ETFShareSeries(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -64,6 +78,26 @@ class ETFFinancingSeries(BaseModel):
     derived_formulas: dict[str, str]
 
 
+class ETFConstituentFinancingSeries(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["available", "partial", "unavailable"]
+    tracking_index_name: str | None
+    tracking_index_code: str | None
+    constituent_as_of: date | None
+    constituent_count: int = Field(ge=0)
+    source_observations: int = Field(ge=0, le=7)
+    actual_start_date: date | None
+    latest_date: date | None
+    unit: Literal["元"]
+    scaled_unit: Literal["亿元"]
+    latest: ETFConstituentFinancingRow | None
+    rows: list[ETFConstituentFinancingRow]
+    chart_series: list[tuple[date, float]]
+    scope_note: str
+    derived_formulas: dict[str, str]
+
+
 class ETFRecentRangeSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -72,6 +106,7 @@ class ETFRecentRangeSummary(BaseModel):
     latest_date: date
     share_change_yi_units: float | None
     financing_net_change_yi_cny: float | None
+    component_financing_net_change_yi_cny: float | None
 
 
 class ETFSupplementIntegrity(BaseModel):
@@ -90,6 +125,7 @@ class ETFSupplementData(BaseModel):
     requested_trading_dates: list[date] = Field(max_length=7)
     share: ETFShareSeries
     financing: ETFFinancingSeries
+    component_financing: ETFConstituentFinancingSeries
     range_summaries: list[ETFRecentRangeSummary]
     unavailable_metrics: list[str]
     data_integrity: ETFSupplementIntegrity

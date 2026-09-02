@@ -16,6 +16,7 @@ from fund_advisor_data_core.services import (
     ETFSupplementService,
     FundSearchService,
     FundStatusService,
+    QDIIPurchaseBoardService,
 )
 from fund_advisor_mcp.config import AppConfig, get_config
 
@@ -26,6 +27,7 @@ from .schemas import (
     CompareInput,
     ETFDashboardInput,
     FundInput,
+    QDIIBoardInput,
     SearchInput,
     StockValuationInput,
     ValuationInput,
@@ -56,6 +58,11 @@ class FundStatusRunner(Protocol):
         ...
 
 
+class QDIIBoardRunner(Protocol):
+    def board(self) -> ToolEnvelope:
+        ...
+
+
 class FundAdvisorToolAdapter:
     """Execute Skill methods and preserve their audit payload verbatim."""
 
@@ -66,6 +73,7 @@ class FundAdvisorToolAdapter:
         advisor_factory: Callable[[], Any] | None = None,
         fund_search_service: FundSearchRunner | None = None,
         fund_status_service: FundStatusRunner | None = None,
+        qdii_board_service: QDIIBoardRunner | None = None,
         etf_supplement_service: ETFSupplementService | None = None,
         cache: EnvelopeCache | None = None,
     ) -> None:
@@ -75,6 +83,7 @@ class FundAdvisorToolAdapter:
         self._advisor_factory = advisor_factory or self._default_advisor_factory
         self._fund_search_service = fund_search_service or FundSearchService()
         self._fund_status_service = fund_status_service or FundStatusService()
+        self._qdii_board_service = qdii_board_service or QDIIPurchaseBoardService()
         self._etf_supplement_service = (
             etf_supplement_service
             if etf_supplement_service is not None
@@ -113,6 +122,7 @@ class FundAdvisorToolAdapter:
             ToolName.INDEX_VALUATION: 30 * 60,
             ToolName.STOCK_VALUATION: 30 * 60,
             ToolName.FUND_COMPARE: 30 * 60,
+            ToolName.QDII_PURCHASE_BOARD: 30 * 60,
             ToolName.INTERFACE_AUDIT: 60,
         }[tool]
 
@@ -297,6 +307,14 @@ class FundAdvisorToolAdapter:
             lambda: self._fund_status_service.status(request.fund),
         )
 
+    def qdii_purchase_board(self, **kwargs: Any) -> ToolEnvelope:
+        QDIIBoardInput.model_validate(kwargs)
+        return self._execute_core_envelope(
+            ToolName.QDII_PURCHASE_BOARD,
+            {},
+            lambda: self._qdii_board_service.board(),
+        )
+
     def fund_analyze(self, **kwargs: Any) -> ToolEnvelope:
         request = AnalyzeInput.model_validate(kwargs)
         arguments = request.model_dump()
@@ -344,6 +362,11 @@ class FundAdvisorToolAdapter:
         supplement = self._etf_supplement_service.recent(
             str(identity.get("code") or fund),
             trading_dates,
+            tracking_index=(
+                data.get("tracking_index")
+                if isinstance(data.get("tracking_index"), dict)
+                else None
+            ),
         )
         data["supplemental"] = supplement.data
 
@@ -355,11 +378,41 @@ class FundAdvisorToolAdapter:
             row["date"]: row
             for row in supplement.data["financing"]["rows"]
         }
+        component_financing_by_date = {
+            row["date"]: row
+            for row in supplement.data.get("component_financing", {}).get(
+                "rows",
+                [],
+            )
+        }
         for row in recent_rows:
             if not isinstance(row, dict):
                 continue
             row.update(share_by_date.get(str(row.get("date")), {}))
             row.update(financing_by_date.get(str(row.get("date")), {}))
+            component = component_financing_by_date.get(str(row.get("date")))
+            if component is not None:
+                row["component_financing_balance_cny"] = component.get(
+                    "financing_balance_cny"
+                )
+                row["component_financing_balance_yi_cny"] = component.get(
+                    "financing_balance_yi_cny"
+                )
+                row["component_financing_balance_change_cny"] = component.get(
+                    "financing_balance_change_cny"
+                )
+                row["component_financing_balance_change_yi_cny"] = (
+                    component.get("financing_balance_change_yi_cny")
+                )
+                row["component_financing_reported_count"] = component.get(
+                    "reported_component_count"
+                )
+                row["component_financing_constituent_count"] = component.get(
+                    "constituent_count"
+                )
+                row["component_financing_coverage_pct"] = component.get(
+                    "coverage_pct"
+                )
 
         data["missing_or_not_reliably_available"] = supplement.data[
             "unavailable_metrics"

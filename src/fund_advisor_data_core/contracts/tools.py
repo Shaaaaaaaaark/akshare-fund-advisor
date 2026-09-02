@@ -15,5 +15,6 @@ class ToolName(StrEnum):
     INDEX_VALUATION = "index_valuation"
     STOCK_VALUATION = "stock_valuation"
     FUND_COMPARE = "fund_compare"
+    QDII_PURCHASE_BOARD = "qdii_purchase_board"
     INTERFACE_AUDIT = "interface_audit"
 

@@ -36,3 +36,6 @@ class AKShareETFProvider:
 
     def margin_detail_szse(self, date: str) -> pd.DataFrame:
         return self.ak_module.stock_margin_detail_szse(date=date)
+
+    def index_constituents(self, symbol: str) -> pd.DataFrame:
+        return self.ak_module.index_stock_cons_csindex(symbol=symbol)

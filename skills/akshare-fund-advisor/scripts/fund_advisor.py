@@ -67,6 +67,25 @@ INTERFACE_CONTRACTS = {
         "数据日期",
         "更新时间",
     },
+    "fund_etf_fund_daily_em": {
+        "基金代码",
+        "基金简称",
+        "类型",
+        "增长值",
+        "增长率",
+        "市价",
+        "折价率",
+    },
+    "fund_etf_spot_ths": {
+        "基金代码",
+        "基金名称",
+        "当前-单位净值",
+        "当前-累计净值",
+        "最新-交易日",
+        "最新-单位净值",
+        "最新-累计净值",
+        "查询日期",
+    },
     "fund_etf_hist_em": {
         "日期",
         "开盘",
@@ -410,6 +429,13 @@ def date_age_days(value: Any, today: Optional[date] = None) -> Optional[int]:
     parsed_date = parsed.date()
     reference = today or datetime.now(SHANGHAI).date()
     return (reference - parsed_date).days
+
+
+def date_iso(value: Any) -> Optional[str]:
+    parsed = pd.to_datetime(value, errors="coerce")
+    if pd.isna(parsed):
+        return None
+    return parsed.date().isoformat()
 
 
 def parse_percent_text(value: Any) -> Optional[float]:
@@ -1372,6 +1398,27 @@ class FundAdvisor:
                 "adjustment": "none",
             }
         )
+        self._cross_validate_daily_close_sources(
+            entity=stock["code"],
+            primary=primary,
+            primary_source="AKShare.stock_zh_a_daily",
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+    def _cross_validate_daily_close_sources(
+        self,
+        *,
+        entity: str,
+        primary: pd.DataFrame,
+        primary_source: str,
+        start_date: str,
+        end_date: str,
+    ) -> List[Dict[str, Any]]:
+        configured = getattr(self, "source_validation_sources", ())
+        if not configured:
+            return []
+
         provider_classes = {
             "baostock": source_validation.BaostockProvider,
             "efinance": source_validation.EFinanceProvider,
@@ -1384,13 +1431,14 @@ class FundAdvisor:
         provider_timeout = total_timeout / len(configured)
         start_iso = datetime.strptime(start_date, "%Y%m%d").date().isoformat()
         end_iso = datetime.strptime(end_date, "%Y%m%d").date().isoformat()
+        results: List[Dict[str, Any]] = []
 
         for provider_name in configured:
             provider = provider_classes[provider_name](
                 timeout_seconds=provider_timeout
             )
             parameters = {
-                "code": stock["code"],
+                "code": entity,
                 "start_date": start_iso,
                 "end_date": end_iso,
                 "adjustment": "none",
@@ -1408,6 +1456,17 @@ class FundAdvisor:
                     interface=interface,
                     parameters=parameters,
                     exc=exc,
+                )
+                results.append(
+                    {
+                        "source": getattr(provider, "name", provider_name),
+                        "status": "unavailable",
+                        "error_code": getattr(
+                            exc,
+                            "code",
+                            "SOURCE_UNAVAILABLE",
+                        ),
+                    }
                 )
                 continue
 
@@ -1455,8 +1514,8 @@ class FundAdvisor:
                     source_validation.compare_daily_close(
                         primary,
                         provider_result.frame,
-                        entity=stock["code"],
-                        primary_source="AKShare.stock_zh_a_daily",
+                        entity=entity,
+                        primary_source=primary_source,
                         check_source=provider_result.interface,
                         metric_basis="none_daily_close",
                         relative_tolerance=(
@@ -1474,14 +1533,25 @@ class FundAdvisor:
                     parameters=parameters,
                     exc=exc,
                 )
+                results.append(
+                    {
+                        "source": provider_result.source_name,
+                        "status": "unavailable",
+                        "error_code": getattr(
+                            exc,
+                            "code",
+                            "SOURCE_UNAVAILABLE",
+                        ),
+                    }
+                )
                 continue
 
             comparison_audit: Dict[str, Any] = {
                 "provider": "deterministic_comparator",
                 "interface": "source_compare_daily_close",
                 "parameters": {
-                    "entity": stock["code"],
-                    "primary_source": "AKShare.stock_zh_a_daily",
+                    "entity": entity,
+                    "primary_source": primary_source,
                     "check_source": provider_result.interface,
                     "metric_basis": "none_daily_close",
                 },
@@ -1501,6 +1571,428 @@ class FundAdvisor:
             self.data_audit.append(comparison_audit)
             for warning in warnings_list:
                 self._append_data_warning(warning)
+            results.append(
+                {
+                    "source": provider_result.source_name,
+                    "interface": provider_result.interface,
+                    "status": (
+                        "passed"
+                        if summary.get("comparable") and not warnings_list
+                        else "warning"
+                        if summary.get("comparable")
+                        else "not_comparable"
+                    ),
+                    "summary": json_value(summary),
+                    "warning_codes": [
+                        warning.get("code")
+                        for warning in warnings_list
+                        if isinstance(warning, dict)
+                    ],
+                }
+            )
+        return results
+
+    def _cross_validate_etf_price(
+        self,
+        *,
+        fund: Dict[str, Any],
+        history: pd.DataFrame,
+        source_interface: str,
+        start_date: str,
+        end_date: str,
+    ) -> Dict[str, Any]:
+        configured = getattr(self, "source_validation_sources", ())
+        if not configured:
+            return {
+                "status": "disabled",
+                "scope": "ETF 未复权日收盘价",
+                "policy": "audit_only_no_override",
+                "sources": [],
+            }
+
+        market_prefix = (
+            "sh" if fund["code"].startswith(("5", "6")) else "sz"
+        )
+        primary_raw = history
+        if source_interface != "fund_etf_hist_sina":
+            primary_raw = self._call(
+                "fund_etf_hist_sina",
+                "新浪财经-ETF 未复权日行情（交叉校验主源）",
+                self.ak.fund_etf_hist_sina,
+                symbol=f"{market_prefix}{fund['code']}",
+                optional=True,
+            )
+        if primary_raw is None or primary_raw.empty:
+            return {
+                "status": "unavailable",
+                "scope": "ETF 未复权日收盘价",
+                "policy": "audit_only_no_override",
+                "primary_source": "AKShare.fund_etf_hist_sina",
+                "sources": [],
+            }
+
+        def optional_column(name: str) -> pd.Series:
+            if name in primary_raw.columns:
+                return primary_raw[name]
+            return pd.Series([None] * len(primary_raw), index=primary_raw.index)
+
+        primary = pd.DataFrame(
+            {
+                "date": primary_raw["date"],
+                "code": fund["code"],
+                "close": primary_raw["close"],
+                "volume": optional_column("volume"),
+                "amount": optional_column("amount"),
+                "adjustment": "none",
+            }
+        )
+        primary["date"] = pd.to_datetime(primary["date"], errors="coerce")
+        primary["close"] = pd.to_numeric(primary["close"], errors="coerce")
+        start_timestamp = pd.Timestamp(
+            datetime.strptime(start_date, "%Y%m%d").date()
+        )
+        end_timestamp = pd.Timestamp(
+            datetime.strptime(end_date, "%Y%m%d").date()
+        )
+        primary = primary[
+            primary["date"].between(start_timestamp, end_timestamp)
+        ].dropna(subset=["date", "close"])
+        if primary.empty:
+            return {
+                "status": "unavailable",
+                "scope": "ETF 未复权日收盘价",
+                "policy": "audit_only_no_override",
+                "primary_source": "AKShare.fund_etf_hist_sina",
+                "sources": [],
+            }
+        self.data_audit.append(
+            {
+                "provider": "AKShare",
+                "provider_version": SUPPORTED_AKSHARE_VERSION,
+                "interface": "fund_etf_hist_sina.canonical_daily_close",
+                "parameters": {
+                    "symbol": f"{market_prefix}{fund['code']}",
+                    "start_date": start_date,
+                    "end_date": end_date,
+                },
+                "row_count": len(primary),
+                "columns": [str(column) for column in primary.columns],
+                "required_columns": [
+                    "date",
+                    "code",
+                    "close",
+                    "volume",
+                    "amount",
+                    "adjustment",
+                ],
+                "frame_sha256": frame_fingerprint(primary),
+                "validation": "passed",
+                "role": "cross_validation_primary",
+                "metric_basis": "none_daily_close",
+                "skill_transform_at_ingestion": (
+                    "字段重命名与未复权口径声明；未插值或前向填充"
+                ),
+                "received_from_provider": "AKShare DataFrame",
+            }
+        )
+        results = self._cross_validate_daily_close_sources(
+            entity=fund["code"],
+            primary=primary,
+            primary_source="AKShare.fund_etf_hist_sina",
+            start_date=start_date,
+            end_date=end_date,
+        )
+        statuses = {item["status"] for item in results}
+        status = (
+            "passed"
+            if results and statuses == {"passed"}
+            else "warning"
+            if results and statuses & {"passed", "warning", "not_comparable"}
+            else "unavailable"
+        )
+        return {
+            "status": status,
+            "scope": "ETF 未复权日收盘价",
+            "policy": "audit_only_no_override",
+            "primary_source": "AKShare.fund_etf_hist_sina",
+            "sources": results,
+        }
+
+    def _cross_validate_etf_nav(
+        self,
+        fund: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        primary_function = getattr(self.ak, "fund_etf_fund_daily_em", None)
+        check_function = getattr(self.ak, "fund_etf_spot_ths", None)
+        if not callable(primary_function) or not callable(check_function):
+            return {
+                "status": "disabled",
+                "scope": "ETF 最新单位净值",
+                "policy": "audit_only_no_override",
+                "sources": [],
+            }
+
+        primary_audit_start = len(self.data_audit)
+        primary_frame = self._call(
+            "fund_etf_fund_daily_em",
+            "东方财富-天天基金场内基金净值",
+            primary_function,
+            optional=True,
+        )
+        self._mark_cross_validation_audits(
+            primary_audit_start,
+            role="cross_validation_primary",
+            metric_basis="daily_unit_nav",
+        )
+        check_audit_start = len(self.data_audit)
+        check_frame = self._call(
+            "fund_etf_spot_ths",
+            "同花顺-ETF 每日净值",
+            check_function,
+            date="",
+            optional=True,
+        )
+        self._mark_cross_validation_audits(
+            check_audit_start,
+            role="cross_validation_source",
+            metric_basis="daily_unit_nav",
+        )
+        source = {
+            "source": "东方财富/同花顺",
+            "interface": "fund_etf_fund_daily_em↔fund_etf_spot_ths",
+        }
+        if primary_frame is None or check_frame is None:
+            return {
+                "status": "unavailable",
+                "scope": "ETF 最新单位净值",
+                "policy": "audit_only_no_override",
+                "sources": [
+                    {
+                        **source,
+                        "status": "unavailable",
+                        "error_code": "SOURCE_UNAVAILABLE",
+                    }
+                ],
+            }
+
+        primary_matched = primary_frame[
+            primary_frame["基金代码"].map(normalize_code).eq(fund["code"])
+        ]
+        check_matched = check_frame[
+            check_frame["基金代码"].map(normalize_code).eq(fund["code"])
+        ]
+        nav_columns = sorted(
+            (
+                (match.group(1), str(column))
+                for column in primary_frame.columns
+                if (
+                    match := re.fullmatch(
+                        r"(\d{4}-\d{2}-\d{2})-单位净值",
+                        str(column),
+                    )
+                )
+            ),
+            reverse=True,
+        )
+        if (
+            len(primary_matched) != 1
+            or len(check_matched) != 1
+            or not nav_columns
+        ):
+            warning = {
+                "code": "SOURCE_SCHEMA_CHANGED",
+                "field": "unit_nav",
+                "entity": fund["code"],
+                "primary_matched_rows": len(primary_matched),
+                "check_matched_rows": len(check_matched),
+                "primary_nav_columns": [
+                    column for _, column in nav_columns
+                ],
+                "effect": "单位净值校验不可用，不覆盖 ETF 行情主源。",
+            }
+            self._append_data_warning(warning)
+            return {
+                "status": "unavailable",
+                "scope": "ETF 最新单位净值",
+                "policy": "audit_only_no_override",
+                "sources": [
+                    {
+                        **source,
+                        "status": "unavailable",
+                        "error_code": warning["code"],
+                    }
+                ],
+            }
+
+        primary_date, primary_column = nav_columns[0]
+        primary_value = optional_float(
+            primary_matched.iloc[0].get(primary_column)
+        )
+        check_row = check_matched.iloc[0]
+        check_date = date_iso(check_row.get("最新-交易日"))
+        check_value = optional_float(check_row.get("最新-单位净值"))
+        if (
+            primary_value is None
+            or check_value is None
+            or check_date is None
+        ):
+            warning = {
+                "code": "SOURCE_SCHEMA_CHANGED",
+                "field": "unit_nav",
+                "entity": fund["code"],
+                "effect": "单位净值或日期无法解析，不覆盖 ETF 行情主源。",
+            }
+            self._append_data_warning(warning)
+            return {
+                "status": "unavailable",
+                "scope": "ETF 最新单位净值",
+                "policy": "audit_only_no_override",
+                "sources": [
+                    {
+                        **source,
+                        "status": "unavailable",
+                        "error_code": warning["code"],
+                    }
+                ],
+            }
+
+        comparison = pd.DataFrame(
+            [
+                {
+                    "entity": fund["code"],
+                    "primary_date": primary_date,
+                    "check_date": check_date,
+                    "primary_unit_nav": primary_value,
+                    "check_unit_nav": check_value,
+                    "absolute_diff": abs(primary_value - check_value),
+                }
+            ]
+        )
+        same_date = primary_date == check_date
+        tolerance = max(abs(primary_value) * 0.0001, 0.0001)
+        agrees = (
+            same_date
+            and comparison.iloc[0]["absolute_diff"] <= tolerance
+        )
+        warning_codes: List[str] = []
+        if not same_date:
+            warning_codes.append("SOURCE_DATE_MISMATCH")
+        elif not agrees:
+            warning_codes.append("SOURCE_DISAGREE")
+        for code in warning_codes:
+            self._append_data_warning(
+                {
+                    "code": code,
+                    "field": "unit_nav",
+                    "entity": fund["code"],
+                    "primary_source": "fund_etf_fund_daily_em",
+                    "check_source": "fund_etf_spot_ths",
+                    "primary_date": primary_date,
+                    "check_date": check_date,
+                    "primary_value": primary_value,
+                    "check_value": check_value,
+                    "absolute_tolerance": tolerance,
+                    "effect": "仅披露日期或数值差异，不覆盖 ETF 行情主源。",
+                }
+            )
+        summary = {
+            "comparable": same_date,
+            "metric_basis": "daily_unit_nav",
+            "primary_date": primary_date,
+            "check_date": check_date,
+            "absolute_diff": round(
+                float(comparison.iloc[0]["absolute_diff"]),
+                6,
+            ),
+            "absolute_tolerance": round(tolerance, 6),
+            "interpolation": "none",
+            "forward_fill": "none",
+        }
+        self.data_audit.append(
+            {
+                "provider": "deterministic_comparator",
+                "interface": "source_compare_etf_unit_nav",
+                "parameters": {
+                    "entity": fund["code"],
+                    "primary_source": "fund_etf_fund_daily_em",
+                    "check_source": "fund_etf_spot_ths",
+                    "metric_basis": "daily_unit_nav",
+                },
+                "row_count": 1,
+                "columns": [str(column) for column in comparison.columns],
+                "frame_sha256": frame_fingerprint(comparison),
+                "validation": "passed" if same_date else "not_comparable",
+                "role": "cross_validation_comparison",
+                "comparison_summary": summary,
+                "skill_transform_at_ingestion": (
+                    "按精确基金代码和同一净值日期比较；未插值、平均或覆盖"
+                ),
+            }
+        )
+        return {
+            "status": (
+                "passed"
+                if agrees
+                else "warning"
+                if same_date
+                else "not_comparable"
+            ),
+            "scope": "ETF 最新单位净值",
+            "policy": "audit_only_no_override",
+            "sources": [
+                {
+                    **source,
+                    "status": (
+                        "passed"
+                        if agrees
+                        else "warning"
+                        if same_date
+                        else "not_comparable"
+                    ),
+                    "summary": summary,
+                    "warning_codes": warning_codes,
+                }
+            ],
+        }
+
+    def _mark_cross_validation_audits(
+        self,
+        start: int,
+        *,
+        role: str,
+        metric_basis: str,
+    ) -> None:
+        for audit in self.data_audit[start:]:
+            if audit.get("validation") == "passed":
+                audit["role"] = role
+                audit["metric_basis"] = metric_basis
+
+    @staticmethod
+    def _aggregate_etf_source_validation(
+        checks: Sequence[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        enabled = [check for check in checks if check["status"] != "disabled"]
+        statuses = {check["status"] for check in enabled}
+        status = (
+            "disabled"
+            if not enabled
+            else "passed"
+            if statuses == {"passed"}
+            else "warning"
+            if "passed" in statuses or "warning" in statuses
+            else "unavailable"
+        )
+        return {
+            "status": status,
+            "scope": "ETF 未复权日收盘价与最新单位净值",
+            "policy": "audit_only_no_override",
+            "checks": enabled,
+            "sources": [
+                source
+                for check in enabled
+                for source in check.get("sources", [])
+            ],
+        }
 
     def _call(
         self,
@@ -3577,6 +4069,23 @@ class FundAdvisor:
                     "fund_name": fund.get("name"),
                 },
             )
+        profile = (
+            self._fund_profile(fund)
+            if callable(getattr(self.ak, "fund_info_ths", None))
+            else None
+        )
+        tracking_index_name = self._match_supported_index(fund, profile)
+        tracking_index = (
+            {
+                "name": tracking_index_name,
+                "index_code": INDEX_CATALOG[tracking_index_name]["index_code"],
+                "match_basis": (
+                    "audited_fund_profile_benchmark_or_exact_fund_name"
+                ),
+            }
+            if tracking_index_name is not None
+            else None
+        )
 
         start_date = (
             self.now.date() - timedelta(days=years * 366)
@@ -3648,6 +4157,17 @@ class FundAdvisor:
                     "metric_basis": metric_basis,
                 },
             )
+        price_validation = self._cross_validate_etf_price(
+            fund=fund,
+            history=history,
+            source_interface=source_interface,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        nav_validation = self._cross_validate_etf_nav(fund)
+        source_validation_result = self._aggregate_etf_source_validation(
+            [price_validation, nav_validation]
+        )
 
         latest = dashboard_frame.iloc[-1]
         charts = {
@@ -3712,6 +4232,7 @@ class FundAdvisor:
             "ok": True,
             "action": "etf_dashboard",
             "identity": fund,
+            "tracking_index": tracking_index,
             "lookback": {
                 "requested_years": years,
                 "actual_start_date": dashboard_frame["date"].iloc[0].date(),
@@ -3744,6 +4265,7 @@ class FundAdvisor:
                 ),
             },
             "market_snapshot": spot,
+            "source_validation": source_validation_result,
             "range_summaries": etf_dashboard_range_summaries(
                 dashboard_frame
             ),
@@ -3775,6 +4297,7 @@ class FundAdvisor:
             "data_integrity": {
                 "ai_generated_market_data": False,
                 "source_interface": source_interface,
+                "source_validation_policy": "audit_only_no_override",
                 "interpolation": "none",
                 "forward_fill": "none",
                 "missing_value_policy": "保留缺失，不替换为零",

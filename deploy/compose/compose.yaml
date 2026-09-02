@@ -69,6 +69,8 @@ services:
       ["fund-advisor-data-api", "--host", "0.0.0.0", "--port", "8003"]
     environment:
       FINAGENT_SKILL_DIR: /app/skills/akshare-fund-advisor
+      AKSHARE_FUND_SOURCE_VALIDATION: ${AKSHARE_FUND_SOURCE_VALIDATION:-baostock}
+      AKSHARE_FUND_SOURCE_VALIDATION_TIMEOUT: ${AKSHARE_FUND_SOURCE_VALIDATION_TIMEOUT:-8}
     volumes:
       - ../../config:/app/config:ro
     healthcheck:
@@ -133,6 +135,8 @@ services:
       FINAGENT__MCP__HOST: 0.0.0.0
       FINAGENT__MCP__PORT: 8001
       FINAGENT_SKILL_DIR: /app/skills/akshare-fund-advisor
+      AKSHARE_FUND_SOURCE_VALIDATION: ${AKSHARE_FUND_SOURCE_VALIDATION:-baostock}
+      AKSHARE_FUND_SOURCE_VALIDATION_TIMEOUT: ${AKSHARE_FUND_SOURCE_VALIDATION_TIMEOUT:-8}
     volumes:
       - ../../config:/app/config:ro
     healthcheck:

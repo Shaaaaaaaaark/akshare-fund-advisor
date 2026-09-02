@@ -31,11 +31,14 @@
 | 股票持仓 | `fund_portfolio_hold_em()` | 东方财富 | 读取报告期持仓并计算前十大集中度；接口失败时明确缺失 |
 | 开放式基金历史 | `fund_open_fund_info_em()` | 东方财富 | 普通基金优先使用累计净值，货币基金使用七日年化收益率 |
 | ETF 实时行情 | `fund_etf_spot_em()` | 东方财富 | 读取价格、IOPV、成交额、买一和卖一，并自行统一溢价方向 |
+| ETF 当日净值 | `fund_etf_fund_daily_em()` | 东方财富 | 与同花顺同日单位净值交叉校验；日期位于动态列名中 |
+| ETF 当日净值校验 | `fund_etf_spot_ths()` | 同花顺 | 按精确代码和最新交易日校验东方财富单位净值，不覆盖主行情 |
 | ETF 历史行情 | `fund_etf_hist_em()` | 东方财富 | ETF 专用东财接口，使用前复权日收盘价 |
 | ETF 历史备用 | `fund_etf_hist_sina()` | 新浪 | 东财接口失败时使用新浪未复权日行情和成交量额，并单独标注口径 |
 | 上交所 ETF 份额快照 | `fund_etf_scale_sse()` | 上海证券交易所 | Data API 补充层按最近最多 7 个真实交易日查询，精确匹配代码和统计日期 |
 | 上交所融资明细 | `stock_margin_detail_sse()` | 上海证券交易所 | Data API 补充层精确匹配 ETF 代码，计算相邻审计交易日融资余额变化 |
 | 深交所融资明细 | `stock_margin_detail_szse()` | 深圳证券交易所 | Data API 补充层精确匹配 ETF 代码，计算相邻审计交易日融资余额变化 |
+| 指数最新成份 | `index_stock_cons_csindex()` | 中证指数有限公司 | 仅对精确映射的支持指数读取带日期的最新成份快照，用于成分融资汇总 |
 | LOF 历史行情 | `fund_lof_hist_em()` | 东方财富 | LOF 必须使用专用接口，不能误用 ETF 接口 |
 | 宽基指数 PE | `stock_index_pe_lg()` | 乐咕乐股 | 对能可靠匹配的宽基指数计算滚动市盈率历史分位 |
 | 宽基指数 PB | `stock_index_pb_lg()` | 乐咕乐股 | 对能可靠匹配的宽基指数计算市净率历史分位 |
@@ -60,6 +63,8 @@ fund_open_fund_info_em(
     period="成立来",
 )
 fund_etf_spot_em()
+fund_etf_fund_daily_em()
+fund_etf_spot_ths(date="")
 fund_etf_hist_em(
     symbol="513500",
     period="daily",
@@ -71,6 +76,7 @@ fund_etf_hist_sina(symbol="sh510300")
 fund_etf_scale_sse(date="20260827")
 stock_margin_detail_sse(date="20260827")
 stock_margin_detail_szse(date="20260827")
+index_stock_cons_csindex(symbol="000300")
 fund_lof_hist_em(
     symbol="166009",
     period="daily",
@@ -158,6 +164,11 @@ premium_rate_pct = (latest_price - iopv) / iopv * 100
 - 负数表示折价。
 - IOPV 缺失或非正数时不计算。
 
+`fund_etf_fund_daily_em` 的净值列名包含日期，例如
+`2026-08-31-单位净值`。校验器解析最新合法日期列，再与 `fund_etf_spot_ths` 的
+`最新-交易日`、`最新-单位净值` 按精确代码比较。日期不同只记录
+`SOURCE_DATE_MISMATCH`，数值超容差只记录 `SOURCE_DISAGREE`，均不得覆盖行情主序列。
+
 ### ETF 份额与融资补充接口
 
 `fund_etf_scale_sse` 关键字段：
@@ -186,6 +197,9 @@ premium_rate_pct = (latest_price - iopv) / iopv * 100
 - 最近序列最多覆盖 7 个主行情真实交易日，不外推为长期历史；
 - 份额和融资净变化只使用相邻两个均通过审计的交易日源值；
 - 份额变化乘价格不是交易所披露的真实净申赎金额，当前不计算净申赎金额。
+- 成分融资只在 ETF 通过已审计基金名称或业绩基准精确映射到支持指数时计算；
+- 成份证券来自中证指数官网带日期的最新快照，融资余额来自沪深交易所同日逐证券明细；
+- 汇总结果披露成份总数、交易所明细命中数和覆盖率，未返回证券不补零。
 
 ## 指标口径
 
@@ -228,11 +242,13 @@ MCP 专用 ETF 看板工具只使用上述 ETF 历史接口和可选实时行情
 
 - `share`：上交所 ETF 最近最多 7 个交易日总份额和相邻日变化；
 - `financing`：沪深交易所 ETF 最近最多 7 个交易日融资余额和相邻日变化；
+- `component_financing`：精确底层指数最新成份的沪深融资余额合计、相邻日变化与成份
+  覆盖率；
 - `range_summaries`：仅在最近一周 5 个变化值全部可用时给出确定性合计；
 - 所有补充调用的来源、参数、字段、行数和 `frame_sha256` 合并进同一个
   `ToolEnvelope`。
 
-该接口仍不输出真实净申赎金额、成分股融资汇总、长期融资分位或汇金/证金主体持仓；
+该接口仍不输出真实净申赎金额、长期融资分位或汇金/证金主体实时持仓；
 调用方不得用成交量、成交额、份额估算或季度基金持仓替代。
 
 不生成定投收益回测：累计净值不是可成交价格，前复权收盘价也不是投资者每期真实成交记录。定投部分只输出明确标记为策略规则的动作区间。

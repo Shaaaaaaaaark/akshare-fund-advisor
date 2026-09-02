@@ -67,6 +67,14 @@ INTERFACE_CONTRACTS: dict[str, set[str]] = {
         "融券余额",
         "融资融券余额",
     },
+    "index_stock_cons_csindex": {
+        "日期",
+        "指数代码",
+        "指数名称",
+        "成分券代码",
+        "成分券名称",
+        "交易所",
+    },
 }
 
 DATA_POLICY: dict[str, Any] = {

@@ -77,6 +77,53 @@ export interface DatasetMeta {
   error?: ToolError;
 }
 
+export interface QDIIBoardFund {
+  code: string;
+  name: string;
+  fund_type: string;
+  theme: string;
+  subscription_status: string;
+  status_tier: "limited_large" | "suspended";
+  effective_daily_limit_cny: number | null;
+  amount_disclosed: boolean;
+  source_daily_limit_cny: number | null;
+  no_effective_limit_placeholder: boolean;
+  minimum_purchase_cny: number | null;
+  purchase_fee_pct: number | null;
+  next_open_date: string | null;
+  source_report_date: string | null;
+}
+
+export interface QDIIBoardCategory {
+  theme: string;
+  limited_large_count: number;
+  suspended_count: number;
+  limited_large: QDIIBoardFund[];
+  suspended: QDIIBoardFund[];
+}
+
+export interface QDIIBoardData {
+  ok: boolean;
+  action: string;
+  scope: string;
+  latest_source_report_date: string | null;
+  source_report_date_span: { earliest: string; latest: string } | null;
+  summary: {
+    limited_large_count: number;
+    limited_large_amount_disclosed_count: number;
+    suspended_count: number;
+    category_count: number;
+  };
+  categories: QDIIBoardCategory[];
+  notes: string[];
+}
+
+export interface QDIIBoardResponse {
+  board: string;
+  meta: DatasetMeta;
+  envelope?: ToolEnvelope<QDIIBoardData>;
+}
+
 export interface MetricSummary {
   current: number | null;
   percentile: number | null;
@@ -483,6 +530,13 @@ export interface ETFRecentRow {
   financing_balance_yi_cny?: number | null;
   financing_balance_change_cny?: number | null;
   financing_balance_change_yi_cny?: number | null;
+  component_financing_balance_cny?: number | null;
+  component_financing_balance_yi_cny?: number | null;
+  component_financing_balance_change_cny?: number | null;
+  component_financing_balance_change_yi_cny?: number | null;
+  component_financing_reported_count?: number | null;
+  component_financing_constituent_count?: number | null;
+  component_financing_coverage_pct?: number | null;
 }
 
 export interface ETFMarketSnapshot {
@@ -517,6 +571,13 @@ export interface ETFFinancingSupplementRow {
   financing_balance_change_yi_cny: number | null;
 }
 
+export interface ETFConstituentFinancingSupplementRow
+  extends ETFFinancingSupplementRow {
+  constituent_count: number;
+  reported_component_count: number;
+  coverage_pct: number;
+}
+
 export interface ETFSupplementSeries<T> {
   status: "available" | "partial" | "unavailable";
   source_observations: number;
@@ -530,17 +591,28 @@ export interface ETFSupplementSeries<T> {
   derived_formulas: Record<string, string>;
 }
 
+export interface ETFConstituentFinancingSeries
+  extends ETFSupplementSeries<ETFConstituentFinancingSupplementRow> {
+  tracking_index_name: string | null;
+  tracking_index_code: string | null;
+  constituent_as_of: string | null;
+  constituent_count: number;
+  scope_note: string;
+}
+
 export interface ETFSupplementalData {
   fund_code: string;
   requested_trading_dates: string[];
   share: ETFSupplementSeries<ETFShareSupplementRow>;
   financing: ETFSupplementSeries<ETFFinancingSupplementRow>;
+  component_financing: ETFConstituentFinancingSeries;
   range_summaries: Array<{
     key: string;
     actual_start_date: string;
     latest_date: string;
     share_change_yi_units: number | null;
     financing_net_change_yi_cny: number | null;
+    component_financing_net_change_yi_cny: number | null;
   }>;
   unavailable_metrics: string[];
   data_integrity: {
@@ -555,6 +627,11 @@ export interface ETFDashboardData {
   ok: boolean;
   action: string;
   identity: FundIdentity;
+  tracking_index?: {
+    name: string;
+    index_code: string;
+    match_basis: string;
+  } | null;
   lookback: {
     requested_years: number;
     actual_start_date: string;
@@ -575,6 +652,25 @@ export interface ETFDashboardData {
     current_drawdown_pct: number | null;
   };
   market_snapshot: ETFMarketSnapshot | null;
+  source_validation?: {
+    status: "disabled" | "passed" | "warning" | "unavailable";
+    scope: string;
+    policy: string;
+    primary_source?: string;
+    checks?: Array<{
+      status: "disabled" | "passed" | "warning" | "not_comparable" | "unavailable";
+      scope: string;
+      policy: string;
+    }>;
+    sources: Array<{
+      source: string;
+      interface?: string;
+      status: "passed" | "warning" | "not_comparable" | "unavailable";
+      error_code?: string;
+      warning_codes?: Array<string | null>;
+      summary?: Record<string, unknown>;
+    }>;
+  };
   supplemental?: ETFSupplementalData;
   range_summaries: ETFRangeSummary[];
   charts: {
@@ -591,6 +687,8 @@ export interface ETFDashboardData {
   data_integrity: {
     ai_generated_market_data: boolean;
     source_interface: string;
+    source_validation_policy?: string;
+    supplemental_source_interfaces?: string[];
     interpolation: string;
     forward_fill: string;
     missing_value_policy: string;

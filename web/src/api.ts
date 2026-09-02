@@ -7,6 +7,7 @@ import type {
   IndicesResponse,
   OverviewResponse,
   PanelInteractionSummary,
+  QDIIBoardResponse,
   StockDetailResponse,
   StreamEvent,
   StreamEventName,
@@ -80,6 +81,20 @@ export async function fetchIndices(
     throw new Error(await responseError(response));
   }
   return (await response.json()) as IndicesResponse;
+}
+
+export async function fetchQDIIPurchaseBoard(
+  signal?: AbortSignal,
+): Promise<QDIIBoardResponse> {
+  const response = await fetchWithTimeout(
+    "/api/dashboard/boards/qdii-purchase",
+    { signal },
+    DASHBOARD_TIMEOUT_MS,
+  );
+  if (!response.ok) {
+    throw new Error(await responseError(response));
+  }
+  return (await response.json()) as QDIIBoardResponse;
 }
 
 export async function fetchIndexDetail(

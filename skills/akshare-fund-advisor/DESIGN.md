@@ -116,8 +116,10 @@ LangChain Agent、ReAct、数据库 checkpoint、长期 Memory 或多 Agent。
 场内身份来自基金名称和源状态，不能因可选的申赎状态接口失败而改变历史指标口径。
 
 `etf_dashboard` 复用同一降级顺序，只生成价格、成交额、成交量、日涨跌和回撤五联序列。
-单位换算、区间收益和回撤均在 Skill 内确定性计算；前端只能筛选工具返回的日期点。ETF
-历史份额、净申赎和融资余额没有当前生产接口，不得用成交量或成交额替代。
+单位换算、区间收益和回撤均在 Skill 内确定性计算；前端只能筛选工具返回的日期点。
+仓库 `data_core` 补充最近 7 个交易日的上交所 ETF 份额、沪深 ETF 融资余额，以及精确
+底层指数最新成份的融资余额汇总。净申赎现金额、融资长期分位和机构实时持仓没有当前
+生产接口，不得用成交量、成交额、份额变化或季度持仓替代。
 
 ### 4.2 指数估值
 
@@ -127,11 +129,13 @@ LangChain Agent、ReAct、数据库 checkpoint、长期 Memory 或多 Agent。
 2. 用同一指数调用 `stock_index_pb_lg`。
 3. PE 取 `滚动市盈率`，PB 取 `市净率`，不混用等权或静态字段。
 4. 指数没有公开映射时返回 `INDEX_NOT_SUPPORTED`，不拼接其他指数或数据源。
+5. PE 或 PB 单侧失败时，可展示仍通过 Schema、样本量和时效校验的一侧。
 
 ### 4.3 可选交叉校验
 
-`stock_valuation` 可通过环境变量启用 A 股价格交叉校验。主图继续使用 AKShare 前复权
-价格，Comparator 只比较 AKShare 与校验源的不复权收盘价：
+`stock_valuation` 和 `etf_dashboard` 可通过环境变量启用价格交叉校验。主图继续使用
+AKShare 前复权价格，Comparator 只比较 AKShare 新浪与校验源的不复权收盘价；ETF
+单位净值另固定比较东方财富与同花顺的同日结果：
 
 - 日期按内连接，不插值、不前向填充；
 - 相对容忍度 `0.001`，绝对容忍度 `0.01`；
@@ -141,7 +145,6 @@ LangChain Agent、ReAct、数据库 checkpoint、长期 Memory 或多 Agent。
 
 完整审计和启用方式见
 [`references/source_cross_validation.md`](references/source_cross_validation.md)。
-5. PE 或 PB 单侧失败时，可展示仍通过 Schema、样本量和时效校验的一侧。
 
 ## 5. 数据完整性
 

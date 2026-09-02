@@ -32,6 +32,7 @@ public class DashboardService {
     static final String FUND_RATING_TOOL = "fund_rating";
     static final String FUND_STATUS_TOOL = "fund_status";
     static final String STOCK_VALUATION_TOOL = "stock_valuation";
+    static final String QDII_PURCHASE_BOARD_TOOL = "qdii_purchase_board";
 
     private static final Logger log = LoggerFactory.getLogger(DashboardService.class);
 
@@ -146,6 +147,18 @@ public class DashboardService {
                     envelope.rawJson());
         } catch (RuntimeException error) {
             return new StockDetail(stock, transportFailureMeta(STOCK_VALUATION_TOOL, error), null);
+        }
+    }
+
+    public BoardDetail qdiiPurchaseBoard() {
+        try {
+            ToolEnvelope envelope = caller.callTool(QDII_PURCHASE_BOARD_TOOL, Map.of());
+            return new BoardDetail(
+                    "qdii-purchase",
+                    envelopeMeta(envelope, QDII_PURCHASE_BOARD_TOOL, boardAsOf(envelope.data())),
+                    envelope.rawJson());
+        } catch (RuntimeException error) {
+            return new BoardDetail("qdii-purchase", transportFailureMeta(QDII_PURCHASE_BOARD_TOOL, error), null);
         }
     }
 
@@ -367,6 +380,10 @@ public class DashboardService {
             return lookback;
         }
         return textAt(data, "data_quality", "latest_date");
+    }
+
+    private static String boardAsOf(JsonNode data) {
+        return textAt(data, "latest_source_report_date");
     }
 
     private static String fundProductAsOf(String tool, JsonNode data) {
