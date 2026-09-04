@@ -383,117 +383,12 @@ class ETFSupplementService:
         if frame is None:
             return None
 
-        matched = frame[
-            frame["指数代码"].map(normalize_code).eq(index_code)
-        ].copy()
-        if matched.empty:
-            _warn(
-                audit,
-                "UNSUPPORTED",
-                "中证指数成份接口未返回目标指数",
-                "component_financing_history",
-                {"index_name": index_name, "index_code": index_code},
-            )
-            return None
-
-        source_dates = {
-            value
-            for raw in matched["日期"]
-            if (value := _normalize_date(raw)) is not None
-        }
-        if len(source_dates) != 1:
-            _warn(
-                audit,
-                "DATA_CONTRACT_ERROR",
-                "中证指数成份接口未返回唯一有效日期",
-                "component_financing_history",
-                {
-                    "index_code": index_code,
-                    "source_dates": sorted(source_dates),
-                },
-            )
-            return None
-        constituent_as_of = next(iter(source_dates))
-        if trading_dates:
-            lag_days = (
-                pd.Timestamp(trading_dates[-1]) - pd.Timestamp(constituent_as_of)
-            ).days
-            if lag_days > 10:
-                _warn(
-                    audit,
-                    "STALE_DATA",
-                    "中证指数成份快照早于 ETF 最近交易日超过 10 天",
-                    "component_financing_history",
-                    {
-                        "index_code": index_code,
-                        "constituent_as_of": constituent_as_of,
-                        "latest_trading_date": trading_dates[-1],
-                        "lag_days": lag_days,
-                    },
-                )
-                return None
-
-        codes_by_market: dict[str, set[str]] = {"sse": set(), "szse": set()}
-        unknown_exchanges: set[str] = set()
-        code_markets: dict[str, str] = {}
-        for row in matched.to_dict("records"):
-            component_code = normalize_code(row.get("成分券代码"))
-            exchange = str(row.get("交易所") or "").strip()
-            market = (
-                "sse"
-                if "上海" in exchange
-                else "szse"
-                if "深圳" in exchange
-                else None
-            )
-            if len(component_code) != 6 or not component_code.isdigit():
-                continue
-            if market is None:
-                unknown_exchanges.add(exchange)
-                continue
-            existing = code_markets.get(component_code)
-            if existing is not None and existing != market:
-                _warn(
-                    audit,
-                    "DATA_CONTRACT_ERROR",
-                    "指数成份证券代码映射到多个交易所",
-                    "component_financing_history",
-                    {
-                        "index_code": index_code,
-                        "component_code": component_code,
-                        "markets": sorted({existing, market}),
-                    },
-                )
-                return None
-            code_markets[component_code] = market
-            codes_by_market[market].add(component_code)
-
-        if unknown_exchanges:
-            _warn(
-                audit,
-                "PARTIAL_DATA",
-                "部分指数成份交易所无法映射，未纳入融资汇总",
-                "component_financing_history",
-                {
-                    "index_code": index_code,
-                    "unknown_exchanges": sorted(unknown_exchanges),
-                },
-            )
-        if not code_markets:
-            _warn(
-                audit,
-                "UNSUPPORTED",
-                "指数成份接口没有可映射的沪深证券代码",
-                "component_financing_history",
-                {"index_code": index_code},
-            )
-            return None
-
-        return ETFConstituentUniverse(
-            index_name=index_name,
-            index_code=index_code,
-            as_of=constituent_as_of,
-            codes_by_market=codes_by_market,
+        return _constituent_universe_from_frame(
+            audit,
+            frame,
+            index_name,
+            index_code,
+            trading_dates,
         )
 
     @staticmethod
@@ -508,143 +403,32 @@ class ETFSupplementService:
             return []
 
         values_by_date: dict[str, tuple[float, int]] = {}
-        market_specs = {
-            "sse": (_SSE_MARGIN_INTERFACE, "标的证券代码", "信用交易日期"),
-            "szse": (_SZSE_MARGIN_INTERFACE, "证券代码", None),
-        }
         for trading_date in dates:
-            total_balance = 0.0
-            reported_codes: set[str] = set()
-            complete = True
-            for market, codes in universe.codes_by_market.items():
-                if not codes:
-                    continue
-                interface, code_column, source_date_column = market_specs[market]
-                frame = margin_frames.get(interface, {}).get(trading_date)
-                if frame is None:
-                    complete = False
-                    break
-                if source_date_column is not None:
-                    source_dates = {
-                        value
-                        for raw in frame[source_date_column]
-                        if (value := _normalize_date(raw)) is not None
-                    }
-                    if source_dates != {trading_date}:
-                        _warn(
-                            audit,
-                            "STALE_DATA",
-                            f"{interface} 返回日期与请求交易日不一致",
-                            "component_financing_history",
-                            {
-                                "requested_date": trading_date,
-                                "source_dates": sorted(source_dates),
-                            },
-                        )
-                        complete = False
-                        break
-
-                normalized_codes = frame[code_column].map(normalize_code)
-                matched = frame[normalized_codes.isin(codes)].copy()
-                matched["_normalized_code"] = normalized_codes[
-                    normalized_codes.isin(codes)
-                ]
-                if matched["_normalized_code"].duplicated().any():
-                    _warn(
-                        audit,
-                        "DATA_CONTRACT_ERROR",
-                        f"{interface} 返回重复成份证券代码",
-                        "component_financing_history",
-                        {
-                            "index_code": universe.index_code,
-                            "date": trading_date,
-                        },
-                    )
-                    complete = False
-                    break
-                matched["融资余额"] = pd.to_numeric(
-                    matched["融资余额"],
-                    errors="coerce",
-                )
-                if matched["融资余额"].isna().any() or (
-                    matched["融资余额"] < 0
-                ).any():
-                    _warn(
-                        audit,
-                        "DATA_CONTRACT_ERROR",
-                        f"{interface} 返回无效成份融资余额",
-                        "component_financing_history",
-                        {
-                            "index_code": universe.index_code,
-                            "date": trading_date,
-                        },
-                    )
-                    complete = False
-                    break
-                total_balance += float(matched["融资余额"].sum())
-                reported_codes.update(matched["_normalized_code"])
-
-            if complete and reported_codes:
-                if len(reported_codes) < len(universe.codes):
-                    _warn(
-                        audit,
-                        "PARTIAL_DATA",
-                        "交易所融资明细未覆盖全部指数成份证券",
-                        "component_financing_history",
-                        {
-                            "index_code": universe.index_code,
-                            "date": trading_date,
-                            "constituent_count": len(universe.codes),
-                            "reported_component_count": len(reported_codes),
-                        },
-                    )
-                values_by_date[trading_date] = (
-                    total_balance,
-                    len(reported_codes),
-                )
-
-        rows: list[dict[str, Any]] = []
-        constituent_count = len(universe.codes)
-        for index, trading_date in enumerate(dates):
-            value = values_by_date.get(trading_date)
+            value = _component_financing_for_date(
+                audit,
+                trading_date,
+                universe,
+                margin_frames,
+            )
             if value is None:
                 continue
             balance, reported_count = value
-            previous_date = dates[index - 1] if index > 0 else None
-            previous = values_by_date.get(previous_date) if previous_date else None
-            full_coverage = reported_count == constituent_count
-            previous_full_coverage = (
-                previous is not None and previous[1] == constituent_count
-            )
-            change = (
-                balance - previous[0]
-                if full_coverage and previous_full_coverage
-                else None
-            )
-            rows.append(
-                {
-                    "date": trading_date,
-                    "financing_balance_cny": balance,
-                    "financing_balance_yi_cny": round(
-                        balance / 100_000_000,
-                        4,
-                    ),
-                    "previous_date": previous_date if previous is not None else None,
-                    "financing_balance_change_cny": change,
-                    "financing_balance_change_yi_cny": (
-                        round(change / 100_000_000, 4)
-                        if change is not None
-                        else None
-                    ),
-                    "constituent_count": constituent_count,
-                    "reported_component_count": reported_count,
-                    "coverage_pct": round(
-                        reported_count / constituent_count * 100,
-                        2,
-                    ),
-                }
-            )
-        return rows
+            if reported_count < len(universe.codes):
+                _warn(
+                    audit,
+                    "PARTIAL_DATA",
+                    "交易所融资明细未覆盖全部指数成份证券",
+                    "component_financing_history",
+                    {
+                        "index_code": universe.index_code,
+                        "date": trading_date,
+                        "constituent_count": len(universe.codes),
+                        "reported_component_count": reported_count,
+                    },
+                )
+            values_by_date[trading_date] = (balance, reported_count)
+
+        return _component_rows_with_changes(dates, universe, values_by_date)
 
     def _call(
         self,
@@ -787,6 +571,262 @@ class ETFSupplementService:
             data_audit=audit.data_audit,
             data_warnings=audit.data_warnings,
         )
+
+
+def _constituent_universe_from_frame(
+    audit: AuditBundle,
+    frame: pd.DataFrame,
+    index_name: str,
+    index_code: str,
+    trading_dates: list[str],
+) -> ETFConstituentUniverse | None:
+    matched = frame[
+        frame["指数代码"].map(normalize_code).eq(index_code)
+    ].copy()
+    if matched.empty:
+        _warn(
+            audit,
+            "UNSUPPORTED",
+            "中证指数成份接口未返回目标指数",
+            "component_financing_history",
+            {"index_name": index_name, "index_code": index_code},
+        )
+        return None
+
+    source_dates = {
+        value
+        for raw in matched["日期"]
+        if (value := _normalize_date(raw)) is not None
+    }
+    if len(source_dates) != 1:
+        _warn(
+            audit,
+            "DATA_CONTRACT_ERROR",
+            "中证指数成份接口未返回唯一有效日期",
+            "component_financing_history",
+            {
+                "index_code": index_code,
+                "source_dates": sorted(source_dates),
+            },
+        )
+        return None
+    constituent_as_of = next(iter(source_dates))
+    if trading_dates:
+        lag_days = (
+            pd.Timestamp(trading_dates[-1]) - pd.Timestamp(constituent_as_of)
+        ).days
+        if lag_days > 10:
+            _warn(
+                audit,
+                "STALE_DATA",
+                "中证指数成份快照早于 ETF 最近交易日超过 10 天",
+                "component_financing_history",
+                {
+                    "index_code": index_code,
+                    "constituent_as_of": constituent_as_of,
+                    "latest_trading_date": trading_dates[-1],
+                    "lag_days": lag_days,
+                },
+            )
+            return None
+
+    codes_by_market = _constituent_codes_by_market(audit, matched, index_code)
+    if codes_by_market is None:
+        return None
+    return ETFConstituentUniverse(
+        index_name=index_name,
+        index_code=index_code,
+        as_of=constituent_as_of,
+        codes_by_market=codes_by_market,
+    )
+
+
+def _constituent_codes_by_market(
+    audit: AuditBundle,
+    matched: pd.DataFrame,
+    index_code: str,
+) -> dict[str, set[str]] | None:
+    codes_by_market: dict[str, set[str]] = {"sse": set(), "szse": set()}
+    unknown_exchanges: set[str] = set()
+    code_markets: dict[str, str] = {}
+    for row in matched.to_dict("records"):
+        component_code = normalize_code(row.get("成分券代码"))
+        exchange = str(row.get("交易所") or "").strip()
+        if "上海" in exchange:
+            market = "sse"
+        elif "深圳" in exchange:
+            market = "szse"
+        else:
+            unknown_exchanges.add(exchange)
+            continue
+        if len(component_code) != 6 or not component_code.isdigit():
+            continue
+        existing = code_markets.get(component_code)
+        if existing is not None and existing != market:
+            _warn(
+                audit,
+                "DATA_CONTRACT_ERROR",
+                "指数成份证券代码映射到多个交易所",
+                "component_financing_history",
+                {
+                    "index_code": index_code,
+                    "component_code": component_code,
+                    "markets": sorted({existing, market}),
+                },
+            )
+            return None
+        code_markets[component_code] = market
+        codes_by_market[market].add(component_code)
+
+    if unknown_exchanges:
+        _warn(
+            audit,
+            "PARTIAL_DATA",
+            "部分指数成份交易所无法映射，未纳入融资汇总",
+            "component_financing_history",
+            {
+                "index_code": index_code,
+                "unknown_exchanges": sorted(unknown_exchanges),
+            },
+        )
+    if not code_markets:
+        _warn(
+            audit,
+            "UNSUPPORTED",
+            "指数成份接口没有可映射的沪深证券代码",
+            "component_financing_history",
+            {"index_code": index_code},
+        )
+        return None
+    return codes_by_market
+
+
+def _component_financing_for_date(
+    audit: AuditBundle,
+    trading_date: str,
+    universe: ETFConstituentUniverse,
+    margin_frames: Mapping[str, Mapping[str, pd.DataFrame]],
+) -> tuple[float, int] | None:
+    market_specs = {
+        "sse": (_SSE_MARGIN_INTERFACE, "标的证券代码", "信用交易日期"),
+        "szse": (_SZSE_MARGIN_INTERFACE, "证券代码", None),
+    }
+    total_balance = 0.0
+    reported_codes: set[str] = set()
+    for market, codes in universe.codes_by_market.items():
+        if not codes:
+            continue
+        interface, code_column, source_date_column = market_specs[market]
+        frame = margin_frames.get(interface, {}).get(trading_date)
+        if frame is None:
+            return None
+        if source_date_column is not None:
+            source_dates = {
+                value
+                for raw in frame[source_date_column]
+                if (value := _normalize_date(raw)) is not None
+            }
+            if source_dates != {trading_date}:
+                _warn(
+                    audit,
+                    "STALE_DATA",
+                    f"{interface} 返回日期与请求交易日不一致",
+                    "component_financing_history",
+                    {
+                        "requested_date": trading_date,
+                        "source_dates": sorted(source_dates),
+                    },
+                )
+                return None
+
+        normalized_codes = frame[code_column].map(normalize_code)
+        in_universe = normalized_codes.isin(codes)
+        matched = frame[in_universe].copy()
+        matched["_normalized_code"] = normalized_codes[in_universe]
+        if matched["_normalized_code"].duplicated().any():
+            _warn(
+                audit,
+                "DATA_CONTRACT_ERROR",
+                f"{interface} 返回重复成份证券代码",
+                "component_financing_history",
+                {
+                    "index_code": universe.index_code,
+                    "date": trading_date,
+                },
+            )
+            return None
+        matched["融资余额"] = pd.to_numeric(
+            matched["融资余额"],
+            errors="coerce",
+        )
+        if matched["融资余额"].isna().any() or (
+            matched["融资余额"] < 0
+        ).any():
+            _warn(
+                audit,
+                "DATA_CONTRACT_ERROR",
+                f"{interface} 返回无效成份融资余额",
+                "component_financing_history",
+                {
+                    "index_code": universe.index_code,
+                    "date": trading_date,
+                },
+            )
+            return None
+        total_balance += float(matched["融资余额"].sum())
+        reported_codes.update(matched["_normalized_code"])
+
+    if not reported_codes:
+        return None
+    return total_balance, len(reported_codes)
+
+
+def _component_rows_with_changes(
+    dates: list[str],
+    universe: ETFConstituentUniverse,
+    values_by_date: dict[str, tuple[float, int]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    constituent_count = len(universe.codes)
+    for index, trading_date in enumerate(dates):
+        value = values_by_date.get(trading_date)
+        if value is None:
+            continue
+        balance, reported_count = value
+        previous_date = dates[index - 1] if index > 0 else None
+        previous = values_by_date.get(previous_date) if previous_date else None
+        full_coverage = reported_count == constituent_count
+        change = None
+        if (
+            full_coverage
+            and previous is not None
+            and previous[1] == constituent_count
+        ):
+            change = balance - previous[0]
+        rows.append(
+            {
+                "date": trading_date,
+                "financing_balance_cny": balance,
+                "financing_balance_yi_cny": round(
+                    balance / 100_000_000,
+                    4,
+                ),
+                "previous_date": previous_date if previous is not None else None,
+                "financing_balance_change_cny": change,
+                "financing_balance_change_yi_cny": (
+                    round(change / 100_000_000, 4)
+                    if change is not None
+                    else None
+                ),
+                "constituent_count": constituent_count,
+                "reported_component_count": reported_count,
+                "coverage_pct": round(
+                    reported_count / constituent_count * 100,
+                    2,
+                ),
+            }
+        )
+    return rows
 
 
 def _series_payload(

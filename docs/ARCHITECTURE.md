@@ -434,3 +434,8 @@ Compose 包含七个运行服务，只有 `web-backend` 对外暴露，MySQL、R
 
 Docker 相关改动必须验证：七服务健康、Data API 健康、Fund/Web MCP 工具发现、Java 到
 Data API 取数、Java 到 Agent SSE 闭环。
+
+支持前端与后端分离部署：前端静态站点（如 GitHub Pages）通过构建期 `VITE_API_BASE`
+指向后端，后端通过 `WEB_CORS_ALLOWED_ORIGINS` 精确放行前端来源。CORS 由最高优先级
+过滤器统一处理，覆盖 `/api/**`（含流式 `/api/chat/**`），固定 `allowCredentials=false`；
+两变量为空时保持同源部署行为不变。不因分离部署而放宽“只有 `web-backend` 对外”的边界。

@@ -15,6 +15,31 @@ import type {
   WatchlistItem,
 } from "./types";
 
+// 后端基址：默认空串表示同源相对路径（本地开发与容器同源部署行为不变）。
+// 前后端分离部署（如前端 GitHub Pages、后端独立服务器）时，通过构建期
+// 环境变量 VITE_API_BASE 指定后端来源，例如 https://api.example.com。
+const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/+$/, "");
+
+function withApiBase(path: string): string {
+  if (!API_BASE) {
+    return path;
+  }
+  return path.startsWith("/") ? `${API_BASE}${path}` : path;
+}
+
+// 后端健康探测：走统一基址，支持前后端分离部署下的跨域探测。
+export async function checkBackendHealth(signal?: AbortSignal): Promise<boolean> {
+  try {
+    const response = await fetch(withApiBase("/health"), { signal });
+    return response.ok;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw error;
+    }
+    return false;
+  }
+}
+
 const EVENT_NAMES = new Set<StreamEventName>([
   "session",
   "status",
@@ -305,7 +330,7 @@ export async function streamChat({
   signal,
   onEvent,
 }: StreamChatOptions): Promise<void> {
-  const response = await fetch("/api/chat/stream", {
+  const response = await fetch(withApiBase("/api/chat/stream"), {
     method: "POST",
     headers: {
       Accept: "text/event-stream",
@@ -445,7 +470,10 @@ async function fetchWithTimeout(
   }
 
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    return await fetch(
+      typeof input === "string" ? withApiBase(input) : input,
+      { ...init, signal: controller.signal },
+    );
   } catch (error) {
     if (timedOut) {
       throw new Error(

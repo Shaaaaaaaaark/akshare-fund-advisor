@@ -173,32 +173,13 @@ class QDIIPurchaseBoardService:
         sorted_dates = sorted(report_dates)
         latest_report_date = sorted_dates[-1] if sorted_dates else None
         return {
-            "ok": True,
-            "action": "qdii_purchase_board",
             "scope": "境内可投海外（QDII/海外）基金申购限额榜",
             "latest_source_report_date": latest_report_date,
-            "source_report_date_span": (
-                {"earliest": sorted_dates[0], "latest": sorted_dates[-1]}
-                if sorted_dates
-                else None
-            ),
             "summary": {
                 "limited_large_count": len(limited_large),
                 "limited_large_amount_disclosed_count": disclosed_amount_count,
                 "suspended_count": len(suspended),
                 "category_count": len(categories),
-            },
-            "tiers": {
-                "limited_large": {
-                    "label": "限大额",
-                    "count": len(limited_large),
-                    "funds": limited_large,
-                },
-                "suspended": {
-                    "label": "暂停申购",
-                    "count": len(suspended),
-                    "funds": suspended,
-                },
             },
             "categories": categories,
             "notes": [
@@ -235,7 +216,6 @@ def _theme_of(name: str) -> str:
 def _fund_entry(row: pd.Series, fund_type: str, status: str) -> dict[str, Any]:
     name = str(json_value(row.get("基金简称")) or "")
     raw_limit = optional_float(row.get("日累计限定金额"))
-    has_placeholder = raw_limit is not None and raw_limit >= _NO_EFFECTIVE_LIMIT_PLACEHOLDER
     # 限额金额只在「限大额」且披露了正数门槛时有意义。暂停申购、占位值、以及大量
     # 「限大额但金额为 0」的记录都视为未披露有效金额，不编造 0 元门槛。
     has_disclosed_amount = raw_limit is not None and 0 < raw_limit < _NO_EFFECTIVE_LIMIT_PLACEHOLDER
@@ -250,10 +230,6 @@ def _fund_entry(row: pd.Series, fund_type: str, status: str) -> dict[str, Any]:
         "effective_daily_limit_cny": rounded(effective_limit),
         "amount_disclosed": bool(status == _LIMITED_LARGE and has_disclosed_amount),
         "source_daily_limit_cny": rounded(raw_limit),
-        "no_effective_limit_placeholder": bool(has_placeholder),
-        "minimum_purchase_cny": rounded(row.get("购买起点")),
-        "purchase_fee_pct": rounded(row.get("手续费")),
-        "next_open_date": json_value(row.get("下一开放日")),
         "source_report_date": json_value(row.get("最新净值/万份收益-报告时间")),
     }
 

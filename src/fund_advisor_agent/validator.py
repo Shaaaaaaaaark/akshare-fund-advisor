@@ -61,65 +61,21 @@ def validate_tool_results(
 
     for execution in executions:
         envelope = execution.envelope
-        if not envelope.get("ok"):
-            error = envelope.get("error") or {}
-            code = str(error.get("code") or "MCP_TOOL_ERROR")
-            status = status_for_error(code)
+        failure = _execution_failure(execution)
+        if failure is not None:
+            status, error = failure
             failure_statuses.append(status)
             if execution.required:
                 required_failure_statuses.append(status)
-            else:
+            elif not envelope.get("ok"):
                 warnings.append(
-                    f"可选背景工具 {execution.tool.value} 不可用：{code}"
+                    f"可选背景工具 {execution.tool.value} 不可用：{error.code}"
                 )
-            errors.append(
-                AgentError(
-                    code=code,
-                    message=str(error.get("message") or "工具调用失败"),
-                    retryable=bool(error.get("retryable")),
-                    details=error.get("details") or {},
-                )
-            )
-            continue
-
-        policy = envelope.get("data_policy") or {}
-        if policy.get("ai_may_generate_market_data") is not False:
-            failure_statuses.append(AgentStatus.FAILED)
-            if execution.required:
-                required_failure_statuses.append(AgentStatus.FAILED)
-            errors.append(
-                AgentError(
-                    code="INVALID_DATA_POLICY",
-                    message="工具结果缺少禁止模型生成市场数据的策略",
-                )
-            )
-            continue
-        if execution.source == "web" and policy.get("numeric_allowed") is not False:
-            failure_statuses.append(AgentStatus.FAILED)
-            if execution.required:
-                required_failure_statuses.append(AgentStatus.FAILED)
-            errors.append(
-                AgentError(
-                    code="WEB_NUMERIC_POLICY_VIOLATION",
-                    message="Web 工具结果不允许作为市场数值来源",
-                )
-            )
+            errors.append(error)
             continue
 
         audit_records = envelope.get("data_audit") or []
         audit_ref = _audit_ref(audit_records)
-        if execution.source == "fund" and audit_ref is None:
-            failure_statuses.append(AgentStatus.FAILED)
-            if execution.required:
-                required_failure_statuses.append(AgentStatus.FAILED)
-            errors.append(
-                AgentError(
-                    code="MISSING_DATA_AUDIT",
-                    message="市场工具结果缺少通过校验的审计指纹",
-                )
-            )
-            continue
-
         success_count += 1
         for item in envelope.get("data_warnings") or []:
             warnings.append(_warning_text(item))
@@ -161,6 +117,54 @@ def validate_tool_results(
     if not facts and status in {AgentStatus.RUNNING, AgentStatus.PARTIAL_RESULT}:
         limitations.append("工具调用成功，但没有可用于当前回答的稳定事实字段。")
     return status, facts, limitations, warnings, errors
+
+
+def _execution_failure(
+    execution: ToolExecution,
+) -> tuple[AgentStatus, AgentError] | None:
+    envelope = execution.envelope
+    if not envelope.get("ok"):
+        error = envelope.get("error") or {}
+        code = str(error.get("code") or "MCP_TOOL_ERROR")
+        return (
+            status_for_error(code),
+            AgentError(
+                code=code,
+                message=str(error.get("message") or "工具调用失败"),
+                retryable=bool(error.get("retryable")),
+                details=error.get("details") or {},
+            ),
+        )
+
+    policy = envelope.get("data_policy") or {}
+    if policy.get("ai_may_generate_market_data") is not False:
+        return (
+            AgentStatus.FAILED,
+            AgentError(
+                code="INVALID_DATA_POLICY",
+                message="工具结果缺少禁止模型生成市场数据的策略",
+            ),
+        )
+    if execution.source == "web" and policy.get("numeric_allowed") is not False:
+        return (
+            AgentStatus.FAILED,
+            AgentError(
+                code="WEB_NUMERIC_POLICY_VIOLATION",
+                message="Web 工具结果不允许作为市场数值来源",
+            ),
+        )
+    if (
+        execution.source == "fund"
+        and _audit_ref(envelope.get("data_audit") or []) is None
+    ):
+        return (
+            AgentStatus.FAILED,
+            AgentError(
+                code="MISSING_DATA_AUDIT",
+                message="市场工具结果缺少通过校验的审计指纹",
+            ),
+        )
+    return None
 
 
 def validate_associations(
@@ -289,51 +293,7 @@ def _audit_ref_for_fact(
     tool: RegisteredTool,
     field_path: str,
 ) -> str | None:
-    candidates: list[tuple[str, str | None]] = []
-    if ".pe_ttm." in field_path:
-        candidates = [
-            (
-                (
-                    "stock_zh_valuation_baidu"
-                    if tool is RegisteredTool.STOCK_VALUATION
-                    else "stock_index_pe_lg"
-                ),
-                "市盈率" if tool is RegisteredTool.STOCK_VALUATION else None,
-            )
-        ]
-    elif ".pb." in field_path:
-        candidates = [
-            (
-                (
-                    "stock_zh_valuation_baidu"
-                    if tool is RegisteredTool.STOCK_VALUATION
-                    else "stock_index_pb_lg"
-                ),
-                "市净率" if tool is RegisteredTool.STOCK_VALUATION else None,
-            )
-        ]
-    elif "stock_price" in field_path:
-        candidates = [("stock_zh_a_daily", None)]
-    elif "index_points" in field_path:
-        candidates = [("stock_zh_index_daily", None)]
-    elif "market_snapshot" in field_path:
-        candidates = [("fund_etf_spot_em", None)]
-    elif "availability" in field_path:
-        candidates = [
-            ("fund_purchase_em", None),
-            ("tool_trade_date_hist_sina", None),
-        ]
-    elif tool is RegisteredTool.FUND_SEARCH:
-        candidates = [("fund_name_em", None)]
-    elif tool in {RegisteredTool.FUND_ANALYZE, RegisteredTool.FUND_COMPARE}:
-        candidates = [
-            ("fund_open_fund_info_em", None),
-            ("fund_etf_hist_em", None),
-            ("fund_lof_hist_em", None),
-            ("fund_etf_hist_sina", None),
-        ]
-
-    for interface, indicator in candidates:
+    for interface, indicator in _audit_candidates(tool, field_path):
         for record in records:
             if record.get("validation") != "passed":
                 continue
@@ -348,6 +308,55 @@ def _audit_ref_for_fact(
             if value:
                 return str(value)
     return None
+
+
+def _audit_candidates(
+    tool: RegisteredTool,
+    field_path: str,
+) -> list[tuple[str, str | None]]:
+    if ".pe_ttm." in field_path:
+        return [
+            (
+                (
+                    "stock_zh_valuation_baidu"
+                    if tool is RegisteredTool.STOCK_VALUATION
+                    else "stock_index_pe_lg"
+                ),
+                "市盈率" if tool is RegisteredTool.STOCK_VALUATION else None,
+            )
+        ]
+    if ".pb." in field_path:
+        return [
+            (
+                (
+                    "stock_zh_valuation_baidu"
+                    if tool is RegisteredTool.STOCK_VALUATION
+                    else "stock_index_pb_lg"
+                ),
+                "市净率" if tool is RegisteredTool.STOCK_VALUATION else None,
+            )
+        ]
+    if "stock_price" in field_path:
+        return [("stock_zh_a_daily", None)]
+    if "index_points" in field_path:
+        return [("stock_zh_index_daily", None)]
+    if "market_snapshot" in field_path:
+        return [("fund_etf_spot_em", None)]
+    if "availability" in field_path:
+        return [
+            ("fund_purchase_em", None),
+            ("tool_trade_date_hist_sina", None),
+        ]
+    if tool is RegisteredTool.FUND_SEARCH:
+        return [("fund_name_em", None)]
+    if tool in {RegisteredTool.FUND_ANALYZE, RegisteredTool.FUND_COMPARE}:
+        return [
+            ("fund_open_fund_info_em", None),
+            ("fund_etf_hist_em", None),
+            ("fund_lof_hist_em", None),
+            ("fund_etf_hist_sina", None),
+        ]
+    return []
 
 
 def _warning_text(value: Any) -> str:
@@ -373,132 +382,16 @@ def _extract_facts(
     tool = execution.tool
 
     if tool is RegisteredTool.FUND_ANALYZE:
-        specs = [
-            ("fund.code", "基金代码", None, "entity"),
-            ("fund.name", "基金名称", None, "entity"),
-            (
-                "analysis.performance.annualized_volatility_pct",
-                "年化波动",
-                "%",
-                "market",
-            ),
-            (
-                "analysis.performance.current_drawdown_pct",
-                "当前回撤",
-                "%",
-                "market",
-            ),
-            (
-                "analysis.performance.max_drawdown_pct",
-                "最大回撤",
-                "%",
-                "market",
-            ),
-            (
-                "analysis.performance.history_position_percentile",
-                "历史位置分位",
-                "%",
-                "market",
-            ),
-            (
-                "analysis.holding_experience.annualized_return_pct",
-                "观察期年化收益",
-                "%",
-                "market",
-            ),
-            (
-                "analysis.valuation.pe_ttm.percentile",
-                "跟踪指数 PE TTM 历史分位",
-                "%",
-                "market",
-            ),
-            (
-                "analysis.valuation.pb.percentile",
-                "跟踪指数 PB 历史分位",
-                "%",
-                "market",
-            ),
-            (
-                "analysis.trading_context.market_snapshot.premium_rate_pct",
-                "ETF 场内溢价",
-                "%",
-                "market",
-            ),
-        ]
-        as_of = _first_value(
-            data,
-            "analysis.data_quality.latest_date",
-            "metrics.latest_date",
-        )
-        return _facts_from_specs(tool, data, specs, as_of, audit_ref)
+        return _fund_analysis_facts(tool, data, audit_ref)
 
     if tool in {
         RegisteredTool.INDEX_VALUATION,
         RegisteredTool.STOCK_VALUATION,
     }:
-        identity_path = (
-            "index.name"
-            if tool is RegisteredTool.INDEX_VALUATION
-            else "stock.name"
-        )
-        identity_label = (
-            "指数名称"
-            if tool is RegisteredTool.INDEX_VALUATION
-            else "股票名称"
-        )
-        specs = [
-            (identity_path, identity_label, None, "entity"),
-            ("summary.pe_ttm.current", "PE TTM 当前值", "倍", "market"),
-            ("summary.pe_ttm.percentile", "PE TTM 历史分位", "%", "market"),
-            ("summary.pb.current", "PB 当前值", "倍", "market"),
-            ("summary.pb.percentile", "PB 历史分位", "%", "market"),
-        ]
-        if tool is RegisteredTool.STOCK_VALUATION:
-            specs.append(
-                ("summary.stock_price.current", "前复权价格", "元", "market")
-            )
-        else:
-            specs.append(
-                (
-                    "charts.index_points.current",
-                    "指数点位",
-                    "点",
-                    "market",
-                )
-            )
-        as_of = _first_value(data, "lookback.latest_date")
-        return _facts_from_specs(tool, data, specs, as_of, audit_ref)
+        return _valuation_facts(tool, data, audit_ref)
 
     if tool is RegisteredTool.FUND_STATUS:
-        specs = [
-            ("fund.code", "基金代码", None, "entity"),
-            ("fund.name", "基金名称", None, "entity"),
-            (
-                "availability.off_exchange.subscription_status",
-                "申购状态",
-                None,
-                "market",
-            ),
-            (
-                "availability.off_exchange.redemption_status",
-                "赎回状态",
-                None,
-                "market",
-            ),
-            (
-                "availability.off_exchange.daily_limit_cny",
-                "单日申购限额",
-                "元",
-                "market",
-            ),
-            (
-                "availability.exchange.market_session.state",
-                "标准交易时段状态",
-                None,
-                "market",
-            ),
-        ]
-        return _facts_from_specs(tool, data, specs, queried_at, audit_ref)
+        return _fund_status_facts(tool, data, queried_at, audit_ref)
 
     if tool is RegisteredTool.FUND_SEARCH:
         return _search_facts(tool, data, audit_ref, queried_at)
@@ -510,6 +403,145 @@ def _extract_facts(
         return _web_facts(tool, data, audit_ref, queried_at)
 
     return []
+
+
+def _fund_analysis_facts(
+    tool: RegisteredTool,
+    data: dict[str, Any],
+    audit_ref: str | None,
+) -> list[FactRef]:
+    specs = [
+        ("fund.code", "基金代码", None, "entity"),
+        ("fund.name", "基金名称", None, "entity"),
+        (
+            "analysis.performance.annualized_volatility_pct",
+            "年化波动",
+            "%",
+            "market",
+        ),
+        (
+            "analysis.performance.current_drawdown_pct",
+            "当前回撤",
+            "%",
+            "market",
+        ),
+        (
+            "analysis.performance.max_drawdown_pct",
+            "最大回撤",
+            "%",
+            "market",
+        ),
+        (
+            "analysis.performance.history_position_percentile",
+            "历史位置分位",
+            "%",
+            "market",
+        ),
+        (
+            "analysis.holding_experience.annualized_return_pct",
+            "观察期年化收益",
+            "%",
+            "market",
+        ),
+        (
+            "analysis.valuation.pe_ttm.percentile",
+            "跟踪指数 PE TTM 历史分位",
+            "%",
+            "market",
+        ),
+        (
+            "analysis.valuation.pb.percentile",
+            "跟踪指数 PB 历史分位",
+            "%",
+            "market",
+        ),
+        (
+            "analysis.trading_context.market_snapshot.premium_rate_pct",
+            "ETF 场内溢价",
+            "%",
+            "market",
+        ),
+    ]
+    as_of = _first_value(
+        data,
+        "analysis.data_quality.latest_date",
+        "metrics.latest_date",
+    )
+    return _facts_from_specs(tool, data, specs, as_of, audit_ref)
+
+
+def _valuation_facts(
+    tool: RegisteredTool,
+    data: dict[str, Any],
+    audit_ref: str | None,
+) -> list[FactRef]:
+    is_stock = tool is RegisteredTool.STOCK_VALUATION
+    specs = [
+        (
+            "stock.name" if is_stock else "index.name",
+            "股票名称" if is_stock else "指数名称",
+            None,
+            "entity",
+        ),
+        ("summary.pe_ttm.current", "PE TTM 当前值", "倍", "market"),
+        ("summary.pe_ttm.percentile", "PE TTM 历史分位", "%", "market"),
+        ("summary.pb.current", "PB 当前值", "倍", "market"),
+        ("summary.pb.percentile", "PB 历史分位", "%", "market"),
+    ]
+    specs.append(
+        (
+            "summary.stock_price.current"
+            if is_stock
+            else "charts.index_points.current",
+            "前复权价格" if is_stock else "指数点位",
+            "元" if is_stock else "点",
+            "market",
+        )
+    )
+    return _facts_from_specs(
+        tool,
+        data,
+        specs,
+        _first_value(data, "lookback.latest_date"),
+        audit_ref,
+    )
+
+
+def _fund_status_facts(
+    tool: RegisteredTool,
+    data: dict[str, Any],
+    queried_at: str,
+    audit_ref: str | None,
+) -> list[FactRef]:
+    specs = [
+        ("fund.code", "基金代码", None, "entity"),
+        ("fund.name", "基金名称", None, "entity"),
+        (
+            "availability.off_exchange.subscription_status",
+            "申购状态",
+            None,
+            "market",
+        ),
+        (
+            "availability.off_exchange.redemption_status",
+            "赎回状态",
+            None,
+            "market",
+        ),
+        (
+            "availability.off_exchange.daily_limit_cny",
+            "单日申购限额",
+            "元",
+            "market",
+        ),
+        (
+            "availability.exchange.market_session.state",
+            "标准交易时段状态",
+            None,
+            "market",
+        ),
+    ]
+    return _facts_from_specs(tool, data, specs, queried_at, audit_ref)
 
 
 def _facts_from_specs(

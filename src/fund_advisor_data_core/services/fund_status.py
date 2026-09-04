@@ -26,6 +26,7 @@ _FUND_NAME_INTERFACE = "fund_name_em"
 _FUND_NAME_UPSTREAM = "东方财富-基金基本信息"
 _FUND_PURCHASE_INTERFACE = "fund_purchase_em"
 _FUND_PURCHASE_UPSTREAM = "东方财富-基金申购状态"
+_NO_EFFECTIVE_LIMIT_PLACEHOLDER = 1_000_000_000.0
 
 # 名称含「联接／连接」的份额是场外基金，不能按 ETF/LOF 名称兜底判成场内。
 _OFF_EXCHANGE_NAME_MARKERS = ("联接", "连接")
@@ -177,7 +178,10 @@ class FundStatusService:
 
         raw_limit = optional_float(row.get("日累计限定金额"))
         effective_limit = (
-            None if raw_limit is not None and raw_limit >= 10_000_000_000 else raw_limit
+            None
+            if raw_limit is not None
+            and raw_limit >= _NO_EFFECTIVE_LIMIT_PLACEHOLDER
+            else raw_limit
         )
         common["off_exchange"] = {
             "subscription_status": subscription_status,

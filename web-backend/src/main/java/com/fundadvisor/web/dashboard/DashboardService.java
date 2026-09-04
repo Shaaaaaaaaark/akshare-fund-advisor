@@ -199,7 +199,6 @@ public class DashboardService {
             ToolEnvelope envelope = caller.callTool(
                     INDEX_VALUATION_TOOL,
                     Map.of("index", index, "years", properties.indexYears()));
-            DatasetMeta meta = envelopeMeta(envelope, INDEX_VALUATION_TOOL, "");
             JsonNode peTtm = null;
             JsonNode pb = null;
             JsonNode latestPoint = null;
@@ -210,16 +209,13 @@ public class DashboardService {
                 pb = nodeAt(data, "summary", "pb");
                 latestPoint = nodeAt(data, "charts", "index_points", "current");
                 asOf = indexAsOf(data);
-                meta = new DatasetMeta(
-                        asOf,
-                        meta.queriedAt(),
-                        meta.status(),
-                        meta.sourceTools(),
-                        meta.auditRefs(),
-                        meta.warnings(),
-                        meta.error());
             }
-            return new IndexRow(index, meta, peTtm, pb, latestPoint);
+            return new IndexRow(
+                    index,
+                    envelopeMeta(envelope, INDEX_VALUATION_TOOL, asOf),
+                    peTtm,
+                    pb,
+                    latestPoint);
         } catch (RuntimeException error) {
             return new IndexRow(
                     index,

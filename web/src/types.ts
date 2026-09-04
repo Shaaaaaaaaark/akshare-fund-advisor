@@ -87,10 +87,6 @@ export interface QDIIBoardFund {
   effective_daily_limit_cny: number | null;
   amount_disclosed: boolean;
   source_daily_limit_cny: number | null;
-  no_effective_limit_placeholder: boolean;
-  minimum_purchase_cny: number | null;
-  purchase_fee_pct: number | null;
-  next_open_date: string | null;
   source_report_date: string | null;
 }
 
@@ -103,11 +99,8 @@ export interface QDIIBoardCategory {
 }
 
 export interface QDIIBoardData {
-  ok: boolean;
-  action: string;
   scope: string;
   latest_source_report_date: string | null;
-  source_report_date_span: { earliest: string; latest: string } | null;
   summary: {
     limited_large_count: number;
     limited_large_amount_disclosed_count: number;

@@ -13,8 +13,10 @@ const StockDetailPage = lazy(() => import("./pages/StockDetailPage"));
 const WatchlistPage = lazy(() => import("./pages/WatchlistPage"));
 
 export default function App() {
+  // Vite 注入的部署子路径；去掉末尾斜杠以符合 React Router basename 约定。
+  const basename = import.meta.env.BASE_URL.replace(/\/$/, "");
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={basename || undefined}>
       <Suspense fallback={<RouteLoading />}>
         <Routes>
           <Route element={<WorkbenchLayout />}>

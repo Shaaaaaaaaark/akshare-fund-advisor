@@ -1,241 +1,32 @@
-# Repository Agent Guide
+Always respond in Chinese-simplified.
 
-本文件适用于整个仓库。修改 Skill 时还必须遵守
-`skills/akshare-fund-advisor/SKILL.md`。
+# 实现原则
 
-## 项目方向
+1. "长期主义"的原则 - 做长期正确的事情，而非寻求短期问题的解决
 
-项目首先用于面试展示可信 Agent 工程，同时提供基金、指数、ETF 和 A 股数据分析供个人
-研究参考。本项目优先保证金融事实忠实度，其次才是功能覆盖和语言表现。
+长期正确的定义，是在目标给定的前提下，时间维度上积分代价最低的决策，而非当前时刻局部代价最低的决策。短期简单通常对应解空间的局部低点，其隐含代价以路径依赖和未来修正成本的形式被延迟暴露；长期正确则要求承担必要的一次性结构成本，以换取后续决策空间的自由度。
 
-当前优先级、后续顺序和暂不立项范围只维护在 `docs/ROADMAP.md`，本文不再复制一份。
+1. "优雅的实现为主"的原则 - 简单、实用、不过度设计。
 
-## 定位约束
+优雅的定义，是在长期目标下，信息水平给定的情况下熵最低的解决方案，在给定解决方案空间里面，最优雅的结果将位于信息水平恒定的特征平面的低点。
 
-模块级实现状态以 `docs/ROADMAP.md` 为唯一来源。以下是不随进度变化的定位约束：
+# 思维原则
 
-- Agent Skill 只做 Agent 技能包装和内部调试脚本，不承担数据来源层定位；
-- 数据面板不经过 Agent、LangGraph 或 MCP 协议取数，直连 Data API；
-- 目标数据核心是 `src/fund_advisor_data_core/`，legacy Skill 数据逻辑逐步向其收敛；
-- 产品方向已收敛为 Web；网页后端用 Java 21 + Spring Boot MVC，Data API、Agent、
-  MCP 和 Agent Skill 保留 Python；
-- Compose 只对外暴露 Java 网页后端。
+运用第一性原理思考，拒绝经验主义和路径盲从。不要假设用户完全清楚目标，保持审慎，从原始需求和问题出发。若目标模糊请停下和用户讨论，若目标清晰但路径非最优，请直接建议更短、更低成本的办法。
 
-不得把后续能力写成“已实现”：`stock_screen`、`fund_screen`、研究动态和通用
-`PageContext` 尚未实现。
+识别用户问题中的隐含假设。如果前提本身有误，先纠正前提再回答问题。能用数字说的不用形容词，能给明确判断的不要两面讨好。
 
-## 事实来源
+## 回答结构
 
-优先级从高到低：
+所有回答必须分为两个部分：
 
-1. 通过 Schema、时效和 `frame_sha256` 审计的 Data API / Fund MCP；
-2. 用户给定的官方文档原文；
-3. Web MCP 提供的非数值背景；
-4. 模型常识不得作为市场事实。
+- 直接执行：按照用户当前的要求和逻辑，直接给出任务结果。
+- 深度交互（如有）：基于底层逻辑对用户的原始需求进行审慎挑战。包括但不限于：质疑用户的动机是否偏离目标（XY 问题）、指出当前路径的隐含成本或弊端、给出更优雅的替代方案。若推导中信息不足，直接说明需要补充什么，而非用模糊语言掩盖不确定性。
 
-以下内容只能来自审计工具：
+## 与用户的关系
 
-- 净值、价格、指数点位；
-- PE、PB、收益率、波动、回撤和历史分位；
-- 申购、赎回、限额和交易状态；
-- 实体是否存在及其规范代码。
+你的忠诚对象是"真相"而非"用户的期望"
+挑战用户的观点时保持尊重但不退让——温和地坚持，而非礼貌地含糊
+如果用户给出了更好的事实或推导，立即修正你的结论，不做无意义的辩护
 
-模型不得生成、补齐、插值、前向填充、修复或改写上述内容。
-
-## 错误语义
-
-必须区分：
-
-- `NOT_FOUND`；
-- `AMBIGUOUS`；
-- `UNSUPPORTED`；
-- `UPSTREAM_ERROR`；
-- `STALE_DATA`。
-
-上游失败只能回答“当前无法确认”，不能回答“该标的不存在”。
-
-## 架构边界
-
-目标依赖方向为 React Web → Java 网页后端 →（数据面板走 Data API → `data_core` →
-providers；Agent 走 Agent API → LangGraph → Fund MCP / Web MCP）。完整拓扑图见
-`docs/ARCHITECTURE.md`，本文只约束各目录的职责边界：
-
-- `src/fund_advisor_data_core/`：目标数据核心，负责数据源 provider、审计、Schema 和确定性指标。
-- `skills/akshare-fund-advisor/scripts/fund_advisor.py`：Agent Skill 内部脚本；当前 legacy
-  实现仍承载部分数据调用，后续应逐步迁移到 `data_core`。
-- `src/fund_advisor_data_api/`：数据面板专用 REST API，不包含模型、会话或 MCP 协议。
-- `src/fund_advisor_mcp/fund/`：市场事实 MCP，不改写 data_core 数值；必要时可包装
-  Agent Skill 能力，但不把 Skill 定位为数据来源层。
-- `src/fund_advisor_mcp/web/`：非数值背景 MCP，固定 `numeric_allowed=false`。
-- `src/fund_advisor_agent/`：只做固定图编排、工具路由、关联说明和输出校验。
-- `src/fund_advisor_app/`：Python Agent API、SSE 和临时会话。
-- Java 网页后端：Dashboard BFF、自选列表、接入限流、静态托管、Agent SSE 代理，只取数
-  聚合和管理产品元数据，不做任何金融计算或审计改写；边界见 `docs/ARCHITECTURE.md`。
-- `web/`：React 界面，不实现业务计算或金融事实生成。
-
-语言分工：Java 只做网页后端（调用 Data API、虚拟线程有界并发聚合、MySQL 产品元数据、
-Redis 接入限流、静态托管和 SSE 代理）；Python 保留 Data API、Agent、MCP、Agent Skill
-和全部金融计算与审计。Java BFF
-不得直接实现 AKShare 接口，不得重算、改写、四舍五入、插值或合成任何净值、价格、
-PE、PB、收益率、回撤、分位、限额或交易状态，必须原样透传 `ToolEnvelope` 的
-`data_audit`、`frame_sha256`、warnings 和错误码。
-
-Java BFF 固定使用 Java 21、Spring Boot MVC、Tomcat 虚拟线程、Maven、`RestClient`、
-Jackson、Bean Validation、MyBatis、MySQL、Flyway、Redis、Actuator 和 JUnit 5。当前不
-引入 Spring Cloud Gateway、Feign、Lombok 或 MQ。所有 Data API 调用共享进程内并发
-门禁，Agent SSE 必须逐块转发，不得缓冲完整响应。MySQL 只保存自选列表等产品元数据；
-Redis 只承担接入限流等短期协调状态，不得将裸市场数值或对话摘要写入二者并作为金融事实。
-
-源码层级顺依赖方向：仓库级 `src/` 存放 Data API、data_core、Agent 与 MCP，
-`skills/akshare-fund-advisor/` 只保留 Agent Skill 包装、内部脚本与说明，可独立拷贝。
-
-LangGraph 只使用 `StateGraph` 和显式条件边。不得恢复 LangChain Agent、开放式 ReAct、
-动态工具规划、数据库 checkpoint、长期记忆或多 Agent。
-
-Web 必须通过 Agent API 调用研究能力，不复制图编排或金融计算。Agent 会话只允许保存
-进程内的最近消息、上一轮实体和意图；不得把对话历史升级为市场事实，不得把 MySQL
-产品数据或 Redis 短期状态用作跨会话 Agent 记忆。
-
-## Agent 关联说明
-
-职责分工：
-
-- 数据工具提供并校验金融事实；
-- Agent 控制固定研究流程、工具调用、错误分支和输出门禁；
-- 模型理解自然语言并解释已验证事实，不决定金融数字、工具权限、图状态或最终放行。
-
-当前模型通过一次结构化调用生成研究问题、支持/反对/未知证据分组、关联说明和下一步
-研究清单。用户期限、仓位和风险承受能力尚未形成独立输入契约，不得写成已实现，也不得
-借模型增强恢复开放式动态规划。
-
-Agent 可以解释多个工具事实如何共同影响研究理解，但必须：
-
-- 每条关联引用具体工具和字段；
-- 区分事实、关联和限制；
-- 明确相关性不等于因果；
-- 不从历史统计预测未来收益；
-- 不把净值位置写成估值；
-- 不把 PE/PB 合成综合分；
-- 不输出确定性交易指令。
-
-Web 中 PE/PB 不得只展示当前值：
-
-- 总览和列表可以展示当前值、历史分位和日期；
-- 指数详情必须展示 PE TTM、PB 历史双图；
-- 个股详情必须分别展示前复权价格、PE TTM、PB 历史曲线；
-- 图表只能连接工具返回的真实 `chart_series`，不得由前端或模型补点；
-- 信息组织可以参考 Wind 深度资料，但不得声称使用 Wind 数据或复制其品牌界面。
-
-LangGraph 节点必须保持单一职责，节点间只通过 `AgentState` 传递结构化数据。工具计划、
-错误分支和最终放行条件由代码决定，模型不得直接修改图状态或选择未注册工具。
-
-## 修改原则
-
-改动流程：
-
-1. 阅读本文和 `docs/ARCHITECTURE.md` 中相关章节；
-2. 明确改动属于 data_core、Data API、Fund/Web MCP、Agent、Java BFF、Web 还是 Skill；
-3. 先修改最小职责模块；
-4. 补充单元测试和必要的真实接口审计；
-5. 同步接口、指标、错误和状态文档。
-
-约束：
-
-- 优先复用现有 Schema、错误模型和指标函数。
-- 金融计算只能使用确定性函数。
-- 新增工具必须同步 Schema、Adapter、Server、工具数量和测试。
-- 新增市场数值必须同步接口来源、字段口径、时效和审计记录。
-- 不得用 Mock、模型记忆或网页摘要替代生产数据。
-- 不在 Agent 文本中复制计算逻辑。
-- 不改写用户未提交的无关修改。
-- ETF 终端顶部按钮、链接和下拉框必须复用
-  `web/src/components/TerminalControls.tsx`；高度、圆角、内边距、字体和焦点态只允许在
-  `web/src/etf-design-system.css` 的令牌与共享规则中修改，页面组件不得另写一套。
-- 修改 ETF 工具栏后必须在浏览器中检查控件等高、按钮文字中心偏差不超过 1px、页面无
-  横向溢出，并覆盖桌面、中等宽度和移动端布局。
-
-## 验证
-
-项目始终在 Docker 运行，稳定验证入口是 Compose test 镜像，在容器内执行 Ruff 和全量
-Pytest：
-
-```bash
-docker compose -f deploy/compose/compose.yaml --profile test build test
-docker compose -f deploy/compose/compose.yaml run --rm test
-```
-
-Java BFF 迁移完成后须在容器内执行 Maven 验证：
-
-```bash
-docker run --rm -v "$PWD/web-backend":/workspace -w /workspace \
-  eclipse-temurin:21-jdk ./mvnw verify
-```
-
-ETF 顶部工具栏变更还必须执行样式所有权检查和六个视口的布局契约测试：
-
-```bash
-cd web
-npm run build
-npm run test:ui
-```
-
-Docker 相关改动仍须重新运行 Compose 测试、七个服务健康检查、Data API 健康与
-Fund/Web MCP 工具发现和 Web/API 闭环，并验证 Java→Data API 取数与 Java→Agent SSE
-连通。
-
-本地 `.venv-agent` 只是可选调试环境，未纳入版本控制，需先按 README 创建后才能使用：
-
-```bash
-export SKILL_DIR="$PWD/skills/akshare-fund-advisor"
-.venv-agent/bin/python -m ruff check --no-cache .
-.venv-agent/bin/python -m pytest -q -p no:cacheprovider
-AKSHARE_FUND_VENV="$PWD/.venv-agent" bash "$SKILL_DIR/scripts/run.sh" audit
-```
-
-Skill 单独改动时的稳定入口：
-
-```bash
-export SKILL_DIR="$PWD/skills/akshare-fund-advisor"
-"$SKILL_DIR/.venv/bin/python" -m unittest discover -s "$SKILL_DIR/tests" -v
-sh -n "$SKILL_DIR/scripts/run.sh"
-sh -n "$SKILL_DIR/scripts/setup.sh"
-```
-
-单元测试不访问真实网络。接口或字段变化后必须重新运行真实审计，不得用 Mock 结果替代：
-
-```bash
-bash "$SKILL_DIR/scripts/run.sh" audit
-```
-
-LangGraph 变更还必须覆盖节点、条件边、完整图路径和响应门禁。
-
-## 提交前检查
-
-- 没有提交密钥、持仓或私有文档；
-- 文档没有把待实现能力写成已实现；
-- 不存在、歧义、不支持、过期和上游失败没有混用；
-- 指标口径、接口契约和测试同步；
-- Agent 说明未新增数字或无证据因果关系。
-
-## 文档同步
-
-单一来源约定，避免同一事实出现在多处：
-
-| 内容 | 唯一来源 |
-| --- | --- |
-| 项目简介、运行入口 | `README.md` |
-| 架构、契约、错误语义、安全边界 | `docs/ARCHITECTURE.md` |
-| 实现状态、优先级、完成标准 | `docs/ROADMAP.md` |
-| 开发约束、验证命令、提交前检查 | `AGENTS.md` |
-| Skill 调用规范 | `skills/akshare-fund-advisor/SKILL.md` |
-| Skill 安装、命令、排错 | `skills/akshare-fund-advisor/USAGE.md` |
-| Skill 设计、指标层、策略层 | `skills/akshare-fund-advisor/DESIGN.md` |
-| 接口契约、字段口径、审计规则 | `skills/akshare-fund-advisor/references/` |
-| 漏洞报告、密钥、Web/Agent 安全 | `SECURITY.md` |
-
-维护规则：
-
-- 字段级事实以 Pydantic/Java Schema 和测试为准；
-- Skill 需要可独立拷贝，其接口、指标和审计文档保留在 Skill 目录内；
-- 已完成工作的过程记录使用 Git，不新增总结、复盘或迁移记录文档；
-- 不新建与上表定位重复的文档。
+<br />

@@ -27,6 +27,8 @@ services:
       WEB_BACKEND_ADDR: ":8080"
       DATA_API_URL: http://data-api:8003
       AGENT_API_URL: http://agent-api:8000
+      # 分离部署时放行前端来源，逗号分隔；默认空表示同源、不启用 CORS。
+      WEB_CORS_ALLOWED_ORIGINS: ${WEB_CORS_ALLOWED_ORIGINS:-}
       MYSQL_URL: jdbc:mysql://mysql:3306/fund_advisor?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC
       MYSQL_USER: fund_advisor
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-fund_advisor_dev}

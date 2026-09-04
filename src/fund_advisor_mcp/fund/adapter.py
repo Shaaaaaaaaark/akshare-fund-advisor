@@ -27,7 +27,6 @@ from .schemas import (
     CompareInput,
     ETFDashboardInput,
     FundInput,
-    QDIIBoardInput,
     SearchInput,
     StockValuationInput,
     ValuationInput,
@@ -307,8 +306,7 @@ class FundAdvisorToolAdapter:
             lambda: self._fund_status_service.status(request.fund),
         )
 
-    def qdii_purchase_board(self, **kwargs: Any) -> ToolEnvelope:
-        QDIIBoardInput.model_validate(kwargs)
+    def qdii_purchase_board(self) -> ToolEnvelope:
         return self._execute_core_envelope(
             ToolName.QDII_PURCHASE_BOARD,
             {},

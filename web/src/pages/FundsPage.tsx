@@ -1,7 +1,4 @@
 import {
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
   Bot,
   CalendarRange,
   CircleHelp,
@@ -11,8 +8,6 @@ import {
   Layers3,
   LayoutDashboard,
   List,
-  Maximize2,
-  Minimize2,
   Moon,
   RefreshCw,
   RotateCcw,
@@ -37,9 +32,17 @@ import {
   searchFunds,
   submitPanelInteraction,
 } from "../api";
-import { warningText } from "../components/display";
+import {
+  displayDate,
+  displayMetric as metric,
+  displaySigned as signed,
+  valueTone as tone,
+  warningText,
+} from "../components/display";
 import ETFLinkedCharts from "../components/ETFLinkedCharts";
+import ETFMetricHelpDialog from "../components/ETFMetricHelpDialog";
 import ETFPriceShareChart from "../components/ETFPriceShareChart";
+import ETFTrendPanel from "../components/ETFTrendPanel";
 import QDIIBoardDialog from "../components/QDIIBoardDialog";
 import ResearchAgentDialog from "../components/ResearchAgentDialog";
 import StatusBadge from "../components/StatusBadge";
@@ -51,7 +54,6 @@ import {
 import type {
   ETFDashboardData,
   ETFDetailResponse,
-  ETFRecentRow,
   FundIdentity,
   PanelInteractionKind,
   PanelInteractionSummary,
@@ -93,23 +95,6 @@ const HOT_POLLS = [
   },
 ] as const;
 
-type TableSortKey =
-  | "date"
-  | "close"
-  | "daily_change_pct"
-  | "turnover_yi_cny"
-  | "turnover_percentile_pct"
-  | "volume_yi_units"
-  | "drawdown_pct"
-  | "total_shares_change_yi_units"
-  | "financing_balance_change_yi_cny"
-  | "component_financing_balance_change_yi_cny";
-
-interface TableSort {
-  key: TableSortKey;
-  direction: "asc" | "desc";
-}
-
 export default function FundsPage() {
   const { fund } = useParams();
   const navigate = useNavigate();
@@ -124,10 +109,6 @@ export default function FundsPage() {
   const [draftEnd, setDraftEnd] = useState("");
   const [activeStart, setActiveStart] = useState("");
   const [activeEnd, setActiveEnd] = useState("");
-  const [tableSort, setTableSort] = useState<TableSort>({
-    key: "date",
-    direction: "desc",
-  });
   const [darkMode, setDarkMode] = useState(() =>
     storedBoolean("fund-advisor.etf.dark-mode", false),
   );
@@ -279,10 +260,6 @@ export default function FundsPage() {
     }
     return selectorETFs.filter((item) => item.name.includes(group.keyword));
   }, [groupFilter, selectorETFs]);
-  const tableRows = useMemo(
-    () => sortRows(data?.recent_rows ?? [], tableSort),
-    [data?.recent_rows, tableSort],
-  );
 
   function selectFund(item: FundIdentity) {
     navigate(`/funds/${encodeURIComponent(item.code)}`);
@@ -327,7 +304,6 @@ export default function FundsPage() {
   function resetPage() {
     setGroupFilter("all");
     setMobileFeedbackOpen(null);
-    setTableSort({ key: "date", direction: "desc" });
     setDarkMode(false);
     setListOpen(false);
     setInteractionStatus(null);
@@ -576,10 +552,12 @@ export default function FundsPage() {
               className="etf-utility-button"
               aria-haspopup="dialog"
               aria-expanded={qdiiOpen}
+              aria-label="QDII / 海外基金申购限额榜"
+              title="QDII / 海外基金申购限额榜"
               onClick={() => setQdiiOpen(true)}
             >
               <Globe aria-hidden="true" />
-              QDII限额榜
+              QDII榜
             </TerminalButton>
             <TerminalButton
               className="etf-utility-button"
@@ -641,9 +619,6 @@ export default function FundsPage() {
           setActiveStart={setActiveStart}
           setActiveEnd={setActiveEnd}
           applyDateRange={applyDateRange}
-          tableRows={tableRows}
-          tableSort={tableSort}
-          setTableSort={setTableSort}
           darkMode={darkMode}
           funds={groupedETFs}
           activeFund={activeFund}
@@ -682,9 +657,6 @@ function ETFContent({
   setActiveStart,
   setActiveEnd,
   applyDateRange,
-  tableRows,
-  tableSort,
-  setTableSort,
   darkMode,
   funds,
   activeFund,
@@ -703,9 +675,6 @@ function ETFContent({
   setActiveStart: (value: string) => void;
   setActiveEnd: (value: string) => void;
   applyDateRange: (event: FormEvent) => void;
-  tableRows: ETFRecentRow[];
-  tableSort: TableSort;
-  setTableSort: (sort: TableSort) => void;
   darkMode: boolean;
   funds: FundIdentity[];
   activeFund: string;
@@ -719,7 +688,6 @@ function ETFContent({
     storedBoolean("fund-advisor.etf.tooltips", true),
   );
   const [mobileView, setMobileView] = useState<"charts" | "trend">("charts");
-  const [trendExpanded, setTrendExpanded] = useState(false);
   const [trendWidth, setTrendWidth] = useState(() =>
     storedNumber("fund-advisor.etf.trend-width", 520, 420, 760),
   );
@@ -728,21 +696,6 @@ function ETFContent({
   const [draggingHandle, setDraggingHandle] = useState<"start" | "end" | null>(
     null,
   );
-  const recentDates = useMemo(
-    () => data.recent_rows.map((row) => row.date).sort(),
-    [data.recent_rows],
-  );
-  const auditedTrendRange = supplemental?.range_summaries[0];
-  const defaultTrendEnd =
-    auditedTrendRange?.latest_date ?? recentDates.at(-1) ?? "";
-  const defaultTrendStart =
-    auditedTrendRange?.actual_start_date ??
-    recentDates[Math.max(0, recentDates.length - 5)] ??
-    defaultTrendEnd;
-  const [trendStart, setTrendStart] = useState(defaultTrendStart);
-  const [trendEnd, setTrendEnd] = useState(defaultTrendEnd);
-  const [trendDraftStart, setTrendDraftStart] = useState(defaultTrendStart);
-  const [trendDraftEnd, setTrendDraftEnd] = useState(defaultTrendEnd);
   const latestRange = data.range_summaries[0];
   const timelineDates = useMemo(
     () =>
@@ -761,33 +714,6 @@ function ETFContent({
   const dashboardStyle = {
     "--etf-trend-width": `${trendWidth}px`,
   } as CSSProperties;
-  const visibleTrendRows = useMemo(
-    () =>
-      tableRows.filter(
-        (row) =>
-          (!trendStart || row.date >= trendStart) &&
-          (!trendEnd || row.date <= trendEnd),
-      ),
-    [tableRows, trendEnd, trendStart],
-  );
-  const supplementalRange = supplemental?.range_summaries.find(
-    (range) =>
-      range.actual_start_date === trendStart &&
-      range.latest_date === trendEnd,
-  );
-
-  useEffect(() => {
-    document.body.classList.toggle("etf-trend-expanded", trendExpanded);
-    return () => document.body.classList.remove("etf-trend-expanded");
-  }, [trendExpanded]);
-
-  useEffect(() => {
-    setTrendStart(defaultTrendStart);
-    setTrendEnd(defaultTrendEnd);
-    setTrendDraftStart(defaultTrendStart);
-    setTrendDraftEnd(defaultTrendEnd);
-  }, [data.identity.code, defaultTrendEnd, defaultTrendStart]);
-
   useEffect(() => {
     storePreference("fund-advisor.etf.tooltips", String(tooltipEnabled));
   }, [tooltipEnabled]);
@@ -802,15 +728,10 @@ function ETFContent({
     }
     setTooltipEnabled(true);
     setMobileView("charts");
-    setTrendExpanded(false);
     setTrendWidth(520);
     setFusionOpen(false);
     setHelpKey(null);
-    setTrendStart(defaultTrendStart);
-    setTrendEnd(defaultTrendEnd);
-    setTrendDraftStart(defaultTrendStart);
-    setTrendDraftEnd(defaultTrendEnd);
-  }, [defaultTrendEnd, defaultTrendStart, resetVersion]);
+  }, [resetVersion]);
 
   function setTimelineRange(nextStartIndex: number, nextEndIndex: number) {
     const nextStart = timelineDates[nextStartIndex];
@@ -1311,353 +1232,19 @@ function ETFContent({
           <GripVertical aria-hidden="true" />
         </div>
 
-        {trendExpanded && (
-          <button
-            type="button"
-            className="etf-trend-backdrop"
-            aria-label="关闭趋势表"
-            onClick={() => setTrendExpanded(false)}
-          />
-        )}
-        <aside
-          id="etf-trend-table"
-          className={`etf-trend-panel ${trendExpanded ? "expanded" : ""}`}
-          aria-label="最近交易日趋势看板"
-        >
-          <header>
-            <div>
-              <h2>{data.identity.name}最近一周趋势</h2>
-              <span>点击表头排序</span>
-            </div>
-            <button
-              type="button"
-              className="etf-trend-expand"
-              aria-expanded={trendExpanded}
-              onClick={() => setTrendExpanded((current) => !current)}
-            >
-              {trendExpanded ? (
-                <Minimize2 aria-hidden="true" />
-              ) : (
-                <Maximize2 aria-hidden="true" />
-              )}
-              {trendExpanded ? "收起" : "展开"}
-            </button>
-          </header>
-          <form
-            className="etf-trend-range-panel"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (
-                !trendDraftStart ||
-                !trendDraftEnd ||
-                trendDraftStart > trendDraftEnd
-              ) {
-                return;
-              }
-              setTrendStart(trendDraftStart);
-              setTrendEnd(trendDraftEnd);
-            }}
-          >
-            <label>
-              <span>开始</span>
-              <input
-                type="date"
-                min={recentDates[0]}
-                max={trendDraftEnd || defaultTrendEnd}
-                value={trendDraftStart}
-                onChange={(event) => setTrendDraftStart(event.target.value)}
-              />
-            </label>
-            <label>
-              <span>结束</span>
-              <input
-                type="date"
-                min={trendDraftStart || recentDates[0]}
-                max={defaultTrendEnd}
-                value={trendDraftEnd}
-                onChange={(event) => setTrendDraftEnd(event.target.value)}
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={
-                !trendDraftStart ||
-                !trendDraftEnd ||
-                trendDraftStart > trendDraftEnd
-              }
-            >
-              应用
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => {
-                setTrendDraftStart(defaultTrendStart);
-                setTrendDraftEnd(defaultTrendEnd);
-                setTrendStart(defaultTrendStart);
-                setTrendEnd(defaultTrendEnd);
-              }}
-            >
-              最近一周
-            </button>
-          </form>
-          <section className="etf-trend-summary" aria-label="趋势合计摘要">
-            <div className="etf-trend-summary-main">
-              <span>
-                {trendStart} 至 {trendEnd}
-              </span>
-              <strong>{data.identity.name}</strong>
-            </div>
-            <div>
-              <span>区间记录</span>
-              <strong>{visibleTrendRows.length} 条</strong>
-            </div>
-            <div>
-              <span>合计份额变动</span>
-              <strong
-                className={tone(supplementalRange?.share_change_yi_units)}
-              >
-                {supplementalRange
-                  ? signed(
-                    supplementalRange.share_change_yi_units,
-                    " 亿份",
-                  )
-                  : "当前区间不可用"}
-              </strong>
-            </div>
-            <div>
-              <span>合计净申赎</span>
-              <strong>待接入</strong>
-            </div>
-            <div>
-              <span>ETF融资余额变动</span>
-              <strong
-                className={tone(
-                  supplementalRange?.financing_net_change_yi_cny,
-                )}
-              >
-                {supplementalRange
-                  ? signed(
-                    supplementalRange.financing_net_change_yi_cny,
-                    " 亿元",
-                  )
-                  : "当前区间不可用"}
-              </strong>
-            </div>
-            <div>
-              <span>成分融资余额变动</span>
-              <strong
-                className={tone(
-                  supplementalRange
-                    ?.component_financing_net_change_yi_cny,
-                )}
-              >
-                {supplementalRange
-                  ? componentFinancingValue(
-                    supplementalRange
-                      .component_financing_net_change_yi_cny,
-                    supplemental?.component_financing.latest
-                      ?.reported_component_count,
-                    supplemental?.component_financing.latest
-                      ?.constituent_count,
-                  )
-                  : "当前区间不可用"}
-              </strong>
-            </div>
-          </section>
-          <div className="etf-trend-table-wrap">
-            <table className="etf-trend-table">
-              <thead>
-                <tr>
-                  <ETFStaticHeader
-                    label="ETF / 合计"
-                    helpKey="etf_scope"
-                    onHelp={setHelpKey}
-                  />
-                  <ETFSortableHeader
-                    label="日期"
-                    sortKey="date"
-                    sort={tableSort}
-                    onSort={setTableSort}
-                    helpKey="date"
-                    onHelp={setHelpKey}
-                  />
-                  <ETFSortableHeader
-                    label="价格变动"
-                    sortKey="daily_change_pct"
-                    sort={tableSort}
-                    onSort={setTableSort}
-                    helpKey="daily_change"
-                    onHelp={setHelpKey}
-                  />
-                  <ETFSortableHeader
-                    label="成交额"
-                    sortKey="turnover_yi_cny"
-                    sort={tableSort}
-                    onSort={setTableSort}
-                    helpKey="turnover"
-                    onHelp={setHelpKey}
-                  />
-                  <ETFSortableHeader
-                    label="成交额分位"
-                    sortKey="turnover_percentile_pct"
-                    sort={tableSort}
-                    onSort={setTableSort}
-                    helpKey="turnover_percentile"
-                    onHelp={setHelpKey}
-                  />
-                  <ETFSortableHeader
-                    label="净份额变动"
-                    sortKey="total_shares_change_yi_units"
-                    sort={tableSort}
-                    onSort={setTableSort}
-                    helpKey="share_change"
-                    onHelp={setHelpKey}
-                  />
-                  <ETFStaticHeader
-                    label="变动绝对值分位"
-                    helpKey="share_change_percentile"
-                    onHelp={setHelpKey}
-                  />
-                  <ETFStaticHeader
-                    label="净申赎金额"
-                    helpKey="net_subscription"
-                    onHelp={setHelpKey}
-                  />
-                  <ETFStaticHeader
-                    label="净申赎绝对值分位"
-                    helpKey="net_subscription_percentile"
-                    onHelp={setHelpKey}
-                  />
-                  <ETFStaticHeader
-                    label="净申赎/指数成交额"
-                    helpKey="net_subscription_ratio"
-                    onHelp={setHelpKey}
-                  />
-                  <ETFSortableHeader
-                    label="ETF融资余额变动"
-                    sortKey="financing_balance_change_yi_cny"
-                    sort={tableSort}
-                    onSort={setTableSort}
-                    helpKey="etf_financing_change"
-                    onHelp={setHelpKey}
-                  />
-                  <ETFStaticHeader
-                    label="ETF融资分位"
-                    helpKey="etf_financing_percentile"
-                    onHelp={setHelpKey}
-                  />
-                  <ETFSortableHeader
-                    label="成分融资余额变动"
-                    sortKey="component_financing_balance_change_yi_cny"
-                    sort={tableSort}
-                    onSort={setTableSort}
-                    helpKey="constituent_financing_change"
-                    onHelp={setHelpKey}
-                  />
-                  <ETFStaticHeader
-                    label="成分融资分位"
-                    helpKey="constituent_financing_percentile"
-                    onHelp={setHelpKey}
-                  />
-                </tr>
-              </thead>
-              <tbody>
-                {visibleTrendRows.map((row) => (
-                  <tr key={row.date}>
-                    <TrendCell
-                      label="ETF / 合计"
-                      value={data.identity.name}
-                    />
-                    <TrendCell label="日期" value={row.date} />
-                    <TrendCell
-                      label="价格变动"
-                      value={signed(row.daily_change_pct, "%")}
-                      className={tone(row.daily_change_pct)}
-                    />
-                    <TrendCell
-                      label="成交额"
-                      value={metric(row.turnover_yi_cny, " 亿")}
-                    />
-                    <TrendCell
-                      label="成交额分位"
-                      value={metric(row.turnover_percentile_pct, "%")}
-                    />
-                    <TrendCell
-                      label="净份额变动"
-                      value={signed(
-                        row.total_shares_change_yi_units,
-                        " 亿份",
-                      )}
-                      className={tone(row.total_shares_change_yi_units)}
-                    />
-                    <TrendCell
-                      label="变动绝对值分位"
-                      value="待接入"
-                    />
-                    <TrendCell label="净申赎金额" value="待接入" />
-                    <TrendCell
-                      label="净申赎绝对值分位"
-                      value="待接入"
-                    />
-                    <TrendCell
-                      label="净申赎/指数成交额"
-                      value="待接入"
-                    />
-                    <TrendCell
-                      label="ETF融资余额变动"
-                      value={signed(
-                        row.financing_balance_change_yi_cny,
-                        " 亿元",
-                      )}
-                      className={tone(
-                        row.financing_balance_change_yi_cny,
-                      )}
-                    />
-                    <TrendCell label="ETF融资分位" value="待接入" />
-                    <TrendCell
-                      label="成分融资余额变动"
-                      value={componentFinancingValue(
-                        row.component_financing_balance_change_yi_cny,
-                        row.component_financing_reported_count,
-                        row.component_financing_constituent_count,
-                      )}
-                      className={tone(
-                        row.component_financing_balance_change_yi_cny,
-                      )}
-                    />
-                    <TrendCell label="成分融资分位" value="待接入" />
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </aside>
+        <ETFTrendPanel
+          data={data}
+          resetVersion={resetVersion}
+          onHelp={setHelpKey}
+        />
       </section>
       {helpKey && (
-        <MetricHelpDialog
+        <ETFMetricHelpDialog
           helpKey={helpKey}
           onClose={() => setHelpKey(null)}
         />
       )}
     </>
-  );
-}
-
-function TrendCell({
-  label,
-  value,
-  className = "",
-}: {
-  label: string;
-  value: string;
-  className?: string;
-}) {
-  return (
-    <td>
-      <span className="etf-mobile-cell-label">{label}</span>
-      <span className={`etf-trend-cell-value ${className}`}>{value}</span>
-    </td>
   );
 }
 
@@ -1691,241 +1278,6 @@ function MetricCard({
       {asOf && <small>截至 {displayDate(asOf)}</small>}
     </div>
   );
-}
-
-function ETFSortableHeader({
-  label,
-  sortKey,
-  sort,
-  onSort,
-  helpKey,
-  onHelp,
-}: {
-  label: string;
-  sortKey: TableSortKey;
-  sort: TableSort;
-  onSort: (sort: TableSort) => void;
-  helpKey: string;
-  onHelp: (key: string) => void;
-}) {
-  const active = sort.key === sortKey;
-  const Icon = !active
-    ? ArrowUpDown
-    : sort.direction === "asc"
-      ? ArrowUp
-      : ArrowDown;
-  return (
-    <th aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
-      <div className="etf-table-heading">
-        <button
-          type="button"
-          className="etf-sort-button"
-          onClick={() =>
-            onSort({
-              key: sortKey,
-              direction:
-                active && sort.direction === "asc" ? "desc" : "asc",
-            })
-          }
-        >
-          {label}
-          <Icon aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          className="etf-help-button"
-          aria-label={`说明：${label}`}
-          title={`${label}说明`}
-          onClick={() => onHelp(helpKey)}
-        >
-          <CircleHelp aria-hidden="true" />
-        </button>
-      </div>
-    </th>
-  );
-}
-
-function ETFStaticHeader({
-  label,
-  helpKey,
-  onHelp,
-}: {
-  label: string;
-  helpKey: string;
-  onHelp: (key: string) => void;
-}) {
-  return (
-    <th>
-      <div className="etf-table-heading">
-        <span>{label}</span>
-        <button
-          type="button"
-          className="etf-help-button"
-          aria-label={`说明：${label}`}
-          title={`${label}说明`}
-          onClick={() => onHelp(helpKey)}
-        >
-          <CircleHelp aria-hidden="true" />
-        </button>
-      </div>
-    </th>
-  );
-}
-
-const METRIC_HELP: Record<string, { title: string; body: string }> = {
-  latest_date: {
-    title: "最新日期",
-    body: "ETF 日线主序列中的最后一个真实交易日期，不等同于页面查询时间。",
-  },
-  adjusted_close: {
-    title: "前复权收盘价",
-    body: "来自 ETF 历史行情的前复权日收盘价，用于连续观察，不代表投资者当日实际成交价。",
-  },
-  turnover: {
-    title: "成交额",
-    body: "交易所日线源成交额确定性换算为亿元，没有插值或前向填充。",
-  },
-  total_shares: {
-    title: "交易所总份额",
-    body: "上交所按统计日期披露的 ETF 基金份额。深交所当前接口缺少可核验统计日期时保持不可用。",
-  },
-  financing_balance: {
-    title: "ETF 融资余额",
-    body: "按 ETF 代码从交易所融资融券明细精确匹配的融资余额，不包含成分股融资余额。",
-  },
-  drawdown: {
-    title: "当前回撤",
-    body: "当前收盘价相对所选观察窗口内此前运行峰值的跌幅，观察窗口变化会改变该值。",
-  },
-  etf_scope: {
-    title: "ETF / 合计",
-    body: "当前行对应选中的单只 ETF。本项目不把其他 ETF 或指数成分数据自动合并进来。",
-  },
-  date: {
-    title: "日期",
-    body: "主行情序列中的真实交易日期。补充数据只有日期精确一致时才会合并。",
-  },
-  daily_change: {
-    title: "价格变动",
-    body: "相邻真实收盘价计算的日涨跌幅；缺少前一观测时保持为空。",
-  },
-  turnover_percentile: {
-    title: "成交额分位",
-    body: "当日成交额在当前 ETF 日线观察窗口内的历史百分位，使用完整有效样本确定性计算。",
-  },
-  share_change: {
-    title: "净份额变动",
-    body: "当日交易所总份额减去前一相邻审计交易日总份额，单位为亿份。",
-  },
-  share_change_percentile: {
-    title: "变动绝对值分位",
-    body: "当前只有最近最多 7 个份额快照，不足以形成稳定历史分位，因此不计算。",
-  },
-  net_subscription: {
-    title: "净申赎金额",
-    body: "份额变化乘价格只能得到估算值，不能等同真实申赎现金流；没有可靠源字段时保持待接入。",
-  },
-  net_subscription_percentile: {
-    title: "净申赎绝对值分位",
-    body: "依赖同口径的净申赎金额历史序列，当前没有可审计数据。",
-  },
-  net_subscription_ratio: {
-    title: "净申赎/指数成交额",
-    body: "依赖净申赎金额和底层指数成交额两个同日、同口径序列，当前不计算。",
-  },
-  etf_financing_change: {
-    title: "ETF 融资余额变动",
-    body: "ETF 当日融资余额减去前一相邻审计交易日融资余额，单位为亿元。",
-  },
-  etf_financing_percentile: {
-    title: "ETF 融资分位",
-    body: "当前只读取最近最多 7 个真实交易日，样本不足以计算历史分位。",
-  },
-  constituent_financing_change: {
-    title: "成分融资余额变动",
-    body: "仅在 ETF 精确映射到底层指数时，按中证指数官网最新成份快照汇总沪深交易所逐证券融资余额，再与前一相邻审计交易日比较。未在交易所明细中返回的证券不补零。",
-  },
-  constituent_financing_percentile: {
-    title: "成分融资分位",
-    body: "当前只读取最近最多 7 个真实交易日，样本不足以形成稳定历史分位。",
-  },
-};
-
-function MetricHelpDialog({
-  helpKey,
-  onClose,
-}: {
-  helpKey: string;
-  onClose: () => void;
-}) {
-  const help = METRIC_HELP[helpKey] ?? {
-    title: "指标说明",
-    body: "当前指标说明暂不可用。",
-  };
-
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose]);
-
-  return (
-    <div
-      className="etf-help-backdrop"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
-    >
-      <section
-        className="etf-help-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="etf-help-title"
-      >
-        <header>
-          <h2 id="etf-help-title">{help.title}</h2>
-          <button
-            type="button"
-            aria-label="关闭指标说明"
-            title="关闭"
-            onClick={onClose}
-          >
-            <X aria-hidden="true" />
-          </button>
-        </header>
-        <p>{help.body}</p>
-        <small>缺失值不会被补零、插值或由模型生成。</small>
-      </section>
-    </div>
-  );
-}
-
-function sortRows(rows: ETFRecentRow[], sort: TableSort): ETFRecentRow[] {
-  return [...rows].sort((left, right) => {
-    const leftValue = left[sort.key];
-    const rightValue = right[sort.key];
-    if (leftValue == null && rightValue == null) {
-      return 0;
-    }
-    if (leftValue == null) {
-      return 1;
-    }
-    if (rightValue == null) {
-      return -1;
-    }
-    const comparison =
-      typeof leftValue === "number" && typeof rightValue === "number"
-        ? leftValue - rightValue
-        : String(leftValue).localeCompare(String(rightValue));
-    return sort.direction === "asc" ? comparison : -comparison;
-  });
 }
 
 function boundedDateIndex(
@@ -1977,46 +1329,6 @@ function sourceValidationLabel(
     warning: "存在校验告警",
     unavailable: "校验源不可用",
   }[status];
-}
-
-function metric(value: number | null | undefined, unit: string): string {
-  return value === null || value === undefined ? "—" : `${String(value)}${unit}`;
-}
-
-function displayDate(value: string | null | undefined): string {
-  return value ? value.slice(0, 10) : "—";
-}
-
-function signed(value: number | null | undefined, unit: string): string {
-  if (value === null || value === undefined) {
-    return "—";
-  }
-  return `${value > 0 ? "+" : ""}${String(value)}${unit}`;
-}
-
-function componentFinancingValue(
-  value: number | null | undefined,
-  reportedCount: number | null | undefined,
-  constituentCount: number | null | undefined,
-): string {
-  const amount = signed(value, " 亿元");
-  if (
-    amount === "—" ||
-    reportedCount === null ||
-    reportedCount === undefined ||
-    constituentCount === null ||
-    constituentCount === undefined
-  ) {
-    return amount;
-  }
-  return `${amount} · 覆盖 ${reportedCount}/${constituentCount}`;
-}
-
-function tone(value: number | null | undefined): string {
-  if (value === null || value === undefined || value === 0) {
-    return "";
-  }
-  return value > 0 ? "value-positive" : "value-negative";
 }
 
 function storedString(key: string, fallback: string): string {

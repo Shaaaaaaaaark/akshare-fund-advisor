@@ -58,11 +58,11 @@ public class DashboardController {
             @PathVariable String index,
             @RequestParam(name = "years", required = false) String years,
             @RequestParam(name = "max_points", required = false) String maxPoints) {
-        Integer parsedYears = parseOptionalInt(years, 0, "years must be 3, 5, 10 or 20");
+        Integer parsedYears = parseOptionalInt(years, 0);
         if (parsedYears == null || (parsedYears != 0 && !INDEX_YEARS.contains(parsedYears))) {
             return problemDetail(HttpStatus.BAD_REQUEST, "years must be 3, 5, 10 or 20");
         }
-        Integer parsedMaxPoints = parseOptionalInt(maxPoints, 0, "max_points must be between 50 and 3000");
+        Integer parsedMaxPoints = parseOptionalInt(maxPoints, 0);
         if (parsedMaxPoints == null || (parsedMaxPoints != 0 && !validMaxPoints(parsedMaxPoints))) {
             return problemDetail(HttpStatus.BAD_REQUEST, "max_points must be between 50 and 3000");
         }
@@ -81,7 +81,7 @@ public class DashboardController {
         if (query == null || query.isBlank()) {
             return problemDetail(HttpStatus.BAD_REQUEST, "query is required");
         }
-        Integer parsedLimit = parseOptionalInt(limit, 10, "limit must be between 1 and 20");
+        Integer parsedLimit = parseOptionalInt(limit, 10);
         if (parsedLimit == null || parsedLimit < 1 || parsedLimit > 20) {
             return problemDetail(HttpStatus.BAD_REQUEST, "limit must be between 1 and 20");
         }
@@ -93,11 +93,11 @@ public class DashboardController {
             @PathVariable String fund,
             @RequestParam(name = "years", required = false) String years,
             @RequestParam(name = "max_points", required = false) String maxPoints) {
-        Integer parsedYears = parseOptionalInt(years, 3, "years must be 1, 3 or 5");
+        Integer parsedYears = parseOptionalInt(years, 3);
         if (parsedYears == null || !FUND_YEARS.contains(parsedYears)) {
             return problemDetail(HttpStatus.BAD_REQUEST, "years must be 1, 3 or 5");
         }
-        Integer parsedMaxPoints = parseOptionalInt(maxPoints, 600, "max_points must be between 50 and 3000");
+        Integer parsedMaxPoints = parseOptionalInt(maxPoints, 600);
         if (parsedMaxPoints == null || !validMaxPoints(parsedMaxPoints)) {
             return problemDetail(HttpStatus.BAD_REQUEST, "max_points must be between 50 and 3000");
         }
@@ -108,7 +108,7 @@ public class DashboardController {
     public ResponseEntity<?> fundProduct(
             @PathVariable String fund,
             @RequestParam(name = "years", required = false) String years) {
-        Integer parsedYears = parseOptionalInt(years, 3, "years must be 1, 3 or 5");
+        Integer parsedYears = parseOptionalInt(years, 3);
         if (parsedYears == null || !FUND_YEARS.contains(parsedYears)) {
             return problemDetail(HttpStatus.BAD_REQUEST, "years must be 1, 3 or 5");
         }
@@ -125,11 +125,11 @@ public class DashboardController {
             @PathVariable String stock,
             @RequestParam(name = "years", required = false) String years,
             @RequestParam(name = "max_points", required = false) String maxPoints) {
-        Integer parsedYears = parseOptionalInt(years, 10, "years must be 1, 3, 5 or 10");
+        Integer parsedYears = parseOptionalInt(years, 10);
         if (parsedYears == null || !STOCK_YEARS.contains(parsedYears)) {
             return problemDetail(HttpStatus.BAD_REQUEST, "years must be 1, 3, 5 or 10");
         }
-        Integer parsedMaxPoints = parseOptionalInt(maxPoints, 600, "max_points must be between 50 and 3000");
+        Integer parsedMaxPoints = parseOptionalInt(maxPoints, 600);
         if (parsedMaxPoints == null || !validMaxPoints(parsedMaxPoints)) {
             return problemDetail(HttpStatus.BAD_REQUEST, "max_points must be between 50 and 3000");
         }
@@ -141,7 +141,7 @@ public class DashboardController {
         return ResponseEntity.ok(dashboard.qdiiPurchaseBoard());
     }
 
-    private static Integer parseOptionalInt(String raw, int fallback, String _message) {
+    private static Integer parseOptionalInt(String raw, int fallback) {
         if (raw == null || raw.isBlank()) {
             return fallback;
         }

@@ -62,7 +62,3 @@ class AuditInput(BaseModel):
     etf: str = "510300"
     lof: str = "166009"
     index: str = "沪深300"
-
-
-class QDIIBoardInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")

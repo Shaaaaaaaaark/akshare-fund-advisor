@@ -109,6 +109,33 @@ web-research-mcp  # Python，仅容器网络
 
 只有 `web-backend` 对外暴露，其余六个服务仅在容器网络内可见。
 
+## 分离部署（前端 GitHub Pages + 后端服务器）
+
+前端可静态托管到 GitHub Pages，后端整套 Compose 部署在自有服务器，`web-backend`
+仍是唯一对外入口。默认同源部署不受影响：下列变量为空时行为与单机一致。
+
+前端构建期变量（GitHub Actions Variables）：
+
+```text
+VITE_API_BASE    后端对外地址，必须 HTTPS，例如 https://api.your-domain.com
+VITE_BASE_PATH   部署子路径，默认 /<repo>/；根站点设为 /
+```
+
+后端运行期变量：
+
+```text
+WEB_CORS_ALLOWED_ORIGINS   允许的前端来源，逗号分隔，例如 https://user.github.io
+                           为空表示不启用 CORS（同源部署默认）
+```
+
+要点：
+
+- 浏览器要求 HTTPS 页面只能调用 HTTPS 接口，后端需经 Caddy/Nginx 自动证书或
+  Cloudflare Tunnel 提供 TLS；
+- Pages 工作流将构建后的 `index.html` 复制为 `404.html`，支持直接刷新前端子路由；
+- GitHub Actions 工作流见 `.github/workflows/deploy-web-pages.yml`，仅发布前端；
+- 后端不使用 Cookie，CORS 固定 `allowCredentials=false`，只放行精确来源。
+
 ## 验证
 
 Python 全量检查、Java BFF `mvnw verify`、Skill 单测和真实接口审计的完整命令统一维护在

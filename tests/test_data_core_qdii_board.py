@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 
 from fund_advisor_data_core.audit import frame_fingerprint
@@ -44,6 +46,14 @@ def _service(purchases: pd.DataFrame) -> QDIIPurchaseBoardService:
     return QDIIPurchaseBoardService(AKShareFundProvider(_FakeAkShare(purchases)))
 
 
+def _funds(data: dict[str, Any], tier: str) -> list[dict[str, Any]]:
+    return [
+        fund
+        for category in data["categories"]
+        for fund in category[tier]
+    ]
+
+
 def test_board_keeps_only_overseas_limited_and_suspended() -> None:
     purchases = pd.DataFrame(
         [
@@ -70,11 +80,8 @@ def test_board_keeps_only_overseas_limited_and_suspended() -> None:
         "suspended_count": 1,
         "category_count": 2,
     }
-    codes = {
-        entry["code"]
-        for tier in data["tiers"].values()
-        for entry in tier["funds"]
-    }
+    codes = {entry["code"] for entry in _funds(data, "limited_large")}
+    codes.update(entry["code"] for entry in _funds(data, "suspended"))
     assert codes == {"000834", "003718"}
 
 
@@ -89,8 +96,8 @@ def test_board_splits_tiers_and_suppresses_suspended_limit() -> None:
     data = _service(purchases).board().data
     assert data is not None
 
-    limited = data["tiers"]["limited_large"]["funds"]
-    suspended = data["tiers"]["suspended"]["funds"]
+    limited = _funds(data, "limited_large")
+    suspended = _funds(data, "suspended")
     assert len(limited) == 1 and len(suspended) == 1
     # 限大额保留真实限额。
     assert limited[0]["effective_daily_limit_cny"] == 20_000.0
@@ -112,12 +119,11 @@ def test_board_sorts_by_limit_with_placeholder_last() -> None:
 
     data = _service(purchases).board().data
     assert data is not None
-    funds = data["tiers"]["limited_large"]["funds"]
+    funds = _funds(data, "limited_large")
     assert [item["code"] for item in funds] == ["P00002", "P00003", "P00001"]
     # 占位值置空且标记，不当作 100 亿真实限额。
     placeholder = funds[-1]
     assert placeholder["effective_daily_limit_cny"] is None
-    assert placeholder["no_effective_limit_placeholder"] is True
     assert placeholder["source_daily_limit_cny"] == 9_999_999_999.0
 
 
@@ -149,7 +155,7 @@ def test_limited_large_with_zero_limit_is_undisclosed_not_zero_threshold() -> No
 
     data = _service(purchases).board().data
     assert data is not None
-    entry = data["tiers"]["limited_large"]["funds"][0]
+    entry = _funds(data, "limited_large")[0]
     assert entry["subscription_status"] == "限大额"
     assert entry["effective_daily_limit_cny"] is None
     assert entry["amount_disclosed"] is False
@@ -194,13 +200,9 @@ def test_board_reports_only_latest_date_but_keeps_all_current_funds() -> None:
     assert data is not None
     # 表头只显示最新日期。
     assert data["latest_source_report_date"] == "2026-09-01"
-    assert data["source_report_date_span"] == {
-        "earliest": "2026-08-27",
-        "latest": "2026-09-01",
-    }
     # 但不因报告日较早而剔除基金：两只都在榜。
     assert data["summary"]["limited_large_count"] == 2
-    funds = data["tiers"]["limited_large"]["funds"]
+    funds = _funds(data, "limited_large")
     assert {f["code"] for f in funds} == {"L00001", "L00002"}
     # 每只基金仍保留各自报告日可审计。
     by_code = {f["code"]: f["source_report_date"] for f in funds}

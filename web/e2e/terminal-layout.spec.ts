@@ -25,7 +25,7 @@ for (const viewport of VIEWPORTS) {
 
     const toolbar = page.locator(".etf-command-row");
     await expect(toolbar).toBeVisible();
-    await expect(page.locator("[data-terminal-control]")).toHaveCount(8);
+    await expect(page.locator("[data-terminal-control]")).toHaveCount(9);
 
     const metrics = await page.evaluate(() => {
       const box = (element: Element) => {
@@ -102,7 +102,7 @@ for (const viewport of VIEWPORTS) {
 
     const expectedHeight = viewport.width <= 760 ? 34 : 38;
     expect(metrics.hiddenControls).toEqual([]);
-    expect(metrics.controlHeights).toHaveLength(8);
+    expect(metrics.controlHeights).toHaveLength(9);
     for (const height of metrics.controlHeights) {
       expect(height).toBe(expectedHeight);
     }
@@ -153,5 +153,5 @@ test("dark mode preserves the terminal control contract", async ({ page }) => {
     .evaluateAll((controls) =>
       controls.map((control) => control.getBoundingClientRect().height),
     );
-  expect(heights).toEqual(Array(8).fill(34));
+  expect(heights).toEqual(Array(9).fill(34));
 });

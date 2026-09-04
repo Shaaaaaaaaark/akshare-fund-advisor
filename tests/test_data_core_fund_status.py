@@ -31,7 +31,7 @@ def test_fund_status_reads_purchase_status_with_audit() -> None:
                 "赎回状态": "开放赎回",
                 "下一开放日": "2026-08-20",
                 "购买起点": 10,
-                "日累计限定金额": 10_000_000_000,
+                "日累计限定金额": 9_999_999_999,
                 "手续费": 0.15,
             }
         ]
@@ -73,7 +73,7 @@ def test_fund_status_reads_purchase_status_with_audit() -> None:
     assert off_exchange["can_submit_subscription"] is True
     assert off_exchange["can_submit_redemption"] is True
     assert off_exchange["daily_limit_cny"] is None
-    assert off_exchange["source_daily_limit_cny"] == 10_000_000_000
+    assert off_exchange["source_daily_limit_cny"] == 9_999_999_999
     assert envelope.data_policy["ai_may_generate_market_data"] is False
 
 

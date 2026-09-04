@@ -11,7 +11,7 @@ import ReactMarkdown from "react-markdown";
 import { useLocation, useNavigate } from "react-router-dom";
 import remarkGfm from "remark-gfm";
 
-import { streamChat } from "../api";
+import { checkBackendHealth, streamChat } from "../api";
 import type {
   AgentResponse,
   ChatMessage,
@@ -62,9 +62,9 @@ export default function ChatPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/health", { signal: controller.signal })
-      .then((response) => {
-        setApiConnected(response.ok);
+    checkBackendHealth(controller.signal)
+      .then((connected) => {
+        setApiConnected(connected);
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") {
