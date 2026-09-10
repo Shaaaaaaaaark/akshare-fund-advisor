@@ -59,6 +59,8 @@ React 只渲染结构化结果。三者都不得生成、补齐或改写市场�
   - `GET /api/dashboard/stocks/{stock}?years=1|3|5|10&max_points=`
 - Dashboard QDII/海外限额榜 API：
   - `GET /api/dashboard/boards/qdii-purchase`
+- Dashboard A 股热门板块 API：
+  - `GET /api/dashboard/market-pulse`
 - Java 自选列表 API：
   - `GET /api/watchlist`
   - `POST /api/watchlist`
@@ -66,10 +68,12 @@ React 只渲染结构化结果。三者都不得生成、补齐或改写市场�
 - Java 面板互动 API：
   - `GET /api/panel/interactions`
   - `POST /api/panel/interactions`
+  - `GET /api/panel/comments`
+  - `POST /api/panel/comments`
 
-Web 默认进入 ETF 数据终端，并提供总览、自选和 Agent 等入口。ETF 终端包含分组选择、
-列表、六项摘要、区间切换、五联历史图、价格/份额融合图、趋势表、指标说明、持久投票与
-反馈、桌面可调分栏和移动端视图切换；指数详情
+Web 默认进入 ETF 数据终端，并提供总览、自选和 Agent 等入口。ETF 终端包含实时热门
+板块、动态话题投票、分组选择、列表、六项摘要、区间切换、五联历史图、价格/份额融合图、
+趋势表、指标说明、匿名反馈与评论、桌面可调分栏和移动端视图切换；指数详情
 展示 PE/PB 历史双图，主动基金页展示产品、收益风险、费率、评级和申赎状态，股票页展示
 前复权价格、PE TTM 和 PB 三个独立历史视图。自选页通过 Java、MyBatis 和 MySQL 保存
 用户输入的标的元数据，进入详情后仍由 Data API 确认标的和市场事实。

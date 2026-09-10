@@ -14,13 +14,14 @@
 | Fixed LangGraph Agent | 已实现 |
 | FastAPI Agent API / SSE / 有界临时会话 | 已实现 |
 | Java BFF | 已迁移到 Spring MVC，保持外部 HTTP/SSE 契约 |
-| MySQL / MyBatis 自选列表与面板互动 | 已实现 |
+| MySQL / MyBatis 自选列表、面板互动与匿名评论 | 已实现；评论限长、限频、防重复且不返回客户端标识 |
 | Redis 面板接入限流 | 已实现 |
 | React 总览、指数、ETF、主动基金、股票、自选和 Agent 页 | MVP 已实现 |
 | ETF 高密度终端前端 | 已实现；控件、指标说明、投票反馈和偏好持久化已接通 |
 | ETF 最近份额与 ETF/成分融资明细 | 已实现；最近最多 7 个交易日，按代码、指数成份和日期审计 |
 | ETF 多源校验 | 已实现；Baostock 校验新浪未复权收盘价，东方财富与同花顺校验同日单位净值，均不覆盖主源 |
 | QDII/海外基金申购限额榜 | 已实现；复用 `fund_purchase_em` 当日快照，按主题分类和限大额/暂停两档，未披露金额不编造 |
+| A 股热门板块与动态投票 | 已实现；同花顺行业快照、5 分钟缓存、确定性话题键、匿名幂等计票及多视口布局 |
 | ETF 净申赎、融资长期分位和机构持仓接口 | 未实现 |
 | Pi-style Agent Harness | 设计完成，尚未实现 |
 | `fund_screen` / `stock_screen` | 接口审计完成，工具未实现 |

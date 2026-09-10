@@ -114,6 +114,12 @@ def qdii_purchase_board() -> dict[str, Any]:
 
 
 @mcp.tool()
+def market_pulse() -> dict[str, Any]:
+    """Return the current audited A-share industry ranking and poll topics."""
+    return _dump(get_adapter().market_pulse())
+
+
+@mcp.tool()
 def fund_profile(fund: str) -> dict[str, Any]:
     """Return audited fund profile: basics, fee rules and asset allocation."""
     return _dump(get_adapter().fund_profile(fund=fund))

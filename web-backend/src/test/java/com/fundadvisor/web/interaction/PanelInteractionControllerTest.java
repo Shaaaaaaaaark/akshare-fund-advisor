@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fundadvisor.web.web.ApiExceptionHandler;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,6 +20,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class PanelInteractionControllerTest {
 
     private static final String CLIENT_ID = "40c17919-6643-4a29-85db-a3f5e8b41d70";
+    private static final String HOT_POLL_TOPIC = "sector_20260910_012345abcdef";
 
     private PanelInteractionService service;
     private MockMvc mockMvc;
@@ -37,28 +39,30 @@ class PanelInteractionControllerTest {
         PanelInteractionSummary summary = new PanelInteractionSummary(
                 "510310",
                 Map.of(
-                        "korea_market",
+                        HOT_POLL_TOPIC,
                         new PanelTopicSummary(
                                 Map.of("yes", 4L, "no", 2L),
                                 "yes")),
                 new PanelTopicSummary(Map.of("useful", 1L), null),
                 new PanelTopicSummary(Map.of("other", 0L), null));
-        when(service.summary(CLIENT_ID, "510310")).thenReturn(summary);
+        when(service.summary(CLIENT_ID, "510310", List.of(HOT_POLL_TOPIC)))
+                .thenReturn(summary);
         when(service.submit(any())).thenReturn(summary);
 
         mockMvc.perform(get("/api/panel/interactions")
                         .param("client_id", CLIENT_ID)
-                        .param("fund", "510310"))
+                        .param("fund", "510310")
+                        .param("hot_poll_topic", HOT_POLL_TOPIC))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.hot_polls.korea_market.counts.yes").value(4))
-                .andExpect(jsonPath("$.hot_polls.korea_market.selected_option").value("yes"));
+                .andExpect(jsonPath("$.hot_polls." + HOT_POLL_TOPIC + ".counts.yes").value(4))
+                .andExpect(jsonPath("$.hot_polls." + HOT_POLL_TOPIC + ".selected_option").value("yes"));
 
         mockMvc.perform(post("/api/panel/interactions")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
                                   "kind":"hot_poll",
-                                  "topic_key":"korea_market",
+                                  "topic_key":"sector_20260910_012345abcdef",
                                   "option_key":"yes",
                                   "client_id":"40c17919-6643-4a29-85db-a3f5e8b41d70",
                                   "fund":"510310"
@@ -67,7 +71,7 @@ class PanelInteractionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.fund").value("510310"));
 
-        verify(service).summary(CLIENT_ID, "510310");
+        verify(service).summary(CLIENT_ID, "510310", List.of(HOT_POLL_TOPIC));
         verify(service).submit(any());
     }
 

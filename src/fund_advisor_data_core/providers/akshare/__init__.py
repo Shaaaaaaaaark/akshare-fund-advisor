@@ -2,5 +2,10 @@
 
 from .etfs import AKShareETFProvider
 from .funds import AKShareFundProvider
+from .markets import AKShareMarketProvider
 
-__all__ = ["AKShareETFProvider", "AKShareFundProvider"]
+__all__ = [
+    "AKShareETFProvider",
+    "AKShareFundProvider",
+    "AKShareMarketProvider",
+]

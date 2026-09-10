@@ -117,6 +117,37 @@ export interface QDIIBoardResponse {
   envelope?: ToolEnvelope<QDIIBoardData>;
 }
 
+export interface MarketSector {
+  rank: number;
+  name: string;
+  change_pct: number;
+  rising_count: number | null;
+  falling_count: number | null;
+  leading_stock: string | null;
+  leading_stock_change_pct: number | null;
+}
+
+export interface MarketPollTopic {
+  key: string;
+  question: string;
+  sector_name: string;
+}
+
+export interface MarketPulseData {
+  market: string;
+  snapshot_at: string;
+  ranking_basis: string;
+  sectors: MarketSector[];
+  poll_topics: MarketPollTopic[];
+  notes: string[];
+}
+
+export interface MarketPulseResponse {
+  board: string;
+  meta: DatasetMeta;
+  envelope?: ToolEnvelope<MarketPulseData>;
+}
+
 export interface MetricSummary {
   current: number | null;
   percentile: number | null;
@@ -717,6 +748,26 @@ export interface SubmitPanelInteraction {
   option_key: string;
   client_id: string;
   fund: string;
+}
+
+export interface PanelComment {
+  id: string;
+  content: string;
+  visitor_label: string;
+  mine: boolean;
+  created_at: string;
+}
+
+export interface PanelCommentFeed {
+  fund: string;
+  count: number;
+  comments: PanelComment[];
+}
+
+export interface CreatePanelComment {
+  client_id: string;
+  fund: string;
+  content: string;
 }
 
 export interface OverviewCapability {

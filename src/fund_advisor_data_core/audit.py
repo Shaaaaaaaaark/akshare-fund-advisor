@@ -75,6 +75,15 @@ INTERFACE_CONTRACTS: dict[str, set[str]] = {
         "成分券名称",
         "交易所",
     },
+    "stock_board_industry_summary_ths": {
+        "序号",
+        "板块",
+        "涨跌幅",
+        "上涨家数",
+        "下跌家数",
+        "领涨股",
+        "领涨股-涨跌幅",
+    },
 }
 
 DATA_POLICY: dict[str, Any] = {

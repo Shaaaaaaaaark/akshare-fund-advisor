@@ -33,6 +33,7 @@ public class DashboardService {
     static final String FUND_STATUS_TOOL = "fund_status";
     static final String STOCK_VALUATION_TOOL = "stock_valuation";
     static final String QDII_PURCHASE_BOARD_TOOL = "qdii_purchase_board";
+    static final String MARKET_PULSE_TOOL = "market_pulse";
 
     private static final Logger log = LoggerFactory.getLogger(DashboardService.class);
 
@@ -159,6 +160,24 @@ public class DashboardService {
                     envelope.rawJson());
         } catch (RuntimeException error) {
             return new BoardDetail("qdii-purchase", transportFailureMeta(QDII_PURCHASE_BOARD_TOOL, error), null);
+        }
+    }
+
+    public BoardDetail marketPulse() {
+        try {
+            ToolEnvelope envelope = caller.callTool(MARKET_PULSE_TOOL, Map.of());
+            return new BoardDetail(
+                    "market-pulse",
+                    envelopeMeta(
+                            envelope,
+                            MARKET_PULSE_TOOL,
+                            textAt(envelope.data(), "snapshot_at")),
+                    envelope.rawJson());
+        } catch (RuntimeException error) {
+            return new BoardDetail(
+                    "market-pulse",
+                    transportFailureMeta(MARKET_PULSE_TOOL, error),
+                    null);
         }
     }
 

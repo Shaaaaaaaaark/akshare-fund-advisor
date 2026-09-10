@@ -16,6 +16,7 @@ from fund_advisor_data_core.services import (
     ETFSupplementService,
     FundSearchService,
     FundStatusService,
+    MarketPulseService,
     QDIIPurchaseBoardService,
 )
 from fund_advisor_mcp.config import AppConfig, get_config
@@ -62,6 +63,11 @@ class QDIIBoardRunner(Protocol):
         ...
 
 
+class MarketPulseRunner(Protocol):
+    def pulse(self) -> ToolEnvelope:
+        ...
+
+
 class FundAdvisorToolAdapter:
     """Execute Skill methods and preserve their audit payload verbatim."""
 
@@ -73,6 +79,7 @@ class FundAdvisorToolAdapter:
         fund_search_service: FundSearchRunner | None = None,
         fund_status_service: FundStatusRunner | None = None,
         qdii_board_service: QDIIBoardRunner | None = None,
+        market_pulse_service: MarketPulseRunner | None = None,
         etf_supplement_service: ETFSupplementService | None = None,
         cache: EnvelopeCache | None = None,
     ) -> None:
@@ -83,6 +90,7 @@ class FundAdvisorToolAdapter:
         self._fund_search_service = fund_search_service or FundSearchService()
         self._fund_status_service = fund_status_service or FundStatusService()
         self._qdii_board_service = qdii_board_service or QDIIPurchaseBoardService()
+        self._market_pulse_service = market_pulse_service or MarketPulseService()
         self._etf_supplement_service = (
             etf_supplement_service
             if etf_supplement_service is not None
@@ -122,6 +130,7 @@ class FundAdvisorToolAdapter:
             ToolName.STOCK_VALUATION: 30 * 60,
             ToolName.FUND_COMPARE: 30 * 60,
             ToolName.QDII_PURCHASE_BOARD: 30 * 60,
+            ToolName.MARKET_PULSE: 5 * 60,
             ToolName.INTERFACE_AUDIT: 60,
         }[tool]
 
@@ -311,6 +320,13 @@ class FundAdvisorToolAdapter:
             ToolName.QDII_PURCHASE_BOARD,
             {},
             lambda: self._qdii_board_service.board(),
+        )
+
+    def market_pulse(self) -> ToolEnvelope:
+        return self._execute_core_envelope(
+            ToolName.MARKET_PULSE,
+            {},
+            lambda: self._market_pulse_service.pulse(),
         )
 
     def fund_analyze(self, **kwargs: Any) -> ToolEnvelope:

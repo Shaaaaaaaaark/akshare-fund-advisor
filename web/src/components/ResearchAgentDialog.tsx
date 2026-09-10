@@ -221,7 +221,7 @@ export default function ResearchAgentDialog({
         <div className="research-agent-note">
           <strong>受控研究模式</strong>
           <span>
-            固定 LangGraph 流程只调用已注册工具；回答引用审计事实，不生成市场数值。
+            受控研究工作流只调用已注册工具；回答引用审计事实，不生成市场数值。
           </span>
         </div>
 
@@ -232,7 +232,7 @@ export default function ResearchAgentDialog({
               <option value="ark">Ark 结构化研究模型</option>
             </select>
           </label>
-          <b>固定图已连接</b>
+          <b>研究链路已连接</b>
         </div>
         <p className="research-agent-context">
           当前上下文：{fundCode} {fundName || "ETF"}。市场事实会由 Agent

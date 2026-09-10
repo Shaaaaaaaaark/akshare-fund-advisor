@@ -132,4 +132,15 @@ class DashboardControllerTest {
         assertThat(caller.calls).hasSize(1);
         assertThat(caller.calls.getFirst().tool()).isEqualTo(DashboardService.FUND_ANALYZE_TOOL);
     }
+
+    @Test
+    void marketPulseRoutesToTheAuditedMarketTool() throws Exception {
+        mockMvc.perform(get("/api/dashboard/market-pulse"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.board").value("market-pulse"));
+
+        assertThat(caller.calls).hasSize(1);
+        assertThat(caller.calls.getFirst().tool()).isEqualTo(DashboardService.MARKET_PULSE_TOOL);
+        assertThat(caller.calls.getFirst().arguments()).isEmpty();
+    }
 }

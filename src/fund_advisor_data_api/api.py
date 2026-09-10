@@ -69,6 +69,13 @@ def create_app(*, adapter: FundAdvisorToolAdapter | None = None) -> FastAPI:
     def qdii_purchase_board() -> ToolEnvelope:
         return data_adapter.qdii_purchase_board()
 
+    @application.get(
+        "/v1/markets/hot-sectors",
+        response_model=ToolEnvelope,
+    )
+    def market_pulse() -> ToolEnvelope:
+        return data_adapter.market_pulse()
+
     @application.get("/v1/etfs/{fund}", response_model=ToolEnvelope)
     def etf_dashboard(
         fund: str,

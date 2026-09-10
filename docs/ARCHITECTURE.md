@@ -212,12 +212,25 @@ GET /api/dashboard/funds/{fund}
 GET /api/dashboard/funds/{fund}/product
 GET /api/dashboard/stocks/{stock}
 GET /api/dashboard/boards/qdii-purchase
+GET /api/dashboard/market-pulse
 GET /api/watchlist
 POST /api/watchlist
 DELETE /api/watchlist/{id}
 GET /api/panel/interactions
 POST /api/panel/interactions
+GET /api/panel/comments
+POST /api/panel/comments
 ```
+
+热门板块链路使用 `stock_board_industry_summary_ths` 的同一份实时快照生成排名和
+可轮换投票话题。Data API 校验字段并记录快照哈希，工具适配层缓存成功结果 5 分钟；
+Java 只透传完整数据信封。动态投票键由快照日期和板块名称确定性生成，Java 仅接受受控
+格式和 `yes/no` 选项，避免匿名请求写入任意互动维度。
+
+匿名评论不引入登录和用户表：浏览器 UUID 仅用于“我的评论”、频率限制和重复提交判断，
+接口不会返回原始 `client_id`。评论按 ETF scope 存入 MySQL，单客户端 5 分钟最多
+3 条，相同内容 10 分钟内拒绝重复提交；公开列表只读取 `published` 状态，预留人工隐藏
+能力。
 
 ### Agent
 

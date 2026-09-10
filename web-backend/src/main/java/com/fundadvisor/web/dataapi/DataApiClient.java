@@ -86,6 +86,7 @@ public class DataApiClient implements DashboardToolCaller {
             case "fund_status" -> builder.path("/v1/funds/{fund}/status")
                     .build(stringArgument(arguments, "fund"));
             case "qdii_purchase_board" -> builder.path("/v1/boards/qdii-purchase").build();
+            case "market_pulse" -> builder.path("/v1/markets/hot-sectors").build();
             case "index_valuation" -> builder.path("/v1/indices/{index}")
                     .queryParam("years", intArgument(arguments, "years", 10))
                     .queryParam("max_points", intArgument(arguments, "max_points", 600))

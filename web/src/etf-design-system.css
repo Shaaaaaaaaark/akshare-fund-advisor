@@ -191,6 +191,183 @@
   min-width: 118px;
 }
 
+.etf-dashboard-page .etf-header-topline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 480px);
+  align-items: start;
+  gap: 14px;
+}
+
+.etf-dashboard-page .etf-header-topline .etf-hot-polls {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+.etf-dashboard-page .etf-feedback-row {
+  width: 100%;
+  max-width: 100%;
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.etf-dashboard-page .etf-feedback-group button svg {
+  width: 13px;
+  height: 13px;
+  margin-right: 4px;
+}
+
+.etf-dashboard-page .market-pulse-panel {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  color: #303846;
+  background: #ffffff;
+  border: 1px solid #cfd6e0;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgb(31 41 55 / 6%);
+}
+
+.etf-dashboard-page .market-pulse-panel > header {
+  display: flex;
+  min-height: 20px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.etf-dashboard-page .market-pulse-panel > header strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+
+.etf-dashboard-page .market-pulse-panel > header svg {
+  width: 14px;
+  height: 14px;
+  color: #245fe5;
+}
+
+.etf-dashboard-page .market-pulse-panel > header span {
+  color: #7a8493;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.etf-dashboard-page .market-pulse-list {
+  display: grid;
+  padding: 0;
+  margin: 0;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  list-style: none;
+}
+
+.etf-dashboard-page .market-pulse-list li {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  padding: 0 8px;
+  border-left: 1px solid #e5e9ef;
+}
+
+.etf-dashboard-page .market-pulse-list li:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.etf-dashboard-page .market-pulse-list li:last-child {
+  padding-right: 0;
+}
+
+.etf-dashboard-page .market-pulse-list strong,
+.etf-dashboard-page .market-pulse-list small {
+  overflow: hidden;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.etf-dashboard-page .market-pulse-list strong {
+  padding-left: 15px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.etf-dashboard-page .market-pulse-rank {
+  position: absolute;
+  top: 1px;
+  left: 8px;
+  color: #8a94a3;
+  font-size: 9px;
+}
+
+.etf-dashboard-page .market-pulse-list li:first-child .market-pulse-rank {
+  left: 0;
+}
+
+.etf-dashboard-page .market-pulse-up,
+.etf-dashboard-page .market-pulse-down {
+  font-size: 12px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  line-height: 17px;
+}
+
+.etf-dashboard-page .market-pulse-up {
+  color: #c8322b;
+}
+
+.etf-dashboard-page .market-pulse-down {
+  color: #13865b;
+}
+
+.etf-dashboard-page .market-pulse-list small {
+  color: #7a8493;
+  font-size: 9px;
+  line-height: 14px;
+}
+
+.etf-dashboard-page .market-pulse-state {
+  display: grid;
+  min-height: 47px;
+  place-items: center;
+  color: #687180;
+  font-size: 12px;
+}
+
+.etf-dashboard-page .market-pulse-error {
+  color: #a1453f;
+}
+
+.etf-dashboard-page .etf-poll-shuffle {
+  display: inline-flex;
+  height: 23px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 8px;
+  color: #991b1b;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  border-left: 1px solid rgb(153 27 27 / 18%);
+  cursor: pointer;
+}
+
+.etf-dashboard-page .etf-poll-shuffle svg {
+  width: 12px;
+  height: 12px;
+}
+
+.etf-dashboard-page .etf-poll-unavailable {
+  color: #9b6262;
+  font-size: 11px;
+}
+
 .theme-dark.etf-dashboard-page {
   --terminal-control-border: #394353;
   --terminal-control-bg: #171c25;
@@ -199,6 +376,31 @@
   --terminal-control-muted: #9aa5b5;
   --terminal-control-primary: #3974ef;
   --terminal-control-primary-hover: #4b82f3;
+}
+
+.theme-dark.etf-dashboard-page .market-pulse-panel {
+  color: #e6ebf2;
+  background: #171c25;
+  border-color: #394353;
+  box-shadow: none;
+}
+
+.theme-dark.etf-dashboard-page .market-pulse-list li {
+  border-color: #303949;
+}
+
+.theme-dark.etf-dashboard-page .market-pulse-panel > header span,
+.theme-dark.etf-dashboard-page .market-pulse-list small,
+.theme-dark.etf-dashboard-page .market-pulse-rank {
+  color: #9aa5b5;
+}
+
+.theme-dark.etf-dashboard-page .market-pulse-up {
+  color: #f28b82;
+}
+
+.theme-dark.etf-dashboard-page .market-pulse-down {
+  color: #5bc49a;
 }
 
 @media (min-width: 761px) {
@@ -226,6 +428,17 @@
   .etf-dashboard-page .etf-reference-header {
     padding-top: 0;
   }
+
+  .etf-dashboard-page .etf-header-topline {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .etf-dashboard-page .market-pulse-panel {
+    width: 100%;
+    min-width: 0;
+    margin-bottom: 8px;
+  }
 }
 
 @media (max-width: 760px) {
@@ -236,8 +449,59 @@
   }
 
   .etf-dashboard-page .etf-title-line {
+    order: 1;
     display: block;
     width: 100%;
+  }
+
+  .etf-dashboard-page .etf-header-topline {
+    order: 3;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .etf-dashboard-page .market-pulse-panel {
+    order: 1;
+    width: 100%;
+    min-width: 0;
+    padding: 6px 8px;
+  }
+
+  .etf-dashboard-page .market-pulse-panel > header {
+    margin-bottom: 3px;
+  }
+
+  .etf-dashboard-page .market-pulse-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .etf-dashboard-page .market-pulse-list li {
+    padding: 0 6px;
+  }
+
+  .etf-dashboard-page .market-pulse-list li:nth-child(n + 4) {
+    display: none;
+  }
+
+  .etf-dashboard-page .market-pulse-list strong {
+    padding-left: 0;
+  }
+
+  .etf-dashboard-page .market-pulse-rank,
+  .etf-dashboard-page .market-pulse-list small {
+    display: none;
+  }
+
+  .etf-dashboard-page .etf-hot-polls {
+    order: 2;
+  }
+
+  .etf-dashboard-page .etf-meta-line {
+    order: 5;
+  }
+
+  .etf-dashboard-page .etf-feedback-row {
+    order: 6;
   }
 
   .etf-dashboard-page .etf-global-controls {

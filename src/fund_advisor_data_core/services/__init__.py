@@ -3,6 +3,7 @@
 from .etf_supplement import ETFSupplementResult, ETFSupplementService
 from .fund_search import FundSearchService
 from .fund_status import FundStatusService
+from .market_pulse import MarketPulseService
 from .qdii_board import QDIIPurchaseBoardService
 
 __all__ = [
@@ -10,5 +11,6 @@ __all__ = [
     "ETFSupplementService",
     "FundSearchService",
     "FundStatusService",
+    "MarketPulseService",
     "QDIIPurchaseBoardService",
 ]

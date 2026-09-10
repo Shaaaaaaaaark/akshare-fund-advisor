@@ -90,6 +90,7 @@ class DataApiClientTest {
         assertRoute("fund_profile", Map.of("fund", "000001"), "/v1/funds/000001/profile", "");
         assertRoute("fund_rating", Map.of("fund", "000001"), "/v1/funds/000001/rating", "");
         assertRoute("fund_status", Map.of("fund", "000001"), "/v1/funds/000001/status", "");
+        assertRoute("market_pulse", Map.of(), "/v1/markets/hot-sectors", "");
     }
 
     @Test

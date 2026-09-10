@@ -5,12 +5,16 @@ import type {
   FundSearchResponse,
   IndexDetailResponse,
   IndicesResponse,
+  MarketPulseResponse,
   OverviewResponse,
+  PanelComment,
+  PanelCommentFeed,
   PanelInteractionSummary,
   QDIIBoardResponse,
   StockDetailResponse,
   StreamEvent,
   StreamEventName,
+  CreatePanelComment,
   SubmitPanelInteraction,
   WatchlistItem,
 } from "./types";
@@ -55,6 +59,7 @@ const panelInteractionRequests = new Map<
   string,
   Promise<PanelInteractionSummary>
 >();
+let marketPulseRequest: Promise<MarketPulseResponse> | null = null;
 
 interface StreamChatOptions {
   message: string;
@@ -120,6 +125,35 @@ export async function fetchQDIIPurchaseBoard(
     throw new Error(await responseError(response));
   }
   return (await response.json()) as QDIIBoardResponse;
+}
+
+export async function fetchMarketPulse(
+  signal?: AbortSignal,
+): Promise<MarketPulseResponse> {
+  if (!marketPulseRequest) {
+    marketPulseRequest = requestMarketPulse();
+    void marketPulseRequest.then(
+      () => {
+        marketPulseRequest = null;
+      },
+      () => {
+        marketPulseRequest = null;
+      },
+    );
+  }
+  return waitForSharedRequest(marketPulseRequest, signal);
+}
+
+async function requestMarketPulse(): Promise<MarketPulseResponse> {
+  const response = await fetchWithTimeout(
+    "/api/dashboard/market-pulse",
+    {},
+    SEARCH_TIMEOUT_MS,
+  );
+  if (!response.ok) {
+    throw new Error(await responseError(response));
+  }
+  return (await response.json()) as MarketPulseResponse;
 }
 
 export async function fetchIndexDetail(
@@ -273,12 +307,16 @@ export async function deleteWatchlistItem(id: string): Promise<void> {
 export async function fetchPanelInteractions(
   clientId: string,
   fund: string,
+  hotPollTopics: string[],
   signal?: AbortSignal,
 ): Promise<PanelInteractionSummary> {
   const params = new URLSearchParams({
     client_id: clientId,
     fund,
   });
+  for (const topic of hotPollTopics) {
+    params.append("hot_poll_topic", topic);
+  }
   const key = params.toString();
   let request = panelInteractionRequests.get(key);
   if (!request) {
@@ -322,6 +360,45 @@ export async function submitPanelInteraction(
     throw new Error(await responseError(response));
   }
   return (await response.json()) as PanelInteractionSummary;
+}
+
+export async function fetchPanelComments(
+  clientId: string,
+  fund: string,
+  signal?: AbortSignal,
+): Promise<PanelCommentFeed> {
+  const params = new URLSearchParams({
+    client_id: clientId,
+    fund,
+    limit: "20",
+  });
+  const response = await fetchWithTimeout(
+    `/api/panel/comments?${params}`,
+    { signal },
+    SEARCH_TIMEOUT_MS,
+  );
+  if (!response.ok) {
+    throw new Error(await responseError(response));
+  }
+  return (await response.json()) as PanelCommentFeed;
+}
+
+export async function createPanelComment(
+  comment: CreatePanelComment,
+): Promise<PanelComment> {
+  const response = await fetchWithTimeout(
+    "/api/panel/comments",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(comment),
+    },
+    SEARCH_TIMEOUT_MS,
+  );
+  if (!response.ok) {
+    throw new Error(await responseError(response));
+  }
+  return (await response.json()) as PanelComment;
 }
 
 export async function streamChat({

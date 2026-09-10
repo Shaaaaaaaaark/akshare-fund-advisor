@@ -100,6 +100,18 @@ class StubDataAdapter:
             },
         )
 
+    def market_pulse(self) -> ToolEnvelope:
+        self.calls.append(("market_pulse", {}))
+        return _envelope(
+            ToolName.MARKET_PULSE,
+            {
+                "market": "A股",
+                "snapshot_at": "2026-09-10T09:35:00+08:00",
+                "sectors": [{"rank": 1, "name": "银行", "change_pct": 1.38}],
+                "poll_topics": [],
+            },
+        )
+
 
 class StubFundSearchService:
     def __init__(self) -> None:
@@ -184,6 +196,7 @@ def test_data_api_exposes_dashboard_rest_without_mcp_protocol() -> None:
         "/v1/stocks/600519",
         params={"years": 5, "max_points": 300},
     )
+    market = client.get("/v1/markets/hot-sectors")
 
     assert health.json() == {"status": "ok"}
     assert search.json()["tool"] == "fund_search"
@@ -194,6 +207,7 @@ def test_data_api_exposes_dashboard_rest_without_mcp_protocol() -> None:
     assert etf.json()["data"]["summary"]["latest_close"] == 4.801
     assert index.json()["data_audit"][0]["frame_sha256"] == "audit-hash"
     assert stock.json()["data"]["summary"]["stock_price"]["current"] == 100.00001
+    assert market.json()["data"]["sectors"][0]["name"] == "银行"
     assert adapter.calls == [
         ("fund_search", {"query": "沪深300", "limit": 5}),
         ("fund_analyze", {"fund": "000001", "years": 3}),
@@ -212,6 +226,7 @@ def test_data_api_exposes_dashboard_rest_without_mcp_protocol() -> None:
             "stock_valuation",
             {"stock": "600519", "years": 5, "max_points": 300},
         ),
+        ("market_pulse", {}),
     ]
 
 

@@ -175,6 +175,27 @@ class DashboardServiceTest {
     }
 
     @Test
+    void marketPulsePreservesSnapshotAndAuditMetadata() {
+        DashboardTestSupport.RecordingCaller caller = new DashboardTestSupport.RecordingCaller(mapper);
+        String raw = DashboardTestSupport.rawEnvelope(
+                DashboardService.MARKET_PULSE_TOOL,
+                """
+                {"market":"A股","snapshot_at":"2026-09-10T09:35:00+08:00",
+                 "sectors":[{"rank":1,"name":"银行","change_pct":1.38}],
+                 "poll_topics":[]}
+                """);
+        caller.responses = Map.of(DashboardService.MARKET_PULSE_TOOL, raw);
+        DashboardService service = service(caller);
+
+        BoardDetail response = service.marketPulse();
+
+        assertThat(response.board()).isEqualTo("market-pulse");
+        assertThat(response.meta().status()).isEqualTo(DataStatus.AVAILABLE);
+        assertThat(response.meta().asOf()).isEqualTo("2026-09-10T09:35:00+08:00");
+        assertThat(response.envelope()).isEqualTo(raw);
+    }
+
+    @Test
     void indexAggregationSubmitsCallsInConfiguredBatches() {
         AtomicInteger active = new AtomicInteger();
         AtomicInteger maximum = new AtomicInteger();

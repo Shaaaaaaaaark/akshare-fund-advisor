@@ -77,6 +77,39 @@ class FakeFundStatusService:
         )
 
 
+class FakeMarketPulseService:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def pulse(self) -> ToolEnvelope:
+        self.calls += 1
+        return ToolEnvelope(
+            tool=ToolName.MARKET_PULSE,
+            ok=True,
+            data={
+                "market": "A股",
+                "snapshot_at": "2026-09-10T09:35:00+08:00",
+                "sectors": [{"rank": 1, "name": "银行", "change_pct": 1.38}],
+                "poll_topics": [],
+            },
+            queried_at=datetime.now(SHANGHAI),
+            sources=[
+                {
+                    "provider": "AKShare",
+                    "interface": "stock_board_industry_summary_ths",
+                }
+            ],
+            data_audit=[
+                {
+                    "interface": "stock_board_industry_summary_ths",
+                    "validation": "passed",
+                    "frame_sha256": "market-pulse-hash",
+                }
+            ],
+            data_policy={"ai_may_generate_market_data": False},
+        )
+
+
 class FakeAdvisor:
     def __init__(self):
         self.sources = [{"provider": "AKShare", "interface": "fund_name_em"}]
@@ -297,6 +330,22 @@ def test_adapter_uses_data_core_fund_status_and_preserves_audit(test_config) -> 
     assert data["availability"]["confirmed"] is True
     assert envelope.data_audit[0]["frame_sha256"] == "status-core-hash"
     assert status_service.calls == ["000001"]
+
+
+def test_adapter_uses_data_core_market_pulse_and_caches_snapshot(test_config) -> None:
+    service = FakeMarketPulseService()
+    adapter = FundAdvisorToolAdapter(
+        test_config,
+        market_pulse_service=service,
+    )
+
+    first = adapter.market_pulse()
+    second = adapter.market_pulse()
+
+    assert first.ok
+    assert second.request_id == first.request_id
+    assert second.data_audit[0]["frame_sha256"] == "market-pulse-hash"
+    assert service.calls == 1
 
 
 def test_adapter_exposes_etf_dashboard_with_audit(test_config) -> None:

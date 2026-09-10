@@ -19,6 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 class PanelInteractionServiceTest {
 
     private static final String CLIENT_ID = "40c17919-6643-4a29-85db-a3f5e8b41d70";
+    private static final String HOT_POLL_TOPIC = "sector_20260910_012345abcdef";
 
     private PanelInteractionMapper mapper;
     private PanelInteractionService service;
@@ -36,7 +37,7 @@ class PanelInteractionServiceTest {
         when(mapper.updateChoice(
                         "hot_poll",
                         PanelInteractionService.GLOBAL_SCOPE,
-                        "korea_market",
+                        HOT_POLL_TOPIC,
                         "yes",
                         CLIENT_ID,
                         Instant.parse("2026-08-28T03:00:00Z")))
@@ -44,32 +45,32 @@ class PanelInteractionServiceTest {
         when(mapper.countByOption(
                         "hot_poll",
                         PanelInteractionService.GLOBAL_SCOPE,
-                        "korea_market"))
+                        HOT_POLL_TOPIC))
                 .thenReturn(List.of(new InteractionOptionCount("yes", 1L)));
         when(mapper.findSelection(
                         "hot_poll",
                         PanelInteractionService.GLOBAL_SCOPE,
-                        "korea_market",
+                        HOT_POLL_TOPIC,
                         CLIENT_ID))
                 .thenReturn("yes");
 
         PanelInteractionSummary summary = service.submit(
                 new SubmitPanelInteractionRequest(
                         PanelInteractionKind.HOT_POLL,
-                        "korea_market",
+                        HOT_POLL_TOPIC,
                         "yes",
                         CLIENT_ID,
                         "510310"));
 
-        assertThat(summary.hotPolls().get("korea_market").counts().get("yes"))
+        assertThat(summary.hotPolls().get(HOT_POLL_TOPIC).counts().get("yes"))
                 .isEqualTo(1);
-        assertThat(summary.hotPolls().get("korea_market").selectedOption())
+        assertThat(summary.hotPolls().get(HOT_POLL_TOPIC).selectedOption())
                 .isEqualTo("yes");
         verify(mapper).insert(
                 anyString(),
                 org.mockito.ArgumentMatchers.eq("hot_poll"),
                 org.mockito.ArgumentMatchers.eq(PanelInteractionService.GLOBAL_SCOPE),
-                org.mockito.ArgumentMatchers.eq("korea_market"),
+                org.mockito.ArgumentMatchers.eq(HOT_POLL_TOPIC),
                 org.mockito.ArgumentMatchers.eq("yes"),
                 org.mockito.ArgumentMatchers.eq(CLIENT_ID),
                 any(),

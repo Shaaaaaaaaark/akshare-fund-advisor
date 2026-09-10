@@ -1,6 +1,7 @@
 package com.fundadvisor.web.interaction;
 
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -21,8 +22,10 @@ public class PanelInteractionController {
     @GetMapping
     public PanelInteractionSummary summary(
             @RequestParam("client_id") String clientId,
-            @RequestParam String fund) {
-        return service.summary(clientId, fund);
+            @RequestParam String fund,
+            @RequestParam(name = "hot_poll_topic", required = false)
+                    List<String> hotPollTopics) {
+        return service.summary(clientId, fund, hotPollTopics);
     }
 
     @PostMapping

@@ -5,6 +5,7 @@ import App from "./App";
 import "./dashboard.css";
 import "./etf-dashboard.css";
 import "./fund-product.css";
+import "./panel-comments.css";
 import "./stock-detail.css";
 import "./styles.css";
 import "./etf-design-system.css";

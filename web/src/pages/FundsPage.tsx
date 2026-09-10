@@ -8,9 +8,11 @@ import {
   Layers3,
   LayoutDashboard,
   List,
+  MessageSquare,
   Moon,
   RefreshCw,
   RotateCcw,
+  Shuffle,
   Sun,
   X
 } from "lucide-react";
@@ -28,6 +30,7 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import {
   fetchETFDetail,
+  fetchMarketPulse,
   fetchPanelInteractions,
   searchFunds,
   submitPanelInteraction,
@@ -43,6 +46,8 @@ import ETFLinkedCharts from "../components/ETFLinkedCharts";
 import ETFMetricHelpDialog from "../components/ETFMetricHelpDialog";
 import ETFPriceShareChart from "../components/ETFPriceShareChart";
 import ETFTrendPanel from "../components/ETFTrendPanel";
+import MarketPulsePanel from "../components/MarketPulsePanel";
+import PanelCommentDialog from "../components/PanelCommentDialog";
 import QDIIBoardDialog from "../components/QDIIBoardDialog";
 import ResearchAgentDialog from "../components/ResearchAgentDialog";
 import StatusBadge from "../components/StatusBadge";
@@ -55,6 +60,7 @@ import type {
   ETFDashboardData,
   ETFDetailResponse,
   FundIdentity,
+  MarketPulseResponse,
   PanelInteractionKind,
   PanelInteractionSummary,
 } from "../types";
@@ -84,17 +90,6 @@ const FEATURE_ITEMS = [
   { key: "fund_crowding", label: "基金抱团/打埋伏追踪" },
   { key: "other", label: "其他" },
 ] as const;
-const HOT_POLLS = [
-  {
-    key: "korea_market",
-    question: "韩国股市还会继续崩吗？",
-  },
-  {
-    key: "feng_return",
-    question: "峰哥还会回来吗？",
-  },
-] as const;
-
 export default function FundsPage() {
   const { fund } = useParams();
   const navigate = useNavigate();
@@ -113,6 +108,7 @@ export default function FundsPage() {
     storedBoolean("fund-advisor.etf.dark-mode", false),
   );
   const [agentOpen, setAgentOpen] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
   const [qdiiOpen, setQdiiOpen] = useState(false);
   const [listOpen, setListOpen] = useState(() =>
     storedBoolean("fund-advisor.etf.list-open", false),
@@ -131,6 +127,12 @@ export default function FundsPage() {
   const [mobileFeedbackOpen, setMobileFeedbackOpen] = useState<
     "feedback" | "features" | null
   >(null);
+  const [marketPulse, setMarketPulse] = useState<MarketPulseResponse | null>(
+    null,
+  );
+  const [marketPulseLoading, setMarketPulseLoading] = useState(true);
+  const [marketPulseError, setMarketPulseError] = useState<string | null>(null);
+  const [pollOffset, setPollOffset] = useState(0);
   const clientId = useMemo(panelClientId, []);
   const selectorLoaded = useRef(false);
   const selectorController = useRef<AbortController | null>(null);
@@ -170,6 +172,51 @@ export default function FundsPage() {
   }, [load, refreshKey]);
 
   const data = detail?.envelope?.data ?? null;
+  const marketData = marketPulse?.envelope?.data ?? null;
+  const pollTopics = useMemo(
+    () => marketData?.poll_topics ?? [],
+    [marketData],
+  );
+  const visiblePolls = useMemo(() => {
+    if (pollTopics.length === 0) {
+      return [];
+    }
+    return [pollTopics[pollOffset % pollTopics.length]];
+  }, [pollOffset, pollTopics]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setMarketPulseLoading(true);
+    setMarketPulseError(null);
+    void fetchMarketPulse(controller.signal)
+      .then((response) => {
+        if (response.envelope?.ok && response.envelope.data) {
+          setMarketPulse(response);
+        } else {
+          setMarketPulseError(
+            response.meta.error?.message || "热门板块数据暂不可用",
+          );
+        }
+      })
+      .catch((reason: unknown) => {
+        if (reason instanceof DOMException && reason.name === "AbortError") {
+          return;
+        }
+        setMarketPulseError(
+          reason instanceof Error ? reason.message : "热门板块数据请求失败",
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setMarketPulseLoading(false);
+        }
+      });
+    return () => controller.abort();
+  }, [refreshKey]);
+
+  useEffect(() => {
+    setPollOffset(0);
+  }, [marketData?.snapshot_at]);
 
   useEffect(() => {
     if (!data || selectorLoaded.current) {
@@ -229,10 +276,18 @@ export default function FundsPage() {
   }, [groupFilter]);
 
   useEffect(() => {
+    if (marketPulseLoading) {
+      return;
+    }
     const controller = new AbortController();
     setInteractions(null);
     setInteractionStatus(null);
-    void fetchPanelInteractions(clientId, activeFund, controller.signal)
+    void fetchPanelInteractions(
+      clientId,
+      activeFund,
+      pollTopics.map((topic) => topic.key),
+      controller.signal,
+    )
       .then(setInteractions)
       .catch((reason: unknown) => {
         if (reason instanceof DOMException && reason.name === "AbortError") {
@@ -243,7 +298,7 @@ export default function FundsPage() {
         );
       });
     return () => controller.abort();
-  }, [activeFund, clientId]);
+  }, [activeFund, clientId, marketPulseLoading, pollTopics]);
 
   const selectorETFs = useMemo(
     () =>
@@ -290,7 +345,7 @@ export default function FundsPage() {
         client_id: clientId,
         fund: activeFund,
       });
-      setInteractions(summary);
+      setInteractions((current) => mergeInteractions(current, summary));
       setInteractionStatus("已记录");
     } catch (reason) {
       setInteractionStatus(
@@ -324,51 +379,80 @@ export default function FundsPage() {
       className={`workbench-page etf-dashboard-page ${darkMode ? "theme-dark" : ""}`}
     >
       <header className="etf-reference-header">
-        <section className="etf-hot-polls" aria-label="热点站队投票">
-          <div className="etf-hot-poll-line">
-            <strong>
-              <Flame aria-hidden="true" />
-              今日站队
-            </strong>
-            {HOT_POLLS.map((poll, index) => {
-              const summary = interactions?.hot_polls[poll.key];
-              return (
-                <span className="etf-poll-topic" key={poll.key}>
-                  {index > 0 && <i aria-hidden="true" />}
-                  <span>{poll.question}</span>
-                  {(["yes", "no"] as const).map((choice) => {
-                    const pendingKey = `hot_poll:${poll.key}:${choice}`;
-                    return (
-                      <button
-                        key={choice}
-                        type="button"
-                        disabled={interactionPending !== null}
-                        aria-pressed={summary?.selected_option === choice}
-                        className={
-                          summary?.selected_option === choice ? "active" : ""
-                        }
-                        onClick={() =>
-                          void recordInteraction(
-                            "hot_poll",
-                            poll.key,
-                            choice,
-                          )
-                        }
-                      >
-                        {choice === "yes" ? "是" : "不是"}
-                        <b>
-                          {interactionPending === pendingKey
-                            ? "…"
-                            : summary?.counts[choice] ?? 0}
-                        </b>
-                      </button>
-                    );
-                  })}
+        <div className="etf-header-topline">
+          <section className="etf-hot-polls" aria-label="热点站队投票">
+            <div className="etf-hot-poll-line">
+              <strong>
+                <Flame aria-hidden="true" />
+                今日站队
+              </strong>
+              {visiblePolls.map((poll, index) => {
+                const summary = interactions?.hot_polls[poll.key];
+                return (
+                  <span className="etf-poll-topic" key={poll.key}>
+                    {index > 0 && <i aria-hidden="true" />}
+                    <span>{poll.question}</span>
+                    {(["yes", "no"] as const).map((choice) => {
+                      const pendingKey = `hot_poll:${poll.key}:${choice}`;
+                      return (
+                        <button
+                          key={choice}
+                          type="button"
+                          disabled={interactionPending !== null}
+                          aria-pressed={summary?.selected_option === choice}
+                          className={
+                            summary?.selected_option === choice ? "active" : ""
+                          }
+                          onClick={() =>
+                            void recordInteraction(
+                              "hot_poll",
+                              poll.key,
+                              choice,
+                            )
+                          }
+                        >
+                          {choice === "yes" ? "是" : "不是"}
+                          <b>
+                            {interactionPending === pendingKey
+                              ? "…"
+                              : summary?.counts[choice] ?? 0}
+                          </b>
+                        </button>
+                      );
+                    })}
+                  </span>
+                );
+              })}
+              {!marketPulseLoading && visiblePolls.length === 0 && (
+                <span className="etf-poll-unavailable">
+                  热门话题暂不可用
                 </span>
-              );
-            })}
-          </div>
-        </section>
+              )}
+              {pollTopics.length > 2 && (
+                <button
+                  className="etf-poll-shuffle"
+                  type="button"
+                  aria-label="更换投票话题"
+                  title="更换投票话题"
+                  onClick={() =>
+                    setPollOffset(
+                      (current) => (current + 1) % pollTopics.length,
+                    )
+                  }
+                >
+                  <Shuffle aria-hidden="true" />
+                  换一组
+                </button>
+              )}
+            </div>
+          </section>
+
+          <MarketPulsePanel
+            data={marketData}
+            loading={marketPulseLoading}
+            error={marketPulseError}
+          />
+        </div>
 
         <div className="etf-brand-line">
           Fund Advisor · ETF 可信数据与审计研究终端
@@ -444,6 +528,10 @@ export default function FundsPage() {
             ))}
             <button type="button" onClick={() => setAgentOpen(true)}>
               提问箱
+            </button>
+            <button type="button" onClick={() => setCommentsOpen(true)}>
+              <MessageSquare aria-hidden="true" />
+              交流区
             </button>
           </div>
           <i />
@@ -639,6 +727,12 @@ export default function FundsPage() {
         fundCode={activeFund}
         fundName={data?.identity.name}
         onClose={() => setAgentOpen(false)}
+      />
+      <PanelCommentDialog
+        open={commentsOpen}
+        clientId={clientId}
+        fund={activeFund}
+        onClose={() => setCommentsOpen(false)}
       />
       <QDIIBoardDialog open={qdiiOpen} onClose={() => setQdiiOpen(false)} />
     </main>
@@ -1373,6 +1467,19 @@ function panelClientId(): string {
   const generated = crypto.randomUUID();
   storePreference(storageKey, generated);
   return generated;
+}
+
+function mergeInteractions(
+  current: PanelInteractionSummary | null,
+  next: PanelInteractionSummary,
+): PanelInteractionSummary {
+  return {
+    ...next,
+    hot_polls: {
+      ...(current?.hot_polls ?? {}),
+      ...next.hot_polls,
+    },
+  };
 }
 
 function ETFLoading() {

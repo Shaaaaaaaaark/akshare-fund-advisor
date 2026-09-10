@@ -3,10 +3,12 @@ package com.fundadvisor.web.interaction;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -20,9 +22,10 @@ public class PanelInteractionService {
     static final String FEEDBACK_TOPIC = "etf_feedback";
     static final String FEATURE_TOPIC = "next_feature";
 
-    private static final Map<String, Set<String>> HOT_POLLS = Map.of(
-            "korea_market", Set.of("yes", "no"),
-            "feng_return", Set.of("yes", "no"));
+    private static final Pattern HOT_POLL_TOPIC =
+            Pattern.compile("^sector_\\d{8}_[0-9a-f]{12}$");
+    private static final int MAX_HOT_POLL_TOPICS = 8;
+    private static final Set<String> HOT_POLL_OPTIONS = Set.of("yes", "no");
     private static final Set<String> FEEDBACK_OPTIONS =
             Set.of("useful", "unclear", "data_question", "want_explanation");
     private static final Set<String> FEATURE_OPTIONS = Set.of(
@@ -41,18 +44,21 @@ public class PanelInteractionService {
     }
 
     @Transactional(readOnly = true)
-    public PanelInteractionSummary summary(String clientId, String fund) {
-        String normalizedClientId = validateClientId(clientId);
-        String normalizedFund = validateFund(fund);
+    public PanelInteractionSummary summary(
+            String clientId,
+            String fund,
+            List<String> hotPollTopics) {
+        String normalizedClientId = PanelRequestValidator.clientId(clientId);
+        String normalizedFund = PanelRequestValidator.fund(fund);
         Map<String, PanelTopicSummary> polls = new LinkedHashMap<>();
-        for (String topic : List.of("korea_market", "feng_return")) {
+        for (String topic : validateHotPollTopics(hotPollTopics)) {
             polls.put(
                     topic,
                     topicSummary(
                             PanelInteractionKind.HOT_POLL,
                             GLOBAL_SCOPE,
                             topic,
-                            HOT_POLLS.get(topic),
+                            HOT_POLL_OPTIONS,
                             normalizedClientId));
         }
         return new PanelInteractionSummary(
@@ -74,8 +80,8 @@ public class PanelInteractionService {
 
     @Transactional
     public PanelInteractionSummary submit(SubmitPanelInteractionRequest request) {
-        String clientId = validateClientId(request.clientId());
-        String fund = validateFund(request.fund());
+        String clientId = PanelRequestValidator.clientId(request.clientId());
+        String fund = PanelRequestValidator.fund(request.fund());
         String topic = request.topicKey().trim();
         String option = request.optionKey().trim();
         Set<String> allowedOptions = allowedOptions(request.kind(), topic);
@@ -117,7 +123,10 @@ public class PanelInteractionService {
                 }
             }
         }
-        return summary(clientId, fund);
+        List<String> hotPollTopics = request.kind() == PanelInteractionKind.HOT_POLL
+                ? List.of(topic)
+                : List.of();
+        return summary(clientId, fund, hotPollTopics);
     }
 
     private PanelTopicSummary topicSummary(
@@ -151,13 +160,12 @@ public class PanelInteractionService {
             String topic) {
         return switch (kind) {
             case HOT_POLL -> {
-                Set<String> options = HOT_POLLS.get(topic);
-                if (options == null) {
+                if (!HOT_POLL_TOPIC.matcher(topic).matches()) {
                     throw new ResponseStatusException(
                             HttpStatus.BAD_REQUEST,
                             "unsupported hot poll topic");
                 }
-                yield options;
+                yield HOT_POLL_OPTIONS;
             }
             case FEEDBACK -> {
                 if (!FEEDBACK_TOPIC.equals(topic)) {
@@ -190,24 +198,26 @@ public class PanelInteractionService {
         return "ETF:" + fund;
     }
 
-    private static String validateClientId(String clientId) {
-        try {
-            return UUID.fromString(clientId).toString();
-        } catch (RuntimeException invalid) {
+    private static List<String> validateHotPollTopics(List<String> topics) {
+        if (topics == null || topics.isEmpty()) {
+            return List.of();
+        }
+        if (topics.size() > MAX_HOT_POLL_TOPICS) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "client_id must be a UUID",
-                    invalid);
+                    "at most 8 hot poll topics are supported");
         }
+        Set<String> normalized = new LinkedHashSet<>();
+        for (String topic : topics) {
+            String value = topic == null ? "" : topic.trim();
+            if (!HOT_POLL_TOPIC.matcher(value).matches()) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "unsupported hot poll topic");
+            }
+            normalized.add(value);
+        }
+        return List.copyOf(normalized);
     }
 
-    private static String validateFund(String fund) {
-        String normalized = fund == null ? "" : fund.trim();
-        if (!normalized.matches("\\d{6}")) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "fund must be a 6 digit code");
-        }
-        return normalized;
-    }
 }

@@ -1,0 +1,525 @@
+{
+  "schema_version": 1,
+  "profile": {
+    "candidate_id": "akshare-fund-advisor-owner",
+    "target_roles": [
+      "银行 / 证券全栈工程师",
+      "银行 Java 后端开发",
+      "证券 Java 后端系统开发",
+      "金融科技 Java 后端开发"
+    ],
+    "updated_at": "2026-09-09"
+  },
+  "claims": [
+    {
+      "id": "claim-finance-java-service-001",
+      "source_fact": "仓库使用 Java 21 和 Spring Boot 3.5 提供统一外部 HTTP 入口，内部调用 Python Data API 和 Agent API，并承接自选、互动、静态资源和 SSE。",
+      "candidate_wording": "负责基于 Spring Boot 构建金融数据统一后端服务，对接内部数据计算与智能分析模块，集中承接查询、产品数据和流式接口。",
+      "sources": [
+        {
+          "type": "repository",
+          "location": "web-backend/src/main/java/com/fundadvisor/web",
+          "public": false,
+          "note": "DashboardController、DashboardService、AgentProxyHandler"
+        },
+        {
+          "type": "deployment",
+          "location": "deploy/compose/compose.yaml",
+          "public": false,
+          "note": "仅 web-backend 暴露公网端口"
+        }
+      ],
+      "responsibility_level": "负责模块",
+      "verification_status": "已确认",
+      "allowed_uses": [
+        "银行 Java 后端简历",
+        "证券 Java 后端简历",
+        "HR 开场白",
+        "面试自我介绍"
+      ],
+      "interview_details": {
+        "decisions": [
+          "将接入、产品数据和稳定性能力放在 Java，金融计算与智能分析保留在 Python 服务"
+        ],
+        "difficulties": [
+          "保持跨语言接口与错误语义一致"
+        ],
+        "verification": [
+          "Java MockMvc 与 MockWebServer 测试",
+          "Docker Compose 七服务健康检查"
+        ],
+        "result": "形成统一 Java 服务入口和可运行的跨语言调用链"
+      },
+      "boundary": "代码能证明项目内模块实现，不能证明企业级网关规模、真实用户量或生产 SLA。",
+      "risk_notes": [
+        "正式简历少用 BFF 术语，优先写统一后端服务或服务接入层",
+        "不写主导整体微服务架构"
+      ],
+      "last_verified": "2026-09-09"
+    },
+    {
+      "id": "claim-finance-concurrency-002",
+      "source_fact": "Java 后端使用虚拟线程和 CompletableFuture 并行聚合独立数据任务，并通过共享 Resilience4j Bulkhead、分批提交和 HTTP 超时限制并发。",
+      "candidate_wording": "使用 Java 21 虚拟线程、CompletableFuture、并发上限及超时控制实现多数据源有界并行聚合。",
+      "sources": [
+        {
+          "type": "repository",
+          "location": "web-backend/src/main/java/com/fundadvisor/web/WebBackendApplication.java",
+          "public": false,
+          "note": "虚拟线程执行器"
+        },
+        {
+          "type": "repository",
+          "location": "web-backend/src/main/java/com/fundadvisor/web/dashboard/DashboardService.java",
+          "public": false,
+          "note": "overview、fundProduct、invokeAll"
+        },
+        {
+          "type": "repository",
+          "location": "web-backend/src/main/java/com/fundadvisor/web/dataapi/DataApiClient.java",
+          "public": false,
+          "note": "Bulkhead 与连接/读取超时"
+        }
+      ],
+      "responsibility_level": "负责模块",
+      "verification_status": "已确认",
+      "allowed_uses": [
+        "银行 Java 后端简历",
+        "证券 Java 后端简历",
+        "面试自我介绍"
+      ],
+      "interview_details": {
+        "decisions": [
+          "虚拟线程负责承载阻塞等待，Bulkhead 负责约束下游容量",
+          "按并发上限分批提交，避免同一聚合请求自我拒绝"
+        ],
+        "difficulties": [
+          "平衡响应等待时间与下游服务保护"
+        ],
+        "verification": [
+          "DashboardServiceTest 验证最大并发不超过配置值",
+          "DataApiClientTest 验证 Bulkhead 满时立即拒绝"
+        ],
+        "result": "完成有界并行和过载保护机制"
+      },
+      "boundary": "没有线上流量和压测报告，不能声称吞吐或延迟提升比例。",
+      "risk_notes": [
+        "不要把虚拟线程描述为无限并发",
+        "需要能解释线程、HTTP 连接和下游容量的区别"
+      ],
+      "last_verified": "2026-09-09"
+    },
+    {
+      "id": "claim-finance-data-contract-003",
+      "source_fact": "Python ToolEnvelope 包含来源、查询时间、警告、错误和数据审计；Java 保存原始 JSON，仅提取状态元数据，并通过 JsonRawValue 返回完整信封。",
+      "candidate_wording": "设计统一金融数据响应协议，保留来源、时效、错误和 SHA-256 快照指纹，Java 原样返回数据以避免跨服务数值精度和业务口径变化。",
+      "sources": [
+        {
+          "type": "repository",
+          "location": "src/fund_advisor_data_core/contracts/envelope.py",
+          "public": false,
+          "note": "ToolEnvelope 契约"
+        },
+        {
+          "type": "repository",
+          "location": "src/fund_advisor_data_core/audit.py",
+          "public": false,
+          "note": "Schema 校验和 frame_sha256"
+        },
+        {
+          "type": "repository",
+          "location": "web-backend/src/main/java/com/fundadvisor/web/facts/ToolEnvelope.java",
+          "public": false,
+          "note": "原始 JSON 与审计字段提取"
+        }
+      ],
+      "responsibility_level": "负责模块",
+      "verification_status": "已确认",
+      "allowed_uses": [
+        "银行 Java 后端简历",
+        "证券 Java 后端简历",
+        "金融科技 Java 后端简历",
+        "面试自我介绍"
+      ],
+      "interview_details": {
+        "decisions": [
+          "Java 不重复计算金融指标",
+          "只读取展示元数据并保留完整原始信封"
+        ],
+        "difficulties": [
+          "兼顾 Java 侧状态聚合与跨语言数据不失真"
+        ],
+        "verification": [
+          "DataApiClientTest 验证原始 JSON 和审计指纹保留",
+          "DashboardServiceTest 验证错误与数值原样透传"
+        ],
+        "result": "建立项目内可追溯的跨服务数据边界"
+      },
+      "boundary": "这是项目内数据审计和追溯机制，不是监管级审计、账务审计或不可篡改账本。",
+      "risk_notes": [
+        "银行岗位避免使用监管级、账务级等表述",
+        "证券岗位可强调行情数据来源和时效"
+      ],
+      "last_verified": "2026-09-09"
+    },
+    {
+      "id": "claim-finance-error-governance-004",
+      "source_fact": "系统区分 NOT_FOUND、AMBIGUOUS、UNSUPPORTED、UPSTREAM_ERROR、STALE_DATA，并在 Java 聚合层映射 available、partial、stale、unavailable、not_implemented。",
+      "candidate_wording": "建立业务错误、数据时效和传输异常的分层语义，支持单个数据模块失败时保留其他有效结果及原始失败上下文。",
+      "sources": [
+        {
+          "type": "repository",
+          "location": "web-backend/src/main/java/com/fundadvisor/web/dashboard/DashboardService.java",
+          "public": false,
+          "note": "mapStatus、rollUp、transportFailureMeta"
+        },
+        {
+          "type": "repository",
+          "location": "src/fund_advisor_agent/policies.py",
+          "public": false,
+          "note": "status_for_error"
+        }
+      ],
+      "responsibility_level": "负责模块",
+      "verification_status": "已确认",
+      "allowed_uses": [
+        "银行 Java 后端简历",
+        "证券 Java 后端简历",
+        "面试自我介绍"
+      ],
+      "interview_details": {
+        "decisions": [
+          "不将上游异常映射为业务不存在",
+          "聚合接口允许部分成功并显式标记状态"
+        ],
+        "difficulties": [
+          "统一多个数据模块的失败语义"
+        ],
+        "verification": [
+          "DashboardServiceTest 覆盖状态真值表、陈旧数据和传输失败"
+        ],
+        "result": "形成可解释的部分结果和错误返回"
+      },
+      "boundary": "当前没有通用自动重试、熔断器、跨机房容灾或故障演练证据。",
+      "risk_notes": [
+        "可写异常与降级治理，不写全链路高可用"
+      ],
+      "last_verified": "2026-09-09"
+    },
+    {
+      "id": "claim-finance-redis-limit-005",
+      "source_fact": "Java 使用 Redis Lua 原子执行 INCR 和 EXPIRE，为 Dashboard、自选和互动接口实现固定窗口限流；Redis 异常时记录告警并放行。",
+      "candidate_wording": "基于 Redis Lua 实现原子固定窗口限流，并结合故障降级和下游并发隔离平衡接口可用性与容量保护。",
+      "sources": [
+        {
+          "type": "repository",
+          "location": "web-backend/src/main/java/com/fundadvisor/web/ratelimit/RedisRateLimitStore.java",
+          "public": false,
+          "note": "INCR + EXPIRE Lua 脚本"
+        },
+        {
+          "type": "repository",
+          "location": "web-backend/src/main/java/com/fundadvisor/web/ratelimit/DashboardRateLimitFilter.java",
+          "public": false,
+          "note": "429、Retry-After 与 fail-open"
+        }
+      ],
+      "responsibility_level": "负责模块",
+      "verification_status": "已确认",
+      "allowed_uses": [
+        "银行 Java 后端简历",
+        "证券 Java 后端简历",
+        "面试自我介绍"
+      ],
+      "interview_details": {
+        "decisions": [
+          "使用 Lua 保证计数和首次过期设置原子执行",
+          "Redis 故障时选择 fail-open，由下游 Bulkhead 继续保护容量"
+        ],
+        "difficulties": [
+          "平衡限流组件故障时的可用性和过载风险"
+        ],
+        "verification": [
+          "DashboardRateLimitFilterTest 覆盖超限、Redis 故障和路由排除"
+        ],
+        "result": "完成项目内接口流量保护和明确降级策略"
+      },
+      "boundary": "固定窗口基于远端地址，无可信代理链、令牌桶、用户级配额或分级限流。",
+      "risk_notes": [
+        "不写流量治理平台或高并发承载规模"
+      ],
+      "last_verified": "2026-09-09"
+    },
+    {
+      "id": "claim-finance-mysql-idempotency-006",
+      "source_fact": "免登录面板使用匿名客户端 UUID；MySQL panel_interaction 表通过 interaction_kind、scope_key、topic_key、client_id 联合唯一索引约束单客户端选择，服务采用 update、insert、冲突后再次 update。",
+      "candidate_wording": "使用 MyBatis、MySQL、事务、联合唯一索引和写冲突重试，实现匿名投票及按钮反馈的持久化与防重复提交。",
+      "sources": [
+        {
+          "type": "repository",
+          "location": "web-backend/src/main/resources/db/migration/V2__create_panel_interaction.sql",
+          "public": false,
+          "note": "联合唯一索引与统计索引"
+        },
+        {
+          "type": "repository",
+          "location": "web-backend/src/main/java/com/fundadvisor/web/interaction/PanelInteractionService.java",
+          "public": false,
+          "note": "update-then-insert 和 DuplicateKeyException 冲突收敛"
+        }
+      ],
+      "responsibility_level": "负责模块",
+      "verification_status": "已确认",
+      "allowed_uses": [
+        "银行 / 证券全栈工程师简历",
+        "银行 Java 后端简历",
+        "证券 Java 后端简历",
+        "面试自我介绍"
+      ],
+      "interview_details": {
+        "decisions": [
+          "公开面板采用免登录匿名互动，不引入用户和角色模型",
+          "由数据库唯一约束承担最终业务不变量",
+          "避免 select-then-insert 的并发竞争窗口"
+        ],
+        "difficulties": [
+          "处理两个请求同时首次写入时的唯一键冲突"
+        ],
+        "verification": [
+          "PanelInteractionServiceTest 覆盖新增、更新和非法选项"
+        ],
+        "result": "保证同一客户端对同一主题只保留一个有效选择"
+      },
+      "boundary": "本条主张只描述预设选项的匿名投票和按钮反馈；自由文本评论使用独立表与接口。属于单库业务幂等，不是资金账务一致性、分布式事务或 Exactly Once。",
+      "risk_notes": [
+        "银行岗位不得包装为核心账务或支付幂等",
+        "证券岗位不得包装为订单撮合一致性"
+      ],
+      "last_verified": "2026-09-09"
+    },
+    {
+      "id": "claim-finance-sse-delivery-007",
+      "source_fact": "Java 使用 StreamingResponseBody 和 JDK HttpClient 逐块代理智能分析服务 SSE，限制 1 MiB 请求体并过滤 hop-by-hop Header。",
+      "candidate_wording": "实现智能分析结果的 SSE 流式转发，处理请求大小、响应缓冲、代理 Header 和连接异常。",
+      "sources": [
+        {
+          "type": "repository",
+          "location": "web-backend/src/main/java/com/fundadvisor/web/agent/AgentProxyHandler.java",
+          "public": false,
+          "note": "流式代理实现"
+        },
+        {
+          "type": "test",
+          "location": "web-backend/src/test/java/com/fundadvisor/web/agent/AgentProxyHandlerTest.java",
+          "public": false,
+          "note": "验证路径、请求体、SSE 和缓冲 Header"
+        }
+      ],
+      "responsibility_level": "负责模块",
+      "verification_status": "已确认",
+      "allowed_uses": [
+        "证券 Java 后端简历",
+        "金融科技 Java 后端简历",
+        "面试自我介绍"
+      ],
+      "interview_details": {
+        "decisions": [
+          "逐块输出而非聚合完整响应",
+          "为 SSE 设置 no-cache 和 X-Accel-Buffering"
+        ],
+        "difficulties": [
+          "保持代理路径、状态码和事件流语义"
+        ],
+        "verification": [
+          "MockWebServer 与 MockMvc 测试"
+        ],
+        "result": "完成 Java 到智能分析服务的流式调用链"
+      },
+      "boundary": "没有大规模长连接压测、断线续传、消息游标或跨实例会话恢复。",
+      "risk_notes": [
+        "不写实时消息平台"
+      ],
+      "last_verified": "2026-09-09"
+    },
+    {
+      "id": "claim-finance-frontend-dashboard-008",
+      "source_fact": "前端使用 React、TypeScript 和 ECharts 实现基金、ETF、指数、股票、自选与智能分析页面，ETF 页面包含多图联动、趋势排序、时间筛选、深浅主题和响应式布局。",
+      "candidate_wording": "使用 React、TypeScript 和 ECharts 开发金融数据面板，实现多图联动、趋势表格、条件筛选、深浅主题及 PC/移动端响应式布局。",
+      "sources": [
+        {
+          "type": "repository",
+          "location": "web/src/App.tsx",
+          "public": false,
+          "note": "页面路由和模块懒加载"
+        },
+        {
+          "type": "repository",
+          "location": "web/src/pages/FundsPage.tsx",
+          "public": false,
+          "note": "ETF 数据终端及交互状态"
+        },
+        {
+          "type": "repository",
+          "location": "web/src/components/ETFLinkedCharts.tsx",
+          "public": false,
+          "note": "ECharts 多图联动、缩放和悬浮提示"
+        },
+        {
+          "type": "test",
+          "location": "web/e2e/terminal-layout.spec.ts",
+          "public": false,
+          "note": "六个视口和暗色模式布局测试"
+        }
+      ],
+      "responsibility_level": "负责模块",
+      "verification_status": "已确认",
+      "allowed_uses": [
+        "银行 / 证券全栈工程师简历",
+        "金融科技全栈工程师简历",
+        "HR 开场白",
+        "面试自我介绍"
+      ],
+      "interview_details": {
+        "decisions": [
+          "将顶部按钮、链接和选择器收敛为公共控件",
+          "通过设计变量统一桌面和移动端控件尺寸",
+          "由页面展示数据状态，不在前端补齐金融数值"
+        ],
+        "difficulties": [
+          "高密度金融数据在多个视口下保持可读和无横向溢出",
+          "处理长耗时请求的加载、取消、超时和重复请求"
+        ],
+        "verification": [
+          "Playwright 覆盖 320、390、768、909、1280、1440 像素视口",
+          "测试控件高度、文字居中、页面溢出和暗色模式"
+        ],
+        "result": "完成可在桌面和移动端使用的金融数据查询与分析界面"
+      },
+      "boundary": "代码能证明项目内前端功能和布局测试，不能证明大型前端团队协作、微前端平台或性能提升比例。",
+      "risk_notes": [
+        "不写自研可视化引擎",
+        "不写大型前端工程体系"
+      ],
+      "last_verified": "2026-09-09"
+    },
+    {
+      "id": "claim-anonymous-comments-011",
+      "source_fact": "Java 后端提供 ETF 维度的匿名评论查询和提交接口，MySQL 保存评论正文、匿名客户端和发布状态；服务限制长度、提交频率和短期重复内容，响应不返回 client_id。",
+      "candidate_wording": "实现免登录匿名评论功能，通过 MySQL 持久化、输入校验、限频和重复内容拦截控制公开互动风险，并避免向前端暴露匿名客户端标识。",
+      "sources": [
+        {
+          "type": "repository",
+          "location": "web-backend/src/main/java/com/fundadvisor/web/interaction/PanelCommentService.java",
+          "public": false,
+          "note": "评论查询、创建、限频、防重复和匿名别名"
+        },
+        {
+          "type": "repository",
+          "location": "web-backend/src/main/resources/db/migration/V3__create_panel_comment.sql",
+          "public": false,
+          "note": "评论表、发布状态及查询索引"
+        },
+        {
+          "type": "test",
+          "location": "web-backend/src/test/java/com/fundadvisor/web/interaction/PanelCommentServiceTest.java",
+          "public": false,
+          "note": "覆盖创建、列表、限频、重复内容和非法分页"
+        }
+      ],
+      "responsibility_level": "负责模块",
+      "verification_status": "已确认",
+      "allowed_uses": [
+        "银行 / 证券全栈工程师简历",
+        "Java 后端简历",
+        "面试自我介绍"
+      ],
+      "interview_details": {
+        "decisions": [
+          "公开面板采用浏览器 UUID，不引入账号、登录和角色模型",
+          "接口只返回稳定匿名别名和 mine 标记，不返回 client_id",
+          "按 ETF scope 隔离评论列表"
+        ],
+        "difficulties": [
+          "在免登录前提下限制重复提交和高频评论"
+        ],
+        "verification": [
+          "Java Service 与 MockMvc 测试",
+          "Playwright 评论列表和提交测试"
+        ],
+        "result": "形成匿名评论的前后端持久化闭环"
+      },
+      "boundary": "当前具备 published/hidden 状态和提交约束，但没有敏感内容审核、举报、管理端隐藏和严格并发限频，不能描述为成熟社区治理系统。",
+      "risk_notes": [
+        "公开部署前需补内容审核和举报处理",
+        "浏览器 UUID 可被重置，不能等同于可信用户身份"
+      ],
+      "last_verified": "2026-09-10"
+    },
+    {
+      "id": "claim-lowcode-agent-plan-009",
+      "source_fact": "用户计划后续使用低代码框架搭建 Agent，并与现有金融数据面板和 Java 后端配合；当前尚未提供具体框架、接入代码或验证结果。",
+      "candidate_wording": "【待补：完成低代码智能问答工作流接入后，再描述工具调用、接口限流、数据校验和流式返回能力】",
+      "sources": [
+        {
+          "type": "user_statement",
+          "location": "当前对话",
+          "public": false,
+          "note": "用户说明 Agent 计划先使用低代码框架搭建"
+        }
+      ],
+      "responsibility_level": "参与",
+      "verification_status": "待确认",
+      "allowed_uses": [],
+      "interview_details": {
+        "decisions": [
+          "金融数据面板和 Java 后端作为主项目，低代码 Agent 作为辅助能力"
+        ],
+        "difficulties": [
+          "需要确认低代码平台、工具调用方式、数据边界和匿名会话归属"
+        ],
+        "verification": [
+          "完成低代码平台接入",
+          "验证 Agent 只能调用受控 Java 数据接口",
+          "验证 SSE 流式结果和错误处理"
+        ],
+        "result": null
+      },
+      "boundary": "低代码 Agent 尚未完成，不能写成已实现，也不能使用自主研发 Agent 平台或多智能体系统等表述。",
+      "risk_notes": [
+        "不要同时把现有 LangGraph 原型和未来低代码方案包装成两套生产 Agent",
+        "确定具体框架后再更新技术栈"
+      ],
+      "last_verified": null
+    },
+    {
+      "id": "claim-project-context-010",
+      "source_fact": "用户将仓库称为自己的项目，但尚未提供项目起止时间、团队规模、本人职责范围、线上部署状态和生产指标。",
+      "candidate_wording": "【待补：项目时间、项目属性、团队规模及本人职责边界】",
+      "sources": [
+        {
+          "type": "user_statement",
+          "location": "当前对话",
+          "public": false,
+          "note": "用户表述为“我这个项目”"
+        }
+      ],
+      "responsibility_level": "参与",
+      "verification_status": "待确认",
+      "allowed_uses": [],
+      "interview_details": {
+        "decisions": [],
+        "difficulties": [],
+        "verification": [
+          "由用户确认项目起止时间、是否独立开发、是否真实部署"
+        ],
+        "result": null
+      },
+      "boundary": "确认前不得在正式简历中使用“主导”“项目负责人”“生产上线”或任何规模指标。",
+      "risk_notes": [
+        "正式简历必须删除时间占位符",
+        "个人贡献不能用项目整体成果替代"
+      ],
+      "last_verified": null
+    }
+  ]
+}

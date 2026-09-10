@@ -141,6 +141,11 @@ public class DashboardController {
         return ResponseEntity.ok(dashboard.qdiiPurchaseBoard());
     }
 
+    @GetMapping("/api/dashboard/market-pulse")
+    public ResponseEntity<?> marketPulse() {
+        return ResponseEntity.ok(dashboard.marketPulse());
+    }
+
     private static Integer parseOptionalInt(String raw, int fallback) {
         if (raw == null || raw.isBlank()) {
             return fallback;
